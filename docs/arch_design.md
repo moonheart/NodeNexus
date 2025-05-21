@@ -18,7 +18,7 @@
   - [3.5. Message Queue (消息队列 - 可选/后期引入)](#35-message-queue-消息队列---可选后期引入)
 - [4. 数据模型设计](#4-数据模型设计)
   - [4.1. 核心实体](#41-核心实体)
-  - [4.2. 主要数据表 (示例 - TimescaleDB/PostgreSQL)](#42-主要数据表-示例---timescaledbpostgresql)
+  - [4.2. 主要数据表 (示例 - PostgreSQL)](#42-主要数据表-示例---postgresql)
 - [5. 接口设计](#5-接口设计)
   - [5.1. Agent \<-\> Server 通信](#51-agent---server-通信)
   - [5.2. Frontend \<-\> Server API](#52-frontend---server-api)
@@ -90,7 +90,7 @@ graph TD
     end
 
     subgraph Data Persistence
-        DB[(Database: TimescaleDB/PostgreSQL)]
+        DB[(Database: PostgreSQL)]
     end
 
     subgraph Monitored VPS
@@ -165,7 +165,7 @@ graph TD
     *   收集系统性能数据、Docker 信息。
     *   执行来自 Server 的命令 (Ping, 脚本, Docker 操作, Webshell, 文件管理)。
     *   上报数据和状态给 Server。
-*   **Database (TimescaleDB/PostgreSQL)**:
+*   **Database (PostgreSQL)**:
     *   存储时序性能数据 (CPU, 内存, IO, 网络等)。
     *   存储关系型数据 (VPS 配置, 用户信息, 任务定义, 告警规则, Docker 元数据等)。
 *   **Ansible Engine**: (可选集成) 由 Task Service 调用，用于在 VPS 上执行复杂的配置管理和自动化任务。
@@ -201,7 +201,7 @@ graph TD
         *   WebSocket 支持 (实时数据推送, Webshell)。
         *   JWT 或类似机制进行认证授权。
     *   **Metrics Service**:
-        *   接收 Agent 数据，写入 TimescaleDB。
+        *   接收 Agent 数据，写入 PostgreSQL。
         *   提供查询接口给前端。
     *   **Task Service**:
         *   使用 `tokio-cron-scheduler` 或自定义调度逻辑。
@@ -235,15 +235,15 @@ graph TD
 
 ### 3.4. Database (数据库)
 
-*   **技术选型**: **TimescaleDB** (首选，PostgreSQL 扩展)。
+*   **技术选型**: **PostgreSQL**。
 *   **数据类型**:
-    *   **时序数据**: 性能指标 (CPU, 内存, IO, 网络, Docker 容器指标)。使用 TimescaleDB 的 hypertable。
+    *   **时序数据**: 性能指标 (CPU, 内存, IO, 网络, Docker 容器指标)。对于这类数据，在 PostgreSQL 中可以考虑使用分区表 (例如按时间范围分区) 和适当的索引策略进行优化。
     *   **关系型数据**: VPS 配置信息, 用户账户, 任务定义, 告警规则, Docker 元数据, IP 检测历史, 流量统计等。
 *   **关键设计**:
-    *   合理的 hypertable 分区 (`chunk_time_interval`)。
-    *   数据保留策略 (Data Retention Policies) 自动清理过期数据。
-    *   适当的索引以优化查询性能。
-    *   (可选) 数据压缩 (TimescaleDB Compression)。
+    *   合理的表分区策略 (例如按时间范围分区)。
+    *   数据保留策略 (通过定期任务或脚本) 自动清理过期数据。
+    *   适当的索引 (例如在时间戳和 VPS ID 字段上) 以优化查询性能。
+    *   (可选) PostgreSQL 的表压缩或列压缩特性 (如果适用，例如使用 TOAST 压缩大字段，或考虑 ZFS 等文件系统层面的压缩)。
 
 ### 3.5. Message Queue (消息队列 - 可选/后期引入)
 
@@ -260,9 +260,9 @@ graph TD
 
 *   `User`: 系统用户。
 *   `VPS`: 受监控的虚拟私人服务器。
-*   `PerformanceMetric`: VPS 的性能指标记录。
-*   `DockerContainer`: VPS 上的 Docker 容器。
-*   `DockerMetric`: Docker 容器的性能指标记录。
+*   `PerformanceMetric`: VPS 的性能指标记录 (详细结构见 Agent 上报的 [`PerformanceSnapshot`](proto/server.proto:86))。
+*   `DockerContainer`: VPS 上的 Docker 容器 (详细信息及指标见 Agent 上报的 [`DockerContainerInfo`](proto/server.proto:139))。
+*   `DockerMetric`: Docker 容器的性能指标记录 (通常作为 [`DockerContainerInfo`](proto/server.proto:139) 的一部分进行采集和上报)。
 *   `Task`: 定义的自动化任务。
 *   `TaskRun`: 任务的执行记录。
 *   `AlertRule`: 用户定义的告警规则。
@@ -270,13 +270,13 @@ graph TD
 *   `IPCheckResult`: IP 风险或流媒体解锁检测结果。
 *   `TrafficRecord`: VPS 流量记录。
 
-### 4.2. 主要数据表 (示例 - TimescaleDB/PostgreSQL)
+### 4.2. 主要数据表 (示例 - PostgreSQL)
 
 *   `users (id, username, password_hash, email, created_at, updated_at)`
 *   `vps (id, user_id, name, ip_address, os_type, agent_secret, status, metadata jsonb, created_at, updated_at)` (metadata 存商家信息等)
-*   `performance_metrics (time TIMESTAMPTZ, vps_id INT, cpu_usage FLOAT, mem_usage FLOAT, disk_io_read BIGINT, disk_io_write BIGINT, net_rx BIGINT, net_tx BIGINT)` (Hypertable)
-*   `docker_containers (id, vps_id, container_id_on_host, name, image, status, created_at_on_host, created_at, updated_at)`
-*   `docker_metrics (time TIMESTAMPTZ, container_db_id INT, cpu_usage FLOAT, mem_usage FLOAT)` (Hypertable)
+*   `performance_metrics (time TIMESTAMPTZ, vps_id INT, cpu_usage FLOAT, mem_usage FLOAT, disk_io_read BIGINT, disk_io_write BIGINT, net_rx BIGINT, net_tx BIGINT)` *(此表存储核心性能指标。对于时序数据，需考虑使用 PostgreSQL 的分区表功能，并对 `(vps_id, time)` 创建索引。Agent 上报的完整性能数据结构请参考 [`PerformanceSnapshot`](proto/server.proto:86) 定义，其中包含更详细的磁盘使用情况 ([`DiskUsage`](proto/server.proto:68)) 和网络接口统计 ([`NetworkInterfaceStats`](proto/server.proto:76)))*
+*   `docker_containers (id, vps_id, container_id_on_host, name, image, status, created_at_on_host, created_at, updated_at)` *(此表存储 Docker 容器的元数据。完整的容器信息，包括实时指标，由 Agent 通过 [`DockerContainerInfo`](proto/server.proto:139) 上报。该消息中的静态信息如 `id`, `names`, `image`, `labels`, `mounts` 等可映射至此表或扩展字段。)*
+*   `docker_metrics (time TIMESTAMPTZ, container_db_id INT, cpu_usage FLOAT, mem_usage FLOAT)` *(此表存储 Docker 容器的时序性能指标。对于时序数据，需考虑使用 PostgreSQL 的分区表功能，并对 `(container_db_id, time)` 创建索引。数据来源于 Agent 上报的 [`DockerContainerInfo`](proto/server.proto:139) 中的指标字段，如 `cpu_usage_percent`, `memory_usage_bytes` 等。)*
 *   `tasks (id, user_id, vps_id_target, name, type, schedule_cron, command_payload jsonb, ansible_playbook_path, created_at, updated_at, last_run_at, next_run_at)`
 *   `task_runs (id, task_id, status, start_time, end_time, output TEXT)`
 *   `alert_rules (id, user_id, vps_id, metric_type, threshold, comparison_operator, duration_seconds, notification_channel, created_at, updated_at)`
@@ -287,16 +287,47 @@ graph TD
 
 ### 5.1. Agent <-> Server 通信
 
-*   **协议**: gRPC (首选) 或 HTTPS + MessagePack/CBOR。
-*   **主要接口 (Server 提供, Agent 调用)**:
-    *   `RegisterAgent(agent_info) -> agent_id, agent_secret`
-    *   `SendHeartbeat(agent_id, status)`
-    *   `UploadMetrics(agent_id, metrics_batch)`
-    *   `UploadDockerInfo(agent_id, docker_info_batch)`
-*   **主要接口 (Agent 提供, Server 调用 - 若使用 gRPC 双向流或 Server 主动连接)**:
-    *   `ExecuteCommand(command_request) -> command_response` (用于 Ping, 脚本, Docker 操作)
-    *   `StreamPty(pty_stream_request) <-> StreamPty(pty_stream_response)` (Webshell)
-    *   `ManageFile(file_op_request) -> file_op_response` (文件管理)
+*   **协议**: gRPC (基于 TLS)。
+*   **通信模型**: Agent 主动与 Server 建立一个持久化的双向 gRPC 流 ([`EstablishCommunicationStream`](proto/server.proto:388))。所有主要的 Agent-Server 交互都通过此流中的 [`MessageToServer`](proto/server.proto:355) (Agent 发送给 Server) 和 [`MessageToAgent`](proto/server.proto:370) (Server 发送给 Agent) 顶层消息进行。这些顶层消息在其 `payload` 字段中通过 `oneof` 机制封装了具体的交互数据结构。所有消息的详细定义均在 [`proto/server.proto`](proto/server.proto:0) 文件中。
+
+    **`MessageToServer` (Agent -> Server) 的主要 `payload` 类型:**
+    *   [`AgentHandshake`](proto/server.proto:359): 用于初始连接请求、身份验证和 Agent 基本信息上报。
+    *   [`PerformanceSnapshotBatch`](proto/server.proto:360): 批量上报主机性能快照。
+    *   [`DockerInfoBatch`](proto/server.proto:361): 批量上报 Docker 容器信息及相关指标。
+    *   [`GenericMetricsBatch`](proto/server.proto:362): 批量上报通用或自定义的指标。
+    *   [`CommandResponse`](proto/server.proto:363): 对 Server下发的命令的执行结果进行响应。
+    *   [`PtyDataToServer`](proto/server.proto:364): 从 Agent 端的 PTY (伪终端) 会话流式传输输出数据。
+    *   [`Heartbeat`](proto/server.proto:365): Agent 定期发送以维持连接活性或响应 Server 的心跳请求。
+
+    **`MessageToAgent` (Server -> Agent) 的主要 `payload` 类型:**
+    *   [`ServerHandshakeAck`](proto/server.proto:374): Server 对 Agent 握手请求的响应，包含认证结果、分配的 `agent_id` 和初始配置。
+    *   [`AgentConfig`](proto/server.proto:375): Server 向 Agent 推送的配置信息（如采集频率、上报间隔、特性开关等）。
+    *   [`CommandRequest`](proto/server.proto:376): Server 向 Agent下发指令，请求执行特定操作（如 Shell 命令、Docker 操作、文件管理）。
+    *   [`PtyDataToAgent`](proto/server.proto:377): Server向 Agent 端的 PTY 会话发送输入数据或控制信号（如启动、调整大小、关闭）。
+    *   [`Heartbeat`](proto/server.proto:378) (在 proto 中 `oneof` 字段名为 `heartbeat_request`): Server 主动向 Agent 发送心跳请求，以探测其状态。
+
+*   **主要交互流程与消息类型 (通过双向流 `EstablishCommunicationStream`)**:
+    1.  **握手与认证**:
+        *   Agent 发送 `MessageToServer` (包含 `AgentHandshake`) 进行身份验证和版本信息同步。
+        *   Server 回复 `MessageToAgent` (包含 `ServerHandshakeAck`)，确认认证状态，分配 `agent_id`，并下发初始 `AgentConfig`。
+    2.  **配置同步**:
+        *   Server 可随时通过 `MessageToAgent` (包含 `AgentConfig`) 向 Agent 推送最新的配置（如采集频率、上报间隔、日志级别等）。Agent 接收后动态应用。
+    3.  **数据上报**:
+        *   Agent 定期或按需发送 `MessageToServer`，其 `payload` 可以是：
+            *   `PerformanceSnapshotBatch`: 批量上报结构化的主机性能快照。
+            *   `DockerInfoBatch`: 批量上报 Docker 容器信息（包括容器性能指标）。
+            *   `GenericMetricsBatch`: 批量上报通用的或自定义的指标。
+    4.  **命令执行与响应**:
+        *   Server 发送 `MessageToAgent` (包含 `CommandRequest`) 来请求 Agent 执行操作（如 Shell 命令、Docker 操作、文件管理）。
+        *   Agent 执行后，通过 `MessageToServer` (包含 `CommandResponse`) 返回结果。
+    5.  **PTY (Webshell) 流**:
+        *   通过 `MessageToAgent` (包含 `PtyDataToAgent`，其中 `control_event` 包含 `PtyStartCommand` 等) 初始化和控制 PTY 会话。
+        *   Agent 通过 `MessageToServer` (包含 `PtyDataToServer`) 将 PTY 的输出数据流式传输回 Server。
+    6.  **心跳**:
+        *   Agent 定期发送 `MessageToServer` (包含 `Heartbeat`) 以维持连接活性。
+        *   Server 也可按需发送 `MessageToAgent` (包含 `Heartbeat` 作为请求) 来探测 Agent 状态。
+
+*   **消息定义**: 详细的消息结构（如 `AgentHandshake`, `AgentConfig`, `PerformanceSnapshot`, `CommandRequest` 等）在 [`proto/server.proto`](proto/server.proto) 文件中定义。
 
 ### 5.2. Frontend <-> Server API
 
@@ -327,7 +358,7 @@ graph TD
 
 *   **Backend**: Rust, Actix Web / Axum, Tokio, SQLx, Tonic (gRPC).
 *   **Frontend**: React, TypeScript, Vite, Zustand/RTK, Axios/React-Query, Recharts/Nivo, Xterm.js.
-*   **Database**: TimescaleDB (on PostgreSQL).
+*   **Database**: PostgreSQL.
 *   **Agent**: Rust, sysinfo, bollard, Tonic/reqwest.
 *   **Message Queue (可选)**: NATS.
 *   **Deployment**: Docker, Docker Compose (Nginx for reverse proxy if needed).
@@ -336,7 +367,7 @@ graph TD
 
 *   **Single Server Deployment**:
     *   Server Application (Rust binary) 运行在一个或多个 Docker 容器中。
-    *   TimescaleDB 运行在独立的 Docker 容器或专用服务器上。
+    *   PostgreSQL 运行在独立的 Docker 容器或专用服务器上。
     *   Nginx (可选) 作为反向代理，处理 SSL 终止和静态文件服务。
     *   Agent 直接安装在被监控的 VPS 上。
 *   **Scaled Deployment (未来)**:
@@ -351,7 +382,7 @@ graph LR
     Nginx --> ServerAppContainer2["Server App (Rust) Docker C2"]
     Nginx --> ServerAppContainerN["Server App (Rust) Docker CN"]
 
-    ServerAppContainer1 --> DB[(TimescaleDB)]
+    ServerAppContainer1 --> DB[(PostgreSQL)]
     ServerAppContainer2 --> DB
     ServerAppContainerN --> DB
 
@@ -374,7 +405,7 @@ graph LR
 
 ### 8.2. 历史数据存储与查询
 
-TimescaleDB 的 hypertable 针对时序数据进行了优化，支持高效的范围查询和聚合。数据保留策略管理存储空间。
+PostgreSQL 配合适当的表分区 (例如按时间范围对指标数据进行分区) 和索引策略，可以支持时序数据的高效范围查询和聚合。数据保留策略需要通过自定义脚本或 PostgreSQL 的分区管理工具来实现，以管理存储空间。
 
 ### 8.3. 任务系统与 Ansible 集成
 
@@ -395,7 +426,7 @@ Task Service 负责调度。对于简单任务，Agent直接执行。对于复�
 
 *   **Agent**: Rust 编译优化，精简依赖，按需加载模块，高效序列化。
 *   **Server**: Rust 的高性能特性，异步处理。初期避免引入过多重量级中间件。
-*   **数据库**: TimescaleDB 配置优化 (压缩, 保留策略)。
+*   **数据库**: PostgreSQL 配置优化 (例如调整 `shared_buffers`, `work_mem` 等参数，定期执行 `VACUUM` 和 `ANALYZE`)。
 
 ## 9. 非功能性需求
 
