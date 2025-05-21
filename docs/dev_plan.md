@@ -1,159 +1,185 @@
+# VPS 监控管理平台 - 优化开发计划 (单人学习版)
 
-**核心原则：**
+## 核心原则：
 
-*   **MVP (Minimum Viable Product) 优先**: 尽快发布一个包含核心功能的可用的版本。
-*   **迭代开发**: 每个阶段都有可交付的成果，并根据反馈进行调整。
-*   **模块化**: 各个功能模块尽可能独立开发和测试。
+*   **学习与实践并行**：在实现功能的同时，有意识地学习和应用 Rust 和 React 的相关知识。
+*   **MVP 聚焦核心**：首个可交付版本专注于 VPS 基本信息展示和核心指标的实时监控。
+*   **迭代与演进**：每个阶段都有明确的可验证成果，并根据实际情况灵活调整。
+*   **架构一致性**：尽早并持续地与架构设计文档中的定义（尤其是 [`proto/server.proto`](proto/server.proto:0)）保持一致。
 
 ---
 
-**开发阶段划分及内容：**
+## 开发阶段划分及主要任务：
 
-**阶段 0: 准备与基础架构搭建 (预计 1-2 周)**
+```mermaid
+gantt
+    dateFormat  YYYY-MM-DD
+    title VPS 监控管理平台 - 优化开发计划 (单人学习版)
+    excludes    weekends
 
-1.  **需求细化与技术选型最终确认**:
-    *   再次梳理功能清单的优先级。
-    *   最终确定核心技术栈 (Rust 框架, 前端框架, 数据库等)。
-2.  **项目初始化**:
-    *   创建 Git 仓库。
-    *   搭建 Rust 后端项目结构 (e.g., using `cargo new --lib` for core logic and `cargo new` for binaries)。
-    *   搭建 React 前端项目结构 (e.g., using Vite + TypeScript)。
-3.  **数据库设计与初始化**:
-    *   设计核心数据表结构 (VPS 信息, 用户, 基础性能指标表)。
-    *   选择并安装数据库 (TimescaleDB/PostgreSQL)。
-    *   编写初始数据库迁移脚本 (e.g., using `sqlx-cli` or a dedicated migration tool)。
-4.  **Agent-Server 基础通信**:
-    *   定义 Agent 与 Server 之间最基础的通信协议 (e.g., gRPC or HTTPS + JSON/MessagePack)。
-    *   实现 Agent 注册/心跳机制。
-    *   Server 端能接收并记录 Agent 状态。
-5.  **CI/CD 初步搭建 (可选，但推荐)**:
-    *   配置基本的自动化构建和测试流程 (e.g., GitHub Actions)。
+    section 阶段 0: 环境搭建与原型验证 (预计 2-3 周)
+    项目初始化与技术预研     :crit, a1, 2025-05-23, 7d
+    核心通信原型 (gRPC基于proto) :crit, a2, after a1, 10d
+    基础数据库设计与ORM选型 :crit, a3, after a1, 5d
 
-**阶段 1: MVP - 核心监控与展示 (预计 4-6 周)**
+    section 阶段 1: MVP - VPS信息与核心监控 (预计 5-7 周)
+    Agent - 基础信息与核心指标采集 :crit, b1, after a2, 14d
+    Server - 数据接收、存储与API (基于proto) :crit, b2, after a2, 14d
+    Frontend - VPS列表与实时监控展示 :crit, b3, after b1, 21d
+    MVP 功能集成与测试        :crit, b4, after b3, 7d
 
-1.  **Agent - 核心性能数据采集**:
-    *   实现 CPU 使用率采集。
-    *   实现内存使用率采集。
-    *   实现磁盘 I/O 采集 (读/写速率)。
-    *   实现网络流量采集 (总流量，速率)。
-    *   实现磁盘空间使用率采集。
-    *   Agent 将采集数据发送给 Server。
-2.  **Server - 数据接收与存储**:
-    *   API 接收 Agent 上报的性能数据。
-    *   数据验证与清洗。
-    *   将性能数据存入 TimescaleDB。
-3.  **Frontend - VPS 管理与实时数据显示**:
-    *   用户登录/注册 (简单实现，后续可加强)。
-    *   添加/编辑/删除 VPS 信息 (IP, 名称等)。
-    *   列表展示已添加的 VPS 及其在线状态。
-    *   选择单个 VPS，实时图表展示其核心性能数据 (CPU, 内存, 网络, 磁盘IO)。
-    *   (可选) 最简单的 WebSocket 推送实现实时数据。
-4.  **Server - 基础 API**:
-    *   提供管理 VPS 的 CRUD API。
-    *   提供查询实时/短时历史性能数据的 API。
+    section 阶段 2: 监控增强与 Agent 控制 (预计 4-6 周)
+    Agent - Docker 基础监控 :c1, after b4, 10d
+    Server - Docker 数据处理与控制API :c2, after c1, 10d
+    Frontend - Docker 监控展示与基础操作 :c3, after c2, 10d
+    Agent - 接收并执行简单指令 :c4, after c2, 7d
 
-**阶段 2: 增强监控与用户体验 (预计 4-6 周)**
+    section 阶段 3: 历史数据与基础告警 (预计 4-6 周)
+    历史性能数据查询与展示 :d1, after c3, 14d
+    基础告警逻辑 (VPS离线) :d2, after d1, 10d
+    邮件通知功能集成       :d3, after d2, 7d
 
-1.  **Agent - Docker 监控**:
-    *   采集 VPS 上的 Docker 容器列表。
-    *   采集各容器的 CPU, 内存使用情况。
-    *   采集容器状态 (running, stopped, etc.)。
-    *   Agent 将 Docker 数据上报 Server。
-2.  **Server - Docker 数据处理与 API**:
-    *   存储 Docker 容器信息和性能数据。
-    *   提供查询和管理 Docker 容器的 API (列出, 启动, 停止, 重启 - 先实现 API，Agent 端后续实现执行)。
-3.  **Frontend - Docker 监控与管理界面**:
-    *   展示 VPS 上的 Docker 容器列表及其状态和资源使用。
-    *   提供操作按钮 (启动, 停止, 重启容器)。
-4.  **Agent - 执行 Docker 管理命令**:
-    *   Agent 接收 Server 下发的 Docker 操作指令并执行。
-5.  **历史性能数据查看**:
-    *   Server 端 API 支持按时间范围查询历史性能数据。
-    *   Frontend 实现历史数据图表展示 (支持选择时间范围，如最近1小时, 24小时, 7天等)。
-6.  **VPS 上下线提醒 (基础告警)**:
-    *   Server 检测 Agent 心跳超时。
-    *   实现简单的邮件通知功能，当 VPS 离线/上线时发送邮件。
-7.  **VPS 附加信息管理**:
-    *   Frontend 和 Server 支持添加/编辑 VPS 的商家信息, 购买地址, 线路, 到期日等。
+    section 阶段 4: 任务系统初步 (预计 4-5 周)
+    Agent - 执行简单脚本能力 :e1, after d3, 7d
+    Server - 简单任务定义与调度 :e2, after e1, 10d
+    Frontend - 任务创建与查看 :e3, after e2, 10d
 
-**阶段 3: 告警与任务系统 (预计 5-7 周)**
+    section 阶段 5 及后续: 高级功能、优化与扩展 (持续)
+    Webshell 与文件管理        :f1, after e3, 20d
+    Ansible 集成             :f2, after f1, 15d
+    MCP Server 实现          :f3, after f1, 15d
+    安全加固与性能优化     :f4, 2025-05-23, 60d
+    文档完善与测试覆盖     :f5, 2025-05-23, 60d
+```
 
-1.  **高级告警系统**:
-    *   Server 端实现告警规则配置 (CPU 阈值, 内存阈值, 离线等)。
-    *   AlertManager 逻辑：根据规则分析实时数据并触发告警。
-    *   Frontend 实现告警规则配置界面。
-    *   支持多种告警渠道 (先实现 Email，后续可扩展 Slack, Telegram 等)。
-    *   Frontend 展示告警历史。
-2.  **定时/一次性任务系统 (基础 - 非 Ansible)**:
-    *   Agent 端实现执行简单命令/脚本的功能 (如 `ping 指定域名`)。
-    *   Server 端设计任务调度逻辑 (存储任务定义, 触发执行)。
-    *   Frontend 实现创建/管理定时任务和一次性任务 (如定时 Ping)。
-    *   查看任务执行历史和结果。
-3.  **每月流量监控与告警**:
-    *   Agent 持续监控总流量。
-    *   Server 聚合月流量数据。
-    *   Frontend 展示月流量使用情况。
-    *   配置流量阈值告警。
+## 详细任务分解：
 
-**阶段 4: 高级功能与集成 (预计 6-8 周)**
+**阶段 0: 环境搭建与原型验证 (预计 2-3 周)**
 
-1.  **Ansible 集成 (用于任务系统)**:
-    *   Server 端集成调用 Ansible CLI 的能力。
-    *   设计如何管理 Ansible Inventory (动态生成或用户提供)。
-    *   任务系统支持选择 Ansible Playbook 执行。
-    *   处理 Ansible 执行结果。
-    *   Frontend 界面适配 Ansible 任务。
-2.  **Webshell**:
-    *   Agent 端实现 PTY 交互逻辑。
-    *   Server 端实现 WebSocket 代理，中继 Agent 和 Frontend 的数据。
-    *   Frontend (Xterm.js) 实现终端界面。
-    *   (可选) 批量 Webshell (基于 Ansible 或多路复用 Agent 连接)。
-3.  **文件管理**:
-    *   Agent 端实现列出目录、上传、下载文件的接口。
-    *   Server 端代理文件操作请求。
-    *   Frontend 实现文件浏览器界面。
-4.  **流媒体解锁与 IP 风险检测**:
-    *   Agent 端执行预定义的检测脚本。
-    *   或 Server 端集成第三方 API 调用。
-    *   Server 存储检测结果。
-    *   Frontend 展示检测状态。
-5.  **VPS 初始化脚本**:
-    *   集成到任务系统，作为一种特殊任务类型。
-    *   Server 端管理不同操作系统的初始化脚本模板。
-    *   用户选择 VPS 和脚本模板执行。
+*   **目标**：搭建基础开发环境，验证核心技术栈的可行性，特别是基于 [`proto/server.proto`](proto/server.proto:0) 的 Agent-Server gRPC 通信原型。
+*   **任务**：
+    1.  **项目初始化与技术预研** (7天)
+        *   创建 Git 仓库，配置 `.gitignore`。
+        *   搭建 Rust 后端项目结构 (如 `cargo new vps_monitor_server --lib` 和 `cargo new vps_monitor_agent`)。
+        *   搭建 React 前端项目结构 (Vite + TypeScript)。
+        *   学习 Rust 基础、Tokio 异步编程、gRPC (Tonic) 基础。
+        *   学习 React 基础、TypeScript、状态管理 (如 Zustand) 基础。
+        *   初步调研并选择 Rust Web 框架 (Actix Web 或 Axum，根据架构文档)。
+    2.  **核心通信原型 (gRPC 基于 [`proto/server.proto`](proto/server.proto:0))** (10天)
+        *   仔细阅读并理解 [`proto/server.proto`](proto/server.proto:0) 中关于 `EstablishCommunicationStream`, `MessageToServer`, `MessageToAgent` 及相关的握手、心跳消息定义。
+        *   在 Server 端使用 Tonic 实现 gRPC 服务，处理基础的 `AgentHandshake` 和 `Heartbeat`。
+        *   在 Agent 端使用 Tonic 实现 gRPC 客户端，能连接 Server，发送 `AgentHandshake` 和 `Heartbeat`。
+        *   实现双向流的基本框架，能够打印收发消息。
+        *   *学习重点：Rust gRPC (Tonic), Protocol Buffers, 双向流通信。*
+    3.  **基础数据库设计与 ORM 选型** (5天)
+        *   根据架构文档 ([`docs/arch_design.md#42-主要数据表-示例---postgresql`](docs/arch_design.md:273))，设计 `users`, `vps` 核心表。
+        *   选择并安装 PostgreSQL。
+        *   调研 Rust ORM 或 SQL 构建工具 (如 `sqlx`, `diesel`)，并完成基础连接测试。
+        *   *学习重点：PostgreSQL 基础, Rust 数据库交互。*
 
-**阶段 5: AI 交互与外部对接 (预计 3-5 周)**
+**阶段 1: MVP - VPS 信息与核心监控 (预计 5-7 周)**
 
-1.  **MCP Server 实现**:
-    *   设计 AI 客户端交互的 API (gRPC 或专用协议)。
-    *   实现 MCP Server 逻辑，连接到主 Server API 获取信息和执行操作。
-    *   编写示例 AI 客户端或测试工具。
-2.  **对接商家后台 (WHMCS 等)**:
-    *   研究目标商家后台的 API。
-    *   实现 API 对接，同步 VPS 信息、账单、流量 (如果支持)。
-    *   Frontend 展示从商家后台同步的信息。
-3.  **Agent 设计参考 Alloy (深入)**:
-    *   如果初期 Agent 设计较为简单，此阶段可以重构 Agent，使其更插件化、配置更灵活。
-    *   实现 Agent 配置的热加载/远程更新。
+*   **目标**：实现 MVP，用户可以添加 VPS，并实时查看其核心性能指标。
+*   **任务**：
+    1.  **Agent - 基础信息与核心指标采集** (14天)
+        *   实现采集 VPS 操作系统信息、主机名等基础信息 (参考 [`AgentHandshake`](proto/server.proto:359) 中可能包含的字段)。
+        *   使用 `sysinfo` 或类似库采集：
+            *   CPU 使用率 (总览及核心)。
+            *   内存使用率 (总内存、已用、可用)。
+            *   磁盘空间使用率 (主要挂载点)。
+            *   网络流量 (总收发，可能需要区分接口，参考 [`NetworkInterfaceStats`](proto/server.proto:76))。
+            *   磁盘 I/O (读/写速率，参考 [`DiskUsage`](proto/server.proto:68) 中可能包含的指标)。
+        *   将采集到的数据封装成 [`PerformanceSnapshot`](proto/server.proto:86) 结构。
+        *   通过 gRPC 流的 `MessageToServer` (包含 `PerformanceSnapshotBatch`) 发送给 Server。
+        *   *学习重点：Rust 系统信息采集, 数据结构化。*
+    2.  **Server - 数据接收、存储与 API (基于 [`proto/server.proto`](proto/server.proto:0))** (14天)
+        *   扩展 gRPC 服务，接收 Agent 发送的 `PerformanceSnapshotBatch`。
+        *   数据校验与初步处理。
+        *   将 VPS 基础信息存入 `vps` 表。
+        *   将性能数据存入 `performance_metrics` 表 (考虑时序特性，初期可简化)。
+        *   实现基础的 RESTful API (使用选定的 Rust Web 框架)：
+            *   用户注册/登录 (简单实现)。
+            *   `POST /api/vps` (添加 VPS，记录 Agent 关联信息)。
+            *   `GET /api/vps` (获取 VPS 列表)。
+            *   `GET /api/vps/{id}/metrics/realtime` (准备用于 WebSocket 推送)。
+        *   *学习重点：Rust Web API 开发, 数据库操作, gRPC 服务端逻辑。*
+    3.  **Frontend - VPS 列表与实时监控展示** (21天)
+        *   实现用户登录/注册页面。
+        *   实现 VPS 管理页面：
+            *   表单添加新的 VPS (IP, 名称, Agent 连接密钥等)。
+            *   列表展示已添加的 VPS 及其基本状态 (从 Server API 获取)。
+        *   实现 VPS 详情页：
+            *   通过 WebSocket 连接 Server (Server 端需实现 WebSocket 推送逻辑，将接收到的 Agent 数据转发)。
+            *   使用图表库 (如 Recharts) 实时展示核心性能指标 (CPU, 内存, 网络, 磁盘)。
+        *   *学习重点：React 组件开发, 状态管理, API 调用, WebSocket, 图表库使用。*
+    4.  **MVP 功能集成与测试** (7天)
+        *   端到端测试：Agent 采集 -> Server 接收存储 -> Frontend 展示。
+        *   修复 Bug，优化基本流程。
 
-**阶段 6: 优化、测试与文档 (持续进行，但此阶段重点投入)**
+**阶段 2: 监控增强与 Agent 控制 (预计 4-6 周)**
 
-1.  **性能优化**:
-    *   Agent 资源占用优化 (CPU, 内存, 二进制大小)。
-    *   Server 端 API 响应速度优化。
-    *   数据库查询优化。
-2.  **安全性加固**:
-    *   代码审计，依赖项安全扫描。
-    *   加强认证授权机制。
-    *   防止常见 Web 攻击 (XSS, CSRF, SQL注入等)。
-3.  **全面测试**:
-    *   单元测试、集成测试、端到端测试。
-    *   压力测试。
-4.  **用户文档编写**:
-    *   安装部署指南。
-    *   用户手册。
-    *   API 文档 (如果需要对外开放)。
-5.  **完善 CI/CD**:
-    *   自动化测试、自动化部署。
-6.  **用户体验 (UX) 改进**:
-    *   根据内测或早期用户反馈，优化前端界面和交互流程。
+*   **目标**：增加 Docker 监控，并实现 Server 对 Agent 的基本控制能力。
+*   **任务**：
+    1.  **Agent - Docker 基础监控** (10天)
+        *   使用 `bollard` 库采集 VPS 上的 Docker 容器列表。
+        *   采集各容器的 CPU、内存使用情况、状态 (参考 [`DockerContainerInfo`](proto/server.proto:139))。
+        *   将 Docker 数据封装并通过 gRPC 上报。
+        *   *学习重点：Rust Docker API 交互 (`bollard`)。*
+    2.  **Server - Docker 数据处理与控制 API** (10天)
+        *   gRPC 服务接收 Docker 数据，存入 `docker_containers` 和 `docker_metrics` 表。
+        *   API 扩展：
+            *   `GET /api/vps/{id}/docker/containers`
+            *   `POST /api/vps/{id}/docker/containers/{container_id}/start` (等操作)
+        *   实现通过 gRPC 向 Agent 发送 `CommandRequest` (封装 Docker 操作指令)。
+    3.  **Frontend - Docker 监控展示与基础操作** (10天)
+        *   在 VPS 详情页展示 Docker 容器列表及其状态、资源使用。
+        *   提供操作按钮 (启动, 停止, 重启容器)，调用 Server API。
+    4.  **Agent - 接收并执行简单指令** (7天)
+        *   扩展 Agent gRPC 客户端，能接收 Server 发来的 `CommandRequest`。
+        *   解析指令，执行简单的 Shell 命令 (如 `ping`) 或 Docker 命令。
+        *   将执行结果通过 `CommandResponse` 返回给 Server。
+        *   *学习重点：Agent 端命令执行与响应逻辑。*
+
+**阶段 3: 历史数据与基础告警 (预计 4-6 周)**
+
+*   **目标**：实现历史性能数据查看和简单的 VPS 离线告警。
+*   **任务**：
+    1.  **历史性能数据查询与展示** (14天)
+        *   Server API 支持按时间范围查询 `performance_metrics` 和 `docker_metrics`。
+        *   Frontend 实现历史数据图表展示，支持选择时间范围。
+        *   *学习重点：数据库时序数据查询优化 (PostgreSQL 分区表概念学习), 前端数据可视化。*
+    2.  **基础告警逻辑 (VPS 离线)** (10天)
+        *   Server 端检测 Agent 心跳超时 (基于 gRPC 流的健康检查或 [`Heartbeat`](proto/server.proto:365) 消息)。
+        *   记录 VPS 离线事件。
+    3.  **邮件通知功能集成** (7天)
+        *   Server 端集成邮件发送库 (如 `lettre`)。
+        *   当 VPS 离线/恢复在线时，发送邮件通知。
+        *   Frontend 提供简单的通知配置。
+
+**阶段 4: 任务系统初步 (预计 4-5 周)**
+
+*   **目标**：构建一个基础的任务调度系统，Agent 能执行简单脚本。
+*   **任务**：
+    1.  **Agent - 执行简单脚本能力** (7天)
+        *   增强 Agent 的 `CommandRequest` 处理能力，支持执行指定的脚本内容或路径。
+    2.  **Server - 简单任务定义与调度** (10天)
+        *   数据库设计 `tasks` 和 `task_runs` 表。
+        *   API 支持创建/管理任务 (如定时 Ping)。
+        *   使用 `tokio-cron-scheduler` 或类似库实现任务调度逻辑。
+    3.  **Frontend - 任务创建与查看** (10天)
+        *   界面创建/编辑任务。
+        *   展示任务列表和执行历史/结果。
+
+**阶段 5 及后续: 高级功能、优化与扩展 (持续)**
+
+*   **目标**：逐步实现架构设计中的其他高级功能，并持续优化。
+*   **任务 (根据优先级和精力选择)**：
+    *   **Webshell 与文件管理** (参考架构文档 [`docs/arch_design.md#31-agent-客户端`](docs/arch_design.md:177) 和 [`docs/arch_design.md#32-server-服务端`](docs/arch_design.md:193) 中对 PTY 和文件代理的描述，以及 [`proto/server.proto`](proto/server.proto:0) 中的 `PtyDataToServer` / `PtyDataToAgent` 定义)
+    *   **Ansible 集成**
+    *   **高级告警系统**
+    *   **MCP Server 实现** (参考 [`docs/arch_design.md#53-mcp-server-api-ai-客户端`](docs/arch_design.md:346))
+    *   **流媒体解锁与 IP 风险检测**
+    *   **对接商家后台**
+    *   **安全性加固与性能优化** (持续)
+    *   **文档完善与测试覆盖** (持续)
+    *   **Agent 轻量化与插件化重构** (参考架构文档 [`docs/arch_design.md#31-agent-客户端`](docs/arch_design.md:177) 和 [`docs/dev_plan.md`](docs/dev_plan.md) 阶段5)
