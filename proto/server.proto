@@ -1,0 +1,269 @@
+syntax = "proto3";
+
+package agent_service;
+
+enum OsType {
+  OS_UNKNOWN = 0;
+  OS_LINUX = 1;
+  OS_WINDOWS = 2;
+  OS_MACOS = 3;
+}
+
+message AgentRegisterRequest {
+  uint64 id = 1; // Agent's unique identifier, can be hardware-based or generated
+  string name = 2; // User-defined name for the agent/server
+  string version = 3; // Agent software version
+  OsType os_type = 4;
+  string os_name = 5; // e.g., "Ubuntu 22.04 LTS"
+  string arch = 6; // e.g., "x86_64", "aarch64"
+  repeated string ip_addresses = 7;
+}
+
+message AgentRegisterResponse {
+  bool success = 1;
+  string agent_secret = 2; // Secret for subsequent authenticated calls (if applicable)
+  uint64 assigned_agent_id = 3; // Server-assigned ID, if different from request or for confirmation
+}
+
+// Enum for Agent Status
+enum AgentStatus {
+  AGENT_STATUS_UNKNOWN = 0;
+  AGENT_STATUS_OK = 1;        // Agent is running normally
+  AGENT_STATUS_WARNING = 2;   // Agent has some non-critical issues
+  AGENT_STATUS_ERROR = 3;     // Agent has critical issues
+  AGENT_STATUS_STOPPED = 4;   // Agent is stopped/shutting down
+}
+
+message HeartbeatRequest {
+  uint64 agent_id = 1;          // Registered Agent ID (assigned_agent_id from registration)
+  AgentStatus agent_status = 2; // Current status of the agent
+  int64 timestamp = 3;          // Agent local timestamp (Unix epoch in seconds)
+}
+
+message HeartbeatResponse {
+  bool success = 1;
+  int64 server_timestamp = 2; // Server timestamp (Unix epoch in seconds), can be used for clock sync or logging
+  // string next_action_hint = 3; // Optional: Server can suggest next actions, e.g., "UPLOAD_METRICS"
+}
+
+// Represents a single metric value of different types
+message MetricValue {
+  oneof value_type {
+    double double_value = 1;
+    int64 int64_value = 2;
+    string string_value = 3;
+    bool bool_value = 4;
+    // Potentially bytes_value for binary data if needed
+  }
+}
+
+// Represents a single metric data point
+message Metric {
+  string name = 1;                 // e.g., "cpu.usage.percent", "memory.available_bytes"
+  int64 timestamp = 2;             // Unix epoch in seconds when the metric was collected
+  MetricValue value = 3;           // The actual metric value
+  map<string, string> tags = 4;    // Optional tags/labels for the metric, e.g., {"core": "0", "interface": "eth0"}
+}
+
+// Request to upload a batch of metrics
+message UploadMetricsRequest {
+  uint64 agent_id = 1;        // Registered Agent ID
+  repeated Metric metrics = 2; // Batch of metrics to upload
+}
+
+// Response for metrics upload
+message UploadMetricsResponse {
+  bool success = 1;
+  uint32 processed_count = 2; // Number of metrics successfully processed by the server
+  // repeated string errors = 3; // Optional: List of errors for metrics that failed processing
+}
+
+// Docker related messages
+message PortMapping {
+  string ip = 1;
+  uint32 private_port = 2;
+  uint32 public_port = 3;
+  string type = 4; // e.g., "tcp", "udp"
+}
+
+message MountPoint {
+  string type = 1;        // e.g., "bind", "volume", "tmpfs"
+  string source = 2;      // Source path on the host
+  string destination = 3; // Destination path in the container
+  string mode = 4;        // e.g., "ro", "rw"
+  bool rw = 5;
+  string propagation = 6; // e.g., "rprivate"
+}
+
+message DockerContainerInfo {
+  string id = 1;                        // Container ID
+  repeated string names = 2;            // Container names
+  string image = 3;                     // Image name
+  string image_id = 4;                  // Image ID
+  string command = 5;                   // Command
+  int64 created = 6;                    // Creation timestamp (Unix epoch seconds)
+  string state = 7;                     // e.g., "running", "exited", "paused"
+  string status = 8;                    // e.g., "Up 2 hours", "Exited (0) 5 minutes ago"
+  repeated PortMapping ports = 9;       // Port mappings
+  map<string, string> labels = 10;     // Labels
+  repeated MountPoint mounts = 11;      // Mount points
+  map<string, string> network_settings_networks = 12; // Simplified network info: map of network name to network ID
+}
+
+// Request to upload a batch of Docker container information
+message UploadDockerInfoRequest {
+  uint64 agent_id = 1;                                // Registered Agent ID
+  repeated DockerContainerInfo containers_info = 2;   // Batch of Docker container info
+}
+
+// Response for Docker information upload
+message UploadDockerInfoResponse {
+  bool success = 1;
+  uint32 processed_count = 2; // Number of container infos successfully processed
+  // repeated string errors = 3; // Optional: List of errors for infos that failed processing
+}
+
+// Command Execution related messages
+enum CommandType {
+  COMMAND_TYPE_UNKNOWN = 0;
+  COMMAND_TYPE_SHELL = 1;         // Execute a shell command
+  COMMAND_TYPE_DOCKER_START = 2;  // Start a Docker container
+  COMMAND_TYPE_DOCKER_STOP = 3;   // Stop a Docker container
+  COMMAND_TYPE_DOCKER_RESTART = 4;// Restart a Docker container
+  COMMAND_TYPE_DOCKER_LOGS = 5;   // Get Docker container logs
+  COMMAND_TYPE_PING = 6;          // Simple ping to check agent responsiveness to commands
+  // Add more specific command types as needed
+}
+
+message ExecuteCommandRequest {
+  uint64 agent_id = 1;                   // Registered Agent ID
+  string command_id = 2;                 // Unique ID for this command, generated by server for tracking
+  CommandType command_type = 3;          // Type of command to execute
+  string command_line = 4;               // The command string itself (e.g. "ls -la", "container_id_or_name")
+  map<string, string> arguments = 5;   // Additional arguments (e.g. for docker logs: {"tail": "100"})
+  uint32 timeout_seconds = 6;            // Optional: command execution timeout
+}
+
+message ExecuteCommandResponse {
+  string command_id = 1;        // Corresponds to the request's command_id
+  bool success = 2;             // True if the command was accepted/initiated by the agent
+  int32 exit_code = 3;          // Exit code of the command, if applicable
+  string stdout = 4;            // Standard output of the command
+  string stderr = 5;            // Standard error of the command
+  string error_message = 6;     // Agent-side error message if command initiation failed
+}
+
+// Webshell / PTY Streaming related messages
+message PtyResize {
+  uint32 rows = 1;
+  uint32 cols = 2;
+  // uint32 x_pixels = 3; // Optional
+  // uint32 y_pixels = 4; // Optional
+}
+
+message PtyStartRequest {
+  uint64 agent_id = 1;                // Registered Agent ID
+  string session_id = 2;              // Unique ID for this PTY session, generated by server
+  string shell = 3;                   // Shell to use (e.g., "bash", "sh", "powershell"), empty for default
+  PtyResize initial_size = 4;         // Initial terminal size
+  map<string, string> env_vars = 5; // Optional environment variables for the PTY session
+  string working_directory = 6;       // Optional: working directory for the PTY session
+}
+
+message PtyStreamMessage {
+  oneof event {
+    PtyStartRequest start_request = 1; // First message from client (server-side) to agent
+    bytes input_data = 2;              // Data from client (server-side) to PTY stdin
+    bytes output_data = 3;             // Data from PTY stdout/stderr to client (server-side)
+    PtyResize resize_event = 4;        // Client (server-side) requests PTY resize
+    string error_message = 5;          // Agent PTY error to client (server-side)
+    bool close_signal = 6;             // Signal to close the PTY stream (can be sent by either side)
+  }
+}
+
+// File Management related messages
+enum FileOperationType {
+  FILE_OPERATION_UNKNOWN = 0;
+  FILE_OPERATION_LIST_DIRECTORY = 1;
+  FILE_OPERATION_GET_FILE_CHUNK = 2;
+  FILE_OPERATION_PUT_FILE_CHUNK = 3;
+  FILE_OPERATION_DELETE = 4; // Can be file or directory (if empty or recursive flag set)
+  FILE_OPERATION_STAT = 5;
+  FILE_OPERATION_CREATE_DIRECTORY = 6;
+  FILE_OPERATION_MOVE = 7; // Rename or move
+}
+
+enum FileType {
+  FILE_TYPE_UNKNOWN = 0;
+  FILE_TYPE_FILE = 1;
+  FILE_TYPE_DIRECTORY = 2;
+  FILE_TYPE_SYMLINK = 3;
+  FILE_TYPE_OTHER = 4;
+}
+
+message FileStat {
+  string name = 1;            // File or directory name
+  string path = 2;            // Full path
+  FileType file_type = 3;
+  int64 size_bytes = 4;       // Size in bytes (0 for directories on some systems)
+  uint32 mode = 5;            // POSIX permissions (e.g., 0755)
+  int64 modified_time = 6;    // Last modification time (Unix epoch seconds)
+  int64 access_time = 7;      // Last access time (Unix epoch seconds)
+  // bool is_readonly = 8;    // Simplified readonly flag, derived from permissions if possible
+  string user = 9;            // Owner user name
+  string group = 10;          // Owner group name
+}
+
+message ManageFileRequest {
+  uint64 agent_id = 1;
+  string request_id = 2;          // Unique ID for this file operation sequence, generated by server
+  FileOperationType operation = 3;
+  string path = 4;                // Target path for the operation
+
+  // For MOVE operation
+  string destination_path = 5;
+
+  // For PUT_FILE_CHUNK
+  bytes data_chunk = 6;
+  int64 offset = 7;               // Offset for PUT_FILE_CHUNK and GET_FILE_CHUNK
+  bool is_last_chunk = 8;         // For PUT_FILE_CHUNK, indicates if this is the final chunk
+
+  // For GET_FILE_CHUNK
+  uint32 chunk_size_request = 9;  // Requested chunk size for GET_FILE_CHUNK
+
+  // For CREATE_DIRECTORY, PUT_FILE_CHUNK (implicitly creates parent dirs)
+  bool create_parents = 10;
+
+  // For DELETE (if it's a directory)
+  bool recursive_delete = 11;
+}
+
+message ManageFileResponse {
+  string request_id = 1;      // Corresponds to the request's request_id
+  bool success = 2;
+  string error_message = 3;
+
+  // For STAT operation
+  FileStat file_stat = 4;
+
+  // For LIST_DIRECTORY operation
+  repeated FileStat directory_listing = 5;
+
+  // For GET_FILE_CHUNK operation
+  bytes data_chunk = 6;
+  int64 offset = 7;           // Offset of the returned data_chunk
+  bool is_eof = 8;            // True if this is the last chunk of the file
+
+  // For PUT_FILE_CHUNK operation
+  int64 bytes_written_total = 9; // Total bytes written to the file so far
+}
+
+service AgentService {
+  rpc Register(AgentRegisterRequest) returns (AgentRegisterResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc UploadMetrics(UploadMetricsRequest) returns (UploadMetricsResponse);
+  rpc UploadDockerInfo(UploadDockerInfoRequest) returns (UploadDockerInfoResponse);
+  rpc ExecuteCommand(ExecuteCommandRequest) returns (ExecuteCommandResponse);
+  rpc StreamPty(stream PtyStreamMessage) returns (stream PtyStreamMessage);
+  rpc ManageFile(ManageFileRequest) returns (ManageFileResponse); // Could be a stream for transfers later
+}
