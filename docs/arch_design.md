@@ -18,7 +18,7 @@
   - [3.5. Message Queue (消息队列 - 可选/后期引入)](#35-message-queue-消息队列---可选后期引入)
 - [4. 数据模型设计](#4-数据模型设计)
   - [4.1. 核心实体](#41-核心实体)
-  - [4.2. 主要数据表 (示例 - PostgreSQL)](#42-主要数据表-示例---postgresql)
+  - [4.2. 主要数据表 (示例 - TimescaleDB on PostgreSQL)](#42-主要数据表-示例---timescaledb-on-postgresql)
 - [5. 接口设计](#5-接口设计)
   - [5.1. Agent \<-\> Server 通信](#51-agent---server-通信)
   - [5.2. Frontend \<-\> Server API](#52-frontend---server-api)
@@ -90,7 +90,7 @@ graph TD
     end
 
     subgraph Data Persistence
-        DB[(Database: PostgreSQL)]
+        DB[(Database: TimescaleDB (on PostgreSQL))]
     end
 
     subgraph Monitored VPS
@@ -165,8 +165,8 @@ graph TD
     *   收集系统性能数据、Docker 信息。
     *   执行来自 Server 的命令 (Ping, 脚本, Docker 操作, Webshell, 文件管理)。
     *   上报数据和状态给 Server。
-*   **Database (PostgreSQL)**:
-    *   存储时序性能数据 (CPU, 内存, IO, 网络等)。
+*   **Database (TimescaleDB on PostgreSQL)**:
+    *   利用 TimescaleDB 高效存储和查询时序性能数据 (CPU, 内存, IO, 网络等)。
     *   存储关系型数据 (VPS 配置, 用户信息, 任务定义, 告警规则, Docker 元数据等)。
 *   **Ansible Engine**: (可选集成) 由 Task Service 调用，用于在 VPS 上执行复杂的配置管理和自动化任务。
 *   **Notification Gateway**: 负责将告警信息通过不同渠道 (Email, Slack, Telegram等) 发送给用户。
@@ -235,15 +235,15 @@ graph TD
 
 ### 3.4. Database (数据库)
 
-*   **技术选型**: **PostgreSQL**。
+*   **技术选型**: **TimescaleDB** (作为 PostgreSQL 的扩展)。
 *   **数据类型**:
-    *   **时序数据**: 性能指标 (CPU, 内存, IO, 网络, Docker 容器指标)。对于这类数据，在 PostgreSQL 中可以考虑使用分区表 (例如按时间范围分区) 和适当的索引策略进行优化。
+    *   **时序数据**: 性能指标 (CPU, 内存, IO, 网络, Docker 容器指标)。TimescaleDB 自动处理时序数据的分区 (hypertables) 和索引优化，简化管理并提升性能。
     *   **关系型数据**: VPS 配置信息, 用户账户, 任务定义, 告警规则, Docker 元数据, IP 检测历史, 流量统计等。
 *   **关键设计**:
-    *   合理的表分区策略 (例如按时间范围分区)。
-    *   数据保留策略 (通过定期任务或脚本) 自动清理过期数据。
-    *   适当的索引 (例如在时间戳和 VPS ID 字段上) 以优化查询性能。
-    *   (可选) PostgreSQL 的表压缩或列压缩特性 (如果适用，例如使用 TOAST 压缩大字段，或考虑 ZFS 等文件系统层面的压缩)。
+    *   TimescaleDB 的 hypertables 自动管理分区。
+    *   数据保留策略可以通过 TimescaleDB 的内置函数 (如 `drop_chunks`) 或策略进行配置。
+    *   TimescaleDB 自动为时序数据创建优化的索引。
+    *   TimescaleDB 提供内置的压缩功能，可以显著减少存储空间占用。
 
 ### 3.5. Message Queue (消息队列 - 可选/后期引入)
 
@@ -270,13 +270,13 @@ graph TD
 *   `IPCheckResult`: IP 风险或流媒体解锁检测结果。
 *   `TrafficRecord`: VPS 流量记录。
 
-### 4.2. 主要数据表 (示例 - PostgreSQL)
+### 4.2. 主要数据表 (示例 - TimescaleDB on PostgreSQL)
 
 *   `users (id, username, password_hash, email, created_at, updated_at)`
 *   `vps (id, user_id, name, ip_address, os_type, agent_secret, status, metadata jsonb, created_at, updated_at)` (metadata 存商家信息等)
-*   `performance_metrics (time TIMESTAMPTZ, vps_id INT, cpu_usage FLOAT, mem_usage FLOAT, disk_io_read BIGINT, disk_io_write BIGINT, net_rx BIGINT, net_tx BIGINT)` *(此表存储核心性能指标。对于时序数据，需考虑使用 PostgreSQL 的分区表功能，并对 `(vps_id, time)` 创建索引。Agent 上报的完整性能数据结构请参考 [`PerformanceSnapshot`](proto/server.proto:86) 定义，其中包含更详细的磁盘使用情况 ([`DiskUsage`](proto/server.proto:68)) 和网络接口统计 ([`NetworkInterfaceStats`](proto/server.proto:76)))*
+*   `performance_metrics (time TIMESTAMPTZ, vps_id INT, cpu_usage FLOAT, mem_usage FLOAT, disk_io_read BIGINT, disk_io_write BIGINT, net_rx BIGINT, net_tx BIGINT)` *(此表将转换为 TimescaleDB hypertable，按 `time` 列分区。索引会自动或可以针对 `(vps_id, time)` 进行优化。Agent 上报的完整性能数据结构请参考 [`PerformanceSnapshot`](proto/server.proto:86) 定义，其中包含更详细的磁盘使用情况 ([`DiskUsage`](proto/server.proto:68)) 和网络接口统计 ([`NetworkInterfaceStats`](proto/server.proto:76)))*
 *   `docker_containers (id, vps_id, container_id_on_host, name, image, status, created_at_on_host, created_at, updated_at)` *(此表存储 Docker 容器的元数据。完整的容器信息，包括实时指标，由 Agent 通过 [`DockerContainerInfo`](proto/server.proto:139) 上报。该消息中的静态信息如 `id`, `names`, `image`, `labels`, `mounts` 等可映射至此表或扩展字段。)*
-*   `docker_metrics (time TIMESTAMPTZ, container_db_id INT, cpu_usage FLOAT, mem_usage FLOAT)` *(此表存储 Docker 容器的时序性能指标。对于时序数据，需考虑使用 PostgreSQL 的分区表功能，并对 `(container_db_id, time)` 创建索引。数据来源于 Agent 上报的 [`DockerContainerInfo`](proto/server.proto:139) 中的指标字段，如 `cpu_usage_percent`, `memory_usage_bytes` 等。)*
+*   `docker_metrics (time TIMESTAMPTZ, container_db_id INT, cpu_usage FLOAT, mem_usage FLOAT)` *(此表将转换为 TimescaleDB hypertable，按 `time` 列分区。索引会自动或可以针对 `(container_db_id, time)` 进行优化。数据来源于 Agent 上报的 [`DockerContainerInfo`](proto/server.proto:139) 中的指标字段，如 `cpu_usage_percent`, `memory_usage_bytes` 等。)*
 *   `tasks (id, user_id, vps_id_target, name, type, schedule_cron, command_payload jsonb, ansible_playbook_path, created_at, updated_at, last_run_at, next_run_at)`
 *   `task_runs (id, task_id, status, start_time, end_time, output TEXT)`
 *   `alert_rules (id, user_id, vps_id, metric_type, threshold, comparison_operator, duration_seconds, notification_channel, created_at, updated_at)`
@@ -358,7 +358,7 @@ graph TD
 
 *   **Backend**: Rust, Actix Web / Axum, Tokio, SQLx, Tonic (gRPC).
 *   **Frontend**: React, TypeScript, Vite, Zustand/RTK, Axios/React-Query, Recharts/Nivo, Xterm.js.
-*   **Database**: PostgreSQL.
+*   **Database**: TimescaleDB (on PostgreSQL).
 *   **Agent**: Rust, sysinfo, bollard, Tonic/reqwest.
 *   **Message Queue (可选)**: NATS.
 *   **Deployment**: Docker, Docker Compose (Nginx for reverse proxy if needed).
@@ -367,12 +367,12 @@ graph TD
 
 *   **Single Server Deployment**:
     *   Server Application (Rust binary) 运行在一个或多个 Docker 容器中。
-    *   PostgreSQL 运行在独立的 Docker 容器或专用服务器上。
+    *   TimescaleDB (运行在 PostgreSQL 之上) 运行在独立的 Docker 容器或专用服务器上。
     *   Nginx (可选) 作为反向代理，处理 SSL 终止和静态文件服务。
     *   Agent 直接安装在被监控的 VPS 上。
 *   **Scaled Deployment (未来)**:
     *   Server Application 可以水平扩展多个实例，通过负载均衡器分发请求。
-    *   数据库集群 (e.g., Patroni for PostgreSQL high availability).
+    *   数据库集群 (e.g., Patroni for PostgreSQL high availability, TimescaleDB 支持多节点部署以实现水平扩展和高可用性)。
     *   如果使用消息队列，MQ 集群。
 
 ```mermaid
@@ -382,7 +382,7 @@ graph LR
     Nginx --> ServerAppContainer2["Server App (Rust) Docker C2"]
     Nginx --> ServerAppContainerN["Server App (Rust) Docker CN"]
 
-    ServerAppContainer1 --> DB[(PostgreSQL)]
+    ServerAppContainer1 --> DB[(TimescaleDB on PostgreSQL)]
     ServerAppContainer2 --> DB
     ServerAppContainerN --> DB
 
@@ -405,7 +405,7 @@ graph LR
 
 ### 8.2. 历史数据存储与查询
 
-PostgreSQL 配合适当的表分区 (例如按时间范围对指标数据进行分区) 和索引策略，可以支持时序数据的高效范围查询和聚合。数据保留策略需要通过自定义脚本或 PostgreSQL 的分区管理工具来实现，以管理存储空间。
+TimescaleDB (作为 PostgreSQL 的扩展) 专为时序数据设计，通过其 hypertables 自动处理分区和索引优化，能够高效支持范围查询和聚合。TimescaleDB 还提供了内置的数据保留策略和压缩功能，简化了管理并优化了存储。
 
 ### 8.3. 任务系统与 Ansible 集成
 
@@ -426,7 +426,7 @@ Task Service 负责调度。对于简单任务，Agent直接执行。对于复�
 
 *   **Agent**: Rust 编译优化，精简依赖，按需加载模块，高效序列化。
 *   **Server**: Rust 的高性能特性，异步处理。初期避免引入过多重量级中间件。
-*   **数据库**: PostgreSQL 配置优化 (例如调整 `shared_buffers`, `work_mem` 等参数，定期执行 `VACUUM` 和 `ANALYZE`)。
+*   **数据库**: TimescaleDB/PostgreSQL 配置优化 (例如调整 `shared_buffers`, `work_mem` 等参数，TimescaleDB 的特定调优参数，定期执行 `VACUUM` 和 `ANALYZE`)。
 
 ## 9. 非功能性需求
 
