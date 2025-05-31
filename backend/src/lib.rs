@@ -3,3 +3,5 @@ pub mod agent_service {
 }
 
 pub mod server;
+
+pub mod db;
