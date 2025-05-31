@@ -1,0 +1,15 @@
+syntax = "proto3";
+package agent_service;
+
+message AgentConfig {
+  uint32 metrics_collect_interval_seconds = 1;
+  uint32 metrics_upload_batch_max_size = 2;
+  uint32 metrics_upload_interval_seconds = 3;
+  uint32 docker_info_collect_interval_seconds = 4;
+  uint32 docker_info_upload_interval_seconds = 5;
+  uint32 generic_metrics_upload_batch_max_size = 6;
+  uint32 generic_metrics_upload_interval_seconds = 7;
+  map<string, string> feature_flags = 8;
+  string log_level = 9;
+  uint32 heartbeat_interval_seconds = 10;
+}

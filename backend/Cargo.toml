@@ -1,0 +1,18 @@
+[package]
+name = "backend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bytes = "1.10"
+prost = "0.13"
+tokio = { version = "1.45", features = ["macros", "rt-multi-thread", "sync"] } # Added "sync" for Mutex
+tonic = { version = "0.13", features = ["transport", "codegen", "prost"] }
+chrono = { version = "0.4", features = ["serde"] } # Added for timestamp generation
+futures-util = { version = "0.3" }
+tokio-stream = "0.1.17" # Added for stream utilities
+uuid = { version = "1.17.0", features = ["v4"] } # Added for UUID generation
+
+[build-dependencies]
+prost-build = "0.13"
+tonic-build = { version = "0.13", features = ["prost"] }

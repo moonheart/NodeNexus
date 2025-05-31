@@ -1,0 +1,98 @@
+syntax = "proto3";
+package agent_service;
+
+import "common.proto";
+
+enum CommandExecutionType {
+  CMD_EXEC_TYPE_UNSPECIFIED = 0;
+  CMD_EXEC_TYPE_SHELL = 1;
+  CMD_EXEC_TYPE_DOCKER_OPERATION = 2; 
+  CMD_EXEC_TYPE_FILE_MANAGEMENT = 3;
+}
+
+message DockerCommandPayload {
+  enum DockerAction {
+    DOCKER_ACTION_UNSPECIFIED = 0;
+    START_CONTAINER = 1;
+    STOP_CONTAINER = 2;
+    RESTART_CONTAINER = 3;
+    GET_CONTAINER_LOGS = 4;
+    REMOVE_CONTAINER = 5;
+  }
+  DockerAction action = 1;
+  string target_id = 2;
+  map<string, string> arguments = 3;
+}
+
+message FileManagementOperation {
+  enum FileAction {
+    FILE_ACTION_UNSPECIFIED = 0;
+    LIST_DIRECTORY = 1;
+    GET_FILE_CHUNK = 2;
+    PUT_FILE_CHUNK = 3;
+    DELETE_ITEM = 4;
+    STAT_ITEM = 5;
+    CREATE_DIRECTORY = 6;
+    MOVE_ITEM = 7;
+  }
+  FileAction action = 1;
+  string path = 2;
+  string destination_path = 3;
+  bytes data_chunk = 4;
+  int64 offset = 5;
+  bool is_last_chunk = 6;
+  uint32 chunk_size_request = 7;
+  bool create_parents_if_needed = 8;
+  bool recursive_delete = 9;
+}
+
+message CommandRequest {
+  string request_id = 1;
+  CommandExecutionType type = 2;
+  oneof payload {
+    string shell_command = 3;
+    DockerCommandPayload docker_command = 4;
+    FileManagementOperation file_operation = 5;
+  }
+  uint32 timeout_seconds = 7;
+  map<string, string> context_params = 8;
+}
+
+message FileStat {
+  string name = 1;
+  string path = 2;
+  enum ItemType {
+    ITEM_TYPE_UNSPECIFIED = 0;
+    ITEM_TYPE_FILE = 1;
+    ITEM_TYPE_DIRECTORY = 2;
+    ITEM_TYPE_SYMLINK = 3;
+    ITEM_TYPE_OTHER = 4;
+  }
+  ItemType item_type = 3;
+  int64 size_bytes = 4;
+  uint32 mode_permissions = 5;
+  int64 modified_time_unix_ms = 6;
+  int64 access_time_unix_ms = 7;
+  string owner_user = 8;
+  string owner_group = 9;
+}
+
+message FileManagementResult {
+  FileStat item_stat = 1;
+  repeated FileStat directory_listing = 2;
+  bytes data_chunk = 3;
+  int64 offset_returned = 4;
+  bool is_eof = 5;
+  int64 bytes_written_cumulative = 6;
+}
+
+message CommandResponse {
+  string request_id = 1;
+  bool success = 2;
+  string error_message = 3;
+  oneof result_payload {
+    string shell_output = 4;
+    int32 shell_exit_code = 5;
+    FileManagementResult file_result = 7;
+  }
+}

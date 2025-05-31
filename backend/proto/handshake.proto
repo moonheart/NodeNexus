@@ -1,0 +1,24 @@
+syntax = "proto3";
+package agent_service;
+
+import "common.proto";
+import "config.proto";
+
+message AgentHandshake {
+  string agent_id_hint = 1;
+  string agent_version = 2;
+  OsType os_type = 3;
+  string os_name = 4;
+  string arch = 5;
+  string hostname = 6;
+  string current_agent_secret = 7;
+}
+
+message ServerHandshakeAck {
+  bool authentication_successful = 1;
+  string error_message = 2;
+  string assigned_agent_id = 3;
+  AgentConfig initial_config = 4;
+  string new_agent_secret = 5;
+  int64 server_time_unix_ms = 6;
+}

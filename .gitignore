@@ -27,18 +27,18 @@ package-lock.json # 如果你使用 yarn.lock 或 pnpm-lock.yaml
 Thumbs.db
 ehthumbs.db
 
-# Rust specific (for agent/ and server/)
-# These should ideally be in agent/.gitignore and server/.gitignore if they were separate repos,
+# Rust specific (for agent/ and backend/)
+# These should ideally be in agent/.gitignore and backend/.gitignore if they were separate repos,
 # but for a monorepo, putting them at the root prefixed with the directory is also an option
 # or just relying on the global rules below.
 # agent/target/
-# server/target/
+# backend/target/
 
-# Cargo build artifacts (applies to both agent and server)
+# Cargo build artifacts (applies to both agent and backend)
 **/target/
 # Note: Cargo.lock is usually committed to version control for applications
 # to ensure reproducible builds. For libraries, it's often ignored.
-# Since server and agent are applications, you might want to commit their Cargo.lock files.
+# Since backend and agent are applications, you might want to commit their Cargo.lock files.
 # If you choose to ignore them globally (less common for apps):
 # Cargo.lock
 

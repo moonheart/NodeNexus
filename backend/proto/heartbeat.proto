@@ -1,0 +1,6 @@
+syntax = "proto3";
+package agent_service;
+
+message Heartbeat {
+  int64 timestamp_unix_ms = 1;
+}

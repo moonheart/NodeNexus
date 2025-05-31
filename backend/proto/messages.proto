@@ -1,0 +1,35 @@
+syntax = "proto3";
+package agent_service;
+
+import "handshake.proto";
+import "config.proto";
+import "metrics.proto";
+import "docker.proto";
+import "generic_metrics.proto";
+import "command.proto";
+import "pty.proto";
+import "heartbeat.proto";
+
+message MessageToServer {
+  uint64 client_message_id = 1;
+  oneof payload {
+    AgentHandshake agent_handshake = 2;
+    PerformanceSnapshotBatch performance_batch = 3;
+    DockerInfoBatch docker_batch = 4;
+    GenericMetricsBatch generic_metrics_batch = 5;
+    CommandResponse command_response = 6;
+    PtyDataToServer pty_data_to_server = 7;
+    Heartbeat heartbeat = 8;
+  }
+}
+
+message MessageToAgent {
+  uint64 server_message_id = 1;
+  oneof payload {
+    ServerHandshakeAck server_handshake_ack = 2;
+    AgentConfig agent_config = 3;
+    CommandRequest command_request = 4;
+    PtyDataToAgent pty_data_to_agent = 5;
+    Heartbeat heartbeat_request = 6;
+  }
+}

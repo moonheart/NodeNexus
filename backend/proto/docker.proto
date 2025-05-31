@@ -1,0 +1,58 @@
+syntax = "proto3";
+package agent_service;
+
+import "common.proto";
+
+enum DockerContainerStatus {
+  DOCKER_CONTAINER_STATUS_UNSPECIFIED = 0;
+  DOCKER_CONTAINER_STATUS_CREATED = 1;
+  DOCKER_CONTAINER_STATUS_RESTARTING = 2;
+  DOCKER_CONTAINER_STATUS_RUNNING = 3;
+  DOCKER_CONTAINER_STATUS_REMOVING = 4;
+  DOCKER_CONTAINER_STATUS_PAUSED = 5;
+  DOCKER_CONTAINER_STATUS_EXITED = 6;
+  DOCKER_CONTAINER_STATUS_DEAD = 7;
+}
+
+message DockerPortMapping {
+  string ip = 1;
+  uint32 private_port = 2;
+  uint32 public_port = 3;
+  string type = 4;
+}
+
+message DockerMountPoint {
+  string type = 1;
+  string source = 2;
+  string destination = 3;
+  string mode = 4;
+  bool rw = 5;
+  string propagation = 6;
+}
+
+message DockerContainerInfo {
+  string id = 1;
+  repeated string names = 2;
+  string image = 3;
+  string image_id = 4;
+  string command = 5;
+  int64 created_unix_s = 6;
+  DockerContainerStatus status = 7;
+  string status_string = 8;
+  repeated DockerPortMapping ports = 9;
+  map<string, string> labels = 10;
+  repeated DockerMountPoint mounts = 11;
+  map<string, string> network_settings_networks = 12;
+  float cpu_usage_percent = 13;
+  uint64 memory_usage_bytes = 14;
+  uint64 memory_limit_bytes = 15;
+  uint64 network_rx_bytes_total_cumulative = 16;
+  uint64 network_tx_bytes_total_cumulative = 17;
+  uint64 disk_read_bytes_total_cumulative = 18;
+  uint64 disk_write_bytes_total_cumulative = 19;
+  uint32 restarts_count = 20;
+}
+
+message DockerInfoBatch {
+  repeated DockerContainerInfo containers_info = 1;
+}

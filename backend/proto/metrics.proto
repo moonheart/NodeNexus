@@ -1,0 +1,46 @@
+syntax = "proto3";
+package agent_service;
+
+import "common.proto";
+
+message DiskUsage {
+  string mount_point = 1;
+  uint64 used_bytes = 2;
+  uint64 total_bytes = 3;
+  string fstype = 4;
+  double usage_percent = 5;
+}
+
+message NetworkInterfaceStats {
+  string interface_name = 1;
+  uint64 rx_bytes_per_sec = 2;
+  uint64 tx_bytes_per_sec = 3;
+  uint64 rx_packets_per_sec = 4;
+  uint64 tx_packets_per_sec = 5;
+  uint64 rx_errors_total_cumulative = 6;
+  uint64 tx_errors_total_cumulative = 7;
+}
+
+message PerformanceSnapshot {
+  int64 timestamp_unix_ms = 1;
+  float cpu_overall_usage_percent = 2;
+  uint64 memory_usage_bytes = 3;
+  uint64 memory_total_bytes = 4;
+  uint64 swap_usage_bytes = 5;
+  uint64 swap_total_bytes = 6;
+  uint64 disk_total_io_read_bytes_per_sec = 7;
+  uint64 disk_total_io_write_bytes_per_sec = 8;
+  repeated DiskUsage disk_usages = 9;
+  repeated NetworkInterfaceStats network_interface_stats = 10;
+  float load_average_one_min = 11;
+  float load_average_five_min = 12;
+  float load_average_fifteen_min = 13;
+  uint64 uptime_seconds = 14;
+  uint32 total_processes_count = 15;
+  uint32 running_processes_count = 16;
+  uint32 tcp_established_connection_count = 17;
+}
+
+message PerformanceSnapshotBatch {
+  repeated PerformanceSnapshot snapshots = 1;
+}

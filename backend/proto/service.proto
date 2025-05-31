@@ -1,0 +1,8 @@
+syntax = "proto3";
+package agent_service;
+
+import "messages.proto";
+
+service AgentCommunicationService {
+  rpc EstablishCommunicationStream(stream MessageToServer) returns (stream MessageToAgent);
+}

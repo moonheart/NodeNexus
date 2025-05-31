@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package agent_service;
+
+enum OsType {
+  OS_TYPE_UNSPECIFIED = 0;
+  OS_TYPE_LINUX = 1;
+  OS_TYPE_WINDOWS = 2;
+  OS_TYPE_MACOS = 3;
+  OS_TYPE_OTHER = 4;
+}
+
+enum AgentConnectionStatus {
+  AGENT_STATUS_UNSPECIFIED = 0;
+  AGENT_STATUS_CONNECTING = 1;
+  AGENT_STATUS_CONNECTED = 2;
+  AGENT_STATUS_DISCONNECTED = 3;
+  AGENT_STATUS_AUTH_FAILED = 4;
+  AGENT_STATUS_ERROR = 5;
+}
