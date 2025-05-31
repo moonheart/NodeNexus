@@ -10,8 +10,9 @@ tokio = { version = "1.45", features = ["macros", "rt-multi-thread", "sync"] } #
 tonic = { version = "0.13", features = ["transport", "codegen", "prost"] }
 chrono = { version = "0.4", features = ["serde"] } # Added for timestamp generation
 futures-util = { version = "0.3" }
-tokio-stream = "0.1.17" # Added for stream utilities
-uuid = { version = "1.17.0", features = ["v4"] } # Added for UUID generation
+tokio-stream = "0.1" # Added for stream utilities
+uuid = { version = "1.17", features = ["v4"] } # Added for UUID generation
+sysinfo = "0.35" # 添加系统信息收集库
 
 [build-dependencies]
 prost-build = "0.13"

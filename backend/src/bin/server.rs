@@ -8,7 +8,7 @@ use backend::agent_service::agent_communication_service_server::AgentCommunicati
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "[::1]:50051".parse()?;
+    let addr = "0.0.0.0:50051".parse()?;
     let connected_agents = ConnectedAgents::new(); // This returns Arc<Mutex<ConnectedAgents>>
     let agent_comm_service = MyAgentCommService::new(connected_agents);
 
