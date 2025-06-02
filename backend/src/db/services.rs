@@ -109,6 +109,206 @@ pub async fn update_vps_status(pool: &PgPool, vps_id: i32, status: &str) -> Resu
     Ok(rows_affected)
 }
 
+// --- PerformanceMetric Service Functions ---
+
+// /// Inserts a single performance metric snapshot.
+// /// This function is outdated due to changes in PerformanceMetric struct and table.
+// /// The new save_performance_snapshot_batch should be used for inserting metrics.
+// pub async fn insert_performance_metric(
+//     pool: &PgPool,
+//     metric: &super::models::PerformanceMetric,
+// ) -> Result<()> {
+//     sqlx::query!(
+//         r#"
+//         INSERT INTO performance_metrics (
+//             time, vps_id, cpu_usage_percent, memory_usage_bytes, memory_total_bytes,
+//             disk_io_read_bps, disk_io_write_bps, network_rx_bps, network_tx_bps
+//             // Note: This INSERT statement is missing new fields like id, swap, load_avg etc.
+//             // and would need to be updated if this function were to be used.
+//         )
+//         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+//         "#,
+//         metric.time,
+//         metric.vps_id,
+//         metric.cpu_usage_percent,
+//         metric.memory_usage_bytes,
+//         metric.memory_total_bytes,
+//         metric.disk_io_read_bps,
+//         metric.disk_io_write_bps,
+//         metric.network_rx_bps,
+//         metric.network_tx_bps
+//     )
+//     .execute(pool)
+//     .await?;
+//     Ok(())
+// }
+
+/// Retrieves performance metrics for a given VPS within a time range.
+pub async fn get_performance_metrics_for_vps(
+    pool: &PgPool,
+    vps_id: i32,
+    start_time: chrono::DateTime<chrono::Utc>,
+    end_time: chrono::DateTime<chrono::Utc>,
+) -> Result<Vec<super::models::PerformanceMetric>> {
+    sqlx::query_as!(
+        super::models::PerformanceMetric,
+        r#"
+        SELECT
+            id, time, vps_id, cpu_usage_percent, memory_usage_bytes, memory_total_bytes,
+            swap_usage_bytes, swap_total_bytes,
+            disk_io_read_bps, disk_io_write_bps, network_rx_bps, network_tx_bps,
+            load_average_one_min, load_average_five_min, load_average_fifteen_min,
+            uptime_seconds, total_processes_count, running_processes_count,
+            tcp_established_connection_count
+        FROM performance_metrics
+        WHERE vps_id = $1 AND time >= $2 AND time <= $3
+        ORDER BY time ASC
+        "#,
+        vps_id,
+        start_time,
+        end_time
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// Retrieves the latest performance metric for a given VPS.
+pub async fn get_latest_performance_metric_for_vps(
+    pool: &PgPool,
+    vps_id: i32,
+) -> Result<Option<super::models::PerformanceMetric>> {
+    sqlx::query_as!(
+        super::models::PerformanceMetric,
+        r#"
+        SELECT
+            id, time, vps_id, cpu_usage_percent, memory_usage_bytes, memory_total_bytes,
+            swap_usage_bytes, swap_total_bytes,
+            disk_io_read_bps, disk_io_write_bps, network_rx_bps, network_tx_bps,
+            load_average_one_min, load_average_five_min, load_average_fifteen_min,
+            uptime_seconds, total_processes_count, running_processes_count,
+            tcp_established_connection_count
+        FROM performance_metrics
+        WHERE vps_id = $1
+        ORDER BY time DESC
+        LIMIT 1
+        "#,
+        vps_id
+    )
+    .fetch_optional(pool)
+    .await
+}
+use crate::agent_service::PerformanceSnapshotBatch; // Corrected path for protobuf generated types
+use chrono::{TimeZone, Utc as ChronoUtc}; // Alias Utc from chrono to avoid conflict if any
+
+/// Saves a batch of performance snapshots for a given VPS.
+/// This includes the main metrics, detailed disk usage, and detailed network interface stats.
+pub async fn save_performance_snapshot_batch(
+    pool: &PgPool,
+    vps_id: i32,
+    batch: &PerformanceSnapshotBatch,
+) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    for snapshot in &batch.snapshots {
+        // Convert timestamp
+        let timestamp = ChronoUtc.timestamp_millis_opt(snapshot.timestamp_unix_ms).single()
+            .unwrap_or_else(|| ChronoUtc::now()); // Fallback to now if conversion fails, or handle error
+
+        // Calculate aggregate network stats
+        let mut total_network_rx_bps: i64 = 0;
+        let mut total_network_tx_bps: i64 = 0;
+        for net_stat in &snapshot.network_interface_stats {
+            total_network_rx_bps += net_stat.rx_bytes_per_sec as i64;
+            total_network_tx_bps += net_stat.tx_bytes_per_sec as i64;
+        }
+
+        // Insert into performance_metrics and get the ID
+        let metric_id = sqlx::query!(
+            r#"
+            INSERT INTO performance_metrics (
+                time, vps_id, cpu_usage_percent, memory_usage_bytes, memory_total_bytes,
+                swap_usage_bytes, swap_total_bytes,
+                disk_io_read_bps, disk_io_write_bps,
+                network_rx_bps, network_tx_bps,
+                load_average_one_min, load_average_five_min, load_average_fifteen_min,
+                uptime_seconds, total_processes_count, running_processes_count,
+                tcp_established_connection_count
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+            RETURNING id
+            "#,
+            timestamp,
+            vps_id,
+            snapshot.cpu_overall_usage_percent as f64, // proto is float, db is double precision
+            snapshot.memory_usage_bytes as i64,
+            snapshot.memory_total_bytes as i64,
+            snapshot.swap_usage_bytes as i64,
+            snapshot.swap_total_bytes as i64,
+            snapshot.disk_total_io_read_bytes_per_sec as i64,
+            snapshot.disk_total_io_write_bytes_per_sec as i64,
+            total_network_rx_bps,
+            total_network_tx_bps,
+            snapshot.load_average_one_min as f64,
+            snapshot.load_average_five_min as f64,
+            snapshot.load_average_fifteen_min as f64,
+            snapshot.uptime_seconds as i64,
+            snapshot.total_processes_count as i32,
+            snapshot.running_processes_count as i32,
+            snapshot.tcp_established_connection_count as i32
+        )
+        .fetch_one(&mut *tx) // Use &mut *tx for the executor
+        .await?
+        .id;
+
+        // Insert disk usages
+        for disk_usage in &snapshot.disk_usages {
+            sqlx::query!(
+                r#"
+                INSERT INTO performance_disk_usages (
+                    performance_metric_id, mount_point, used_bytes, total_bytes, fstype, usage_percent
+                )
+                VALUES ($1, $2, $3, $4, $5, $6)
+                "#,
+                metric_id,
+                disk_usage.mount_point,
+                disk_usage.used_bytes as i64,
+                disk_usage.total_bytes as i64,
+                disk_usage.fstype, // fstype is string in proto, Option<String> in model, TEXT in DB
+                disk_usage.usage_percent as f64
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        // Insert network interface stats
+        for net_stat in &snapshot.network_interface_stats {
+            sqlx::query!(
+                r#"
+                INSERT INTO performance_network_interface_stats (
+                    performance_metric_id, interface_name,
+                    rx_bytes_per_sec, tx_bytes_per_sec,
+                    rx_packets_per_sec, tx_packets_per_sec,
+                    rx_errors_total_cumulative, tx_errors_total_cumulative
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                "#,
+                metric_id,
+                net_stat.interface_name,
+                net_stat.rx_bytes_per_sec as i64,
+                net_stat.tx_bytes_per_sec as i64,
+                net_stat.rx_packets_per_sec as i64,
+                net_stat.tx_packets_per_sec as i64,
+                net_stat.rx_errors_total_cumulative as i64,
+                net_stat.tx_errors_total_cumulative as i64
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
 // TODO: Implement service functions for other models:
 // - PerformanceMetric (batch insert, query by time range)
 // - DockerContainer (create, update, get by vps_id)

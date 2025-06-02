@@ -1,6 +1,6 @@
 use axum::{
     extract::State,
-    http::{StatusCode, Method, HeaderValue}, // Added Method and HeaderValue
+    http::{StatusCode, Method}, // Added Method and HeaderValue
     response::{IntoResponse, Response},
     routing::{post, get}, // Added get
     Json,
@@ -9,10 +9,12 @@ use axum::{
 use sqlx::PgPool;
 use std::sync::Arc;
 use std::net::SocketAddr;
+use thiserror::Error;
 use tower_http::cors::{CorsLayer, Any}; // Added CorsLayer and Any
-use auth_logic::{AuthError, LoginRequest, RegisterRequest};
+use self::auth_logic::{LoginRequest, RegisterRequest};
 
 pub mod auth_logic;
+pub mod metrics_routes;
 
 // Application state to share PgPool
 #[derive(Clone)]
@@ -23,7 +25,7 @@ pub struct AppState {
 async fn register_handler(
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<RegisterRequest>,
-) -> Result<Json<auth_logic::UserResponse>, AppError> {
+) -> Result<Json<self::auth_logic::UserResponse>, AppError> {
     match auth_logic::register_user(&app_state.db_pool, payload).await {
         Ok(user_response) => Ok(Json(user_response)),
         Err(e) => Err(e.into()),
@@ -33,35 +35,50 @@ async fn register_handler(
 async fn login_handler(
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<LoginRequest>,
-) -> Result<Json<auth_logic::LoginResponse>, AppError> {
+) -> Result<Json<self::auth_logic::LoginResponse>, AppError> {
     match auth_logic::login_user(&app_state.db_pool, payload).await {
         Ok(login_response) => Ok(Json(login_response)),
         Err(e) => Err(e.into()),
     }
 }
 
-// Custom error type for Axum handlers
-struct AppError(AuthError);
+
+#[derive(Error, Debug)]
+pub enum AppError {
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+    #[error("User already exists: {0}")]
+    UserAlreadyExists(String),
+    #[error("User not found")]
+    UserNotFound,
+    #[error("Invalid credentials")]
+    InvalidCredentials,
+    #[error("Password hashing failed: {0}")]
+    PasswordHashingError(String),
+    #[error("JWT creation failed: {0}")]
+    TokenCreationError(String),
+    #[error("Database error: {0}")]
+    DatabaseError(String),
+    #[error("Internal server error: {0}")]
+    InternalServerError(String),
+    #[error("Server Error: {0}")]
+    ServerError(String),
+}
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, error_message) = match self.0 {
-            AuthError::InvalidInput(msg) => (StatusCode::BAD_REQUEST, msg),
-            AuthError::UserAlreadyExists(msg) => (StatusCode::CONFLICT, msg),
-            AuthError::UserNotFound => (StatusCode::UNAUTHORIZED, "无效凭据".to_string()), // Changed from NOT_FOUND
-            AuthError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "无效凭据".to_string()), // Ensured same message
-            AuthError::PasswordHashingError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Password hashing error: {}", msg)),
-            AuthError::TokenCreationError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Token creation error: {}", msg)),
-            AuthError::DatabaseError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", msg)),
-            AuthError::InternalServerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+        let (status, error_message) = match self {
+            AppError::InvalidInput(msg) => (StatusCode::BAD_REQUEST, msg),
+            AppError::UserAlreadyExists(msg) => (StatusCode::CONFLICT, msg),
+            AppError::UserNotFound => (StatusCode::UNAUTHORIZED, "无效凭据".to_string()), // Changed from NOT_FOUND
+            AppError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "无效凭据".to_string()), // Ensured same message
+            AppError::PasswordHashingError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Password hashing error: {}", msg)),
+            AppError::TokenCreationError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Token creation error: {}", msg)),
+            AppError::DatabaseError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", msg)),
+            AppError::InternalServerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+            AppError::ServerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
         };
         (status, Json(serde_json::json!({ "error": error_message }))).into_response()
-    }
-}
-
-impl From<AuthError> for AppError {
-    fn from(err: AuthError) -> Self {
-        AppError(err)
     }
 }
 
@@ -87,12 +104,13 @@ pub async fn run_http_server(db_pool: PgPool, http_addr: SocketAddr) -> Result<(
 
     let app_router = Router::new()
         .route("/api/health", get(health_check_handler))
-        .route("/login_test_simple", post(login_test_handler)) // New simple POST test at root
+        .route("/login_test_simple", post(login_test_handler))
         .route("/api/auth/login_test", post(login_test_handler))
         .route("/api/auth/register", post(register_handler))
         .route("/api/auth/login", post(login_handler))
+        .merge(metrics_routes::metrics_router()) // 合并指标路由
         .with_state(app_state.clone())
-        .layer(cors); // Add CORS layer
+        .layer(cors);
 
     println!("HTTP server listening on {}", http_addr);
     let listener = tokio::net::TcpListener::bind(http_addr).await?;

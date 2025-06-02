@@ -35,17 +35,26 @@ pub struct Vps {
 /// Note: `time` is the hypertable's time dimension.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct PerformanceMetric {
+    pub id: i32, // Primary key, added from migration
     pub time: DateTime<Utc>,
     pub vps_id: i32,
-    pub cpu_usage: f64, // Assuming FLOAT maps to f64
-    pub mem_usage: f64,
-    pub disk_io_read: i64,
-    pub disk_io_write: i64,
-    pub net_rx: i64,
-    pub net_tx: i64,
-    // According to arch_design.md, more details are in PerformanceSnapshot proto.
-    // For the DB model, we'll stick to the defined columns for now.
-    // Consider adding fields like `disk_usage_percent`, `load_average` if they become direct columns.
+    pub cpu_usage_percent: f64,
+    pub memory_usage_bytes: i64,
+    pub memory_total_bytes: i64,
+    pub swap_usage_bytes: i64,    // Added from migration
+    pub swap_total_bytes: i64,    // Added from migration
+    pub disk_io_read_bps: i64,
+    pub disk_io_write_bps: i64,
+    pub network_rx_bps: i64,      // This will be the sum from all interfaces
+    pub network_tx_bps: i64,      // This will be the sum from all interfaces
+    pub load_average_one_min: f64, // Added from migration
+    pub load_average_five_min: f64, // Added from migration
+    pub load_average_fifteen_min: f64, // Added from migration
+    pub uptime_seconds: i64,      // Added from migration
+    pub total_processes_count: i32, // Added from migration
+    pub running_processes_count: i32, // Added from migration
+    pub tcp_established_connection_count: i32, // Added from migration
+    // Note: Detailed disk and network stats are in separate tables.
 }
 
 /// Represents a Docker container on a VPS.
@@ -142,4 +151,32 @@ pub struct VpsMonthlyTraffic {
     pub month: chrono::NaiveDate, // DATE type
     pub total_rx: i64,
     pub total_tx: i64,
+}
+
+/// Represents detailed disk usage for a specific performance metric snapshot.
+/// Corresponds to the `performance_disk_usages` table.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct PerformanceDiskUsage {
+    pub id: i32,
+    pub performance_metric_id: i32,
+    pub mount_point: String,
+    pub used_bytes: i64,
+    pub total_bytes: i64,
+    pub fstype: Option<String>,
+    pub usage_percent: f64,
+}
+
+/// Represents detailed network interface statistics for a specific performance metric snapshot.
+/// Corresponds to the `performance_network_interface_stats` table.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct PerformanceNetworkInterfaceStat {
+    pub id: i32,
+    pub performance_metric_id: i32,
+    pub interface_name: String,
+    pub rx_bytes_per_sec: i64,
+    pub tx_bytes_per_sec: i64,
+    pub rx_packets_per_sec: i64,
+    pub tx_packets_per_sec: i64,
+    pub rx_errors_total_cumulative: i64,
+    pub tx_errors_total_cumulative: i64,
 }

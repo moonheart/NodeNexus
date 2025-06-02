@@ -9,6 +9,7 @@ use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
 use dotenv::dotenv;
 use std::env;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Added Send + Sync for tokio::spawn
@@ -22,13 +23,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         .connect(&database_url)
         .await
         .expect("Failed to create database pool.");
-
+    
     // --- gRPC Server Setup ---
     let grpc_addr: SocketAddr = "0.0.0.0:50051".parse()?;
     let connected_agents = ConnectedAgents::new();
     // If MyAgentCommService needs Arc<Mutex<ConnectedAgents>>, ensure it's cloned if necessary.
     // For now, assuming it takes ownership or a direct reference that's fine for one service instance.
-    let agent_comm_service = MyAgentCommService::new(connected_agents.clone());
+    let agent_comm_service = MyAgentCommService::new(connected_agents.clone(), Arc::from(db_pool.clone()));
     
     let grpc_service = AgentCommunicationServiceServer::new(agent_comm_service);
     let grpc_server_future = TonicServer::builder()

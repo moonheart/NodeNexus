@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RegisterRequest {
@@ -29,25 +28,6 @@ pub struct LoginResponse {
     pub email: String,
 }
 
-#[derive(Error, Debug)]
-pub enum AuthError {
-    #[error("Invalid input: {0}")]
-    InvalidInput(String),
-    #[error("User already exists: {0}")]
-    UserAlreadyExists(String),
-    #[error("User not found")]
-    UserNotFound,
-    #[error("Invalid credentials")]
-    InvalidCredentials,
-    #[error("Password hashing failed: {0}")]
-    PasswordHashingError(String),
-    #[error("JWT creation failed: {0}")]
-    TokenCreationError(String),
-    #[error("Database error: {0}")]
-    DatabaseError(String),
-    #[error("Internal server error: {0}")]
-    InternalServerError(String),
-}
 
 use sqlx::PgPool;
 use crate::db::models::User; // Assuming models.rs is in db module and User is public
@@ -55,6 +35,7 @@ use bcrypt::{hash, verify, DEFAULT_COST};
 use jsonwebtoken::{encode, EncodingKey, Header};
 use chrono::{Utc, Duration};
 use std::env;
+use crate::http_server::AppError;
 
 // JWT Claims structure
 #[derive(Debug, Serialize, Deserialize)]
@@ -75,36 +56,36 @@ fn get_jwt_secret() -> String {
     })
 }
 
-pub async fn register_user(pool: &PgPool, req: RegisterRequest) -> Result<UserResponse, AuthError> {
+pub async fn register_user(pool: &PgPool, req: RegisterRequest) -> Result<UserResponse, AppError> {
     if req.username.is_empty() || req.email.is_empty() || req.password.len() < 8 {
-        return Err(AuthError::InvalidInput("用户名、邮箱不能为空，密码至少需要8个字符。".to_string()));
+        return Err(AppError::InvalidInput("用户名、邮箱不能为空，密码至少需要8个字符。".to_string()));
     }
     if !req.email.contains('@') { // Basic email format check
-        return Err(AuthError::InvalidInput("无效的邮箱格式。".to_string()));
+        return Err(AppError::InvalidInput("无效的邮箱格式。".to_string()));
     }
 
     let existing_user_by_username: Option<User> = sqlx::query_as("SELECT id, username, email, password_hash, created_at, updated_at FROM users WHERE username = $1")
         .bind(&req.username)
         .fetch_optional(pool)
         .await
-        .map_err(|e| AuthError::DatabaseError(format!("检查用户名是否存在时出错: {}", e)))?;
+        .map_err(|e| AppError::DatabaseError(format!("检查用户名是否存在时出错: {}", e)))?;
 
     if existing_user_by_username.is_some() {
-        return Err(AuthError::UserAlreadyExists("用户名已被使用。".to_string()));
+        return Err(AppError::UserAlreadyExists("用户名已被使用。".to_string()));
     }
 
     let existing_user_by_email: Option<User> = sqlx::query_as("SELECT id, username, email, password_hash, created_at, updated_at FROM users WHERE email = $1")
         .bind(&req.email)
         .fetch_optional(pool)
         .await
-        .map_err(|e| AuthError::DatabaseError(format!("检查邮箱是否存在时出错: {}", e)))?;
+        .map_err(|e| AppError::DatabaseError(format!("检查邮箱是否存在时出错: {}", e)))?;
 
     if existing_user_by_email.is_some() {
-        return Err(AuthError::UserAlreadyExists("邮箱已被注册。".to_string()));
+        return Err(AppError::UserAlreadyExists("邮箱已被注册。".to_string()));
     }
 
     let password_hash = hash(&req.password, DEFAULT_COST)
-        .map_err(|e| AuthError::PasswordHashingError(format!("密码哈希失败: {}", e)))?;
+        .map_err(|e| AppError::PasswordHashingError(format!("密码哈希失败: {}", e)))?;
 
     let new_user_result = sqlx::query_as::<_, User>(
         "INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id, username, email, password_hash, created_at, updated_at"
@@ -121,13 +102,13 @@ pub async fn register_user(pool: &PgPool, req: RegisterRequest) -> Result<UserRe
             username: user.username,
             email: user.email,
         }),
-        Err(e) => Err(AuthError::DatabaseError(format!("创建用户失败: {}", e))),
+        Err(e) => Err(AppError::DatabaseError(format!("创建用户失败: {}", e))),
     }
 }
 
-pub async fn login_user(pool: &PgPool, req: LoginRequest) -> Result<LoginResponse, AuthError> {
+pub async fn login_user(pool: &PgPool, req: LoginRequest) -> Result<LoginResponse, AppError> {
     if req.email.is_empty() || req.password.is_empty() {
-        return Err(AuthError::InvalidInput("邮箱和密码不能为空。".to_string()));
+        return Err(AppError::InvalidInput("邮箱和密码不能为空。".to_string()));
     }
 
     let user_result = sqlx::query_as::<_, User>("SELECT id, username, email, password_hash, created_at, updated_at FROM users WHERE email = $1")
@@ -137,15 +118,15 @@ pub async fn login_user(pool: &PgPool, req: LoginRequest) -> Result<LoginRespons
 
     let user = match user_result {
         Ok(Some(u)) => u,
-        Ok(None) => return Err(AuthError::UserNotFound),
-        Err(e) => return Err(AuthError::DatabaseError(format!("查询用户失败: {}", e))),
+        Ok(None) => return Err(AppError::UserNotFound),
+        Err(e) => return Err(AppError::DatabaseError(format!("查询用户失败: {}", e))),
     };
 
     let valid_password = verify(&req.password, &user.password_hash)
-        .map_err(|e| AuthError::InternalServerError(format!("密码验证过程中出错: {}",e)))?;
+        .map_err(|e| AppError::InternalServerError(format!("密码验证过程中出错: {}",e)))?;
 
     if !valid_password {
-        return Err(AuthError::InvalidCredentials);
+        return Err(AppError::InvalidCredentials);
     }
 
     let now = Utc::now();
@@ -161,7 +142,7 @@ pub async fn login_user(pool: &PgPool, req: LoginRequest) -> Result<LoginRespons
 
     let jwt_secret = get_jwt_secret();
     let token = encode(&Header::default(), &claims, &EncodingKey::from_secret(jwt_secret.as_ref()))
-        .map_err(|e| AuthError::TokenCreationError(format!("生成Token失败: {}", e)))?;
+        .map_err(|e| AppError::TokenCreationError(format!("生成Token失败: {}", e)))?;
 
     Ok(LoginResponse {
         token,
