@@ -1,7 +1,8 @@
 use chrono::Utc;
 use sqlx::{PgPool, Result};
 use uuid::Uuid; // Added for generating agent_secret
-use super::models::{User, Vps};
+use super::models::{User, Vps, PerformanceMetric, AggregatedPerformanceMetric};
+use sqlx::postgres::types::PgInterval; // Added PgInterval
 
 // --- User Service Functions ---
 
@@ -157,27 +158,81 @@ pub async fn get_performance_metrics_for_vps(
     vps_id: i32,
     start_time: chrono::DateTime<chrono::Utc>,
     end_time: chrono::DateTime<chrono::Utc>,
-) -> Result<Vec<super::models::PerformanceMetric>> {
-    sqlx::query_as!(
-        super::models::PerformanceMetric,
-        r#"
-        SELECT
-            id, time, vps_id, cpu_usage_percent, memory_usage_bytes, memory_total_bytes,
-            swap_usage_bytes, swap_total_bytes,
-            disk_io_read_bps, disk_io_write_bps, network_rx_bps, network_tx_bps,
-            load_average_one_min, load_average_five_min, load_average_fifteen_min,
-            uptime_seconds, total_processes_count, running_processes_count,
-            tcp_established_connection_count
-        FROM performance_metrics
-        WHERE vps_id = $1 AND time >= $2 AND time <= $3
-        ORDER BY time ASC
-        "#,
-        vps_id,
-        start_time,
-        end_time
-    )
-    .fetch_all(pool)
-    .await
+    interval_minutes: Option<u32>,
+) -> Result<Vec<AggregatedPerformanceMetric>> {
+    if let Some(minutes) = interval_minutes {
+        let interval_value = PgInterval {
+            months: 0,
+            days: 0,
+            microseconds: (minutes.max(1) as i64) * 60 * 1_000_000,
+        };
+
+        // Perform aggregation
+        // Note: id is not applicable for aggregated data, so we select vps_id directly.
+        // Other non-aggregated fields from PerformanceMetric are omitted here.
+        // If needed, they could be added with appropriate aggregate functions (MAX, MIN, etc.)
+        // or by selecting them if the GROUP BY clause allows (e.g. if they are constant within the bucket).
+        // For simplicity, focusing on CPU and Memory as per plan.
+        sqlx::query_as!(
+            AggregatedPerformanceMetric,
+            r#"
+            SELECT
+                time_bucket($4::interval, time) AS time,
+                vps_id,
+                AVG(cpu_usage_percent) AS avg_cpu_usage_percent,
+                AVG(memory_usage_bytes)::FLOAT8 AS avg_memory_usage_bytes,
+                MAX(memory_total_bytes) AS max_memory_total_bytes
+            FROM performance_metrics
+            WHERE vps_id = $1 AND time >= $2 AND time <= $3
+            GROUP BY time_bucket($4::interval, time), vps_id
+            ORDER BY time ASC
+            "#,
+            vps_id,
+            start_time,
+            end_time,
+            interval_value // Corrected: Use interval_value instead of interval_str
+        )
+        .fetch_all(pool)
+        .await
+    } else {
+        // Fetch raw data and map to AggregatedPerformanceMetric
+        // This branch might need adjustment if raw PerformanceMetric and AggregatedPerformanceMetric
+        // are not directly compatible or if some fields in AggregatedPerformanceMetric should be None.
+        // For now, assuming a direct mapping for required fields and None for others.
+        sqlx::query_as!(
+            PerformanceMetric, // Fetch as original PerformanceMetric first
+            r#"
+            SELECT
+                id, time, vps_id, cpu_usage_percent, memory_usage_bytes, memory_total_bytes,
+                swap_usage_bytes, swap_total_bytes,
+                disk_io_read_bps, disk_io_write_bps, network_rx_bps, network_tx_bps,
+                load_average_one_min, load_average_five_min, load_average_fifteen_min,
+                uptime_seconds, total_processes_count, running_processes_count,
+                tcp_established_connection_count
+            FROM performance_metrics
+            WHERE vps_id = $1 AND time >= $2 AND time <= $3
+            ORDER BY time ASC
+            "#,
+            vps_id,
+            start_time,
+            end_time
+        )
+        .fetch_all(pool)
+        .await
+        .map(|metrics| {
+            metrics
+                .into_iter()
+                .map(|m| AggregatedPerformanceMetric {
+                    time: Some(m.time), // Wrapped in Some()
+                    vps_id: m.vps_id,
+                    avg_cpu_usage_percent: Some(m.cpu_usage_percent),
+                    avg_memory_usage_bytes: Some(m.memory_usage_bytes as f64), // Cast to f64 for AVG type
+                    max_memory_total_bytes: Some(m.memory_total_bytes),
+                    // other fields from PerformanceMetric would be None or mapped if AggregatedPerformanceMetric had them
+                })
+                .collect()
+        })
+    }
 }
 
 /// Retrieves the latest performance metric for a given VPS.

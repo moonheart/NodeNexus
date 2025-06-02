@@ -7,6 +7,7 @@ import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import NotFoundPage from './pages/NotFoundPage';
+import VpsDetailPage from './pages/VpsDetailPage'; // Import the new page
 import ProtectedRoute from './components/ProtectedRoute';
 import { useAuthStore } from './store/authStore';
 
@@ -67,6 +68,7 @@ function App() {
               {/* 受保护的路由 */}
               <Route element={<ProtectedRoute />}>
                 <Route path="/" element={<HomePage />} />
+                <Route path="/vps/:vpsId" element={<VpsDetailPage />} /> {/* Add new route for VPS detail */}
                 {/* 在这里添加其他受保护的路由 */}
               </Route>
               

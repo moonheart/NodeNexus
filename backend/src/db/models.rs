@@ -180,3 +180,17 @@ pub struct PerformanceNetworkInterfaceStat {
     pub rx_errors_total_cumulative: i64,
     pub tx_errors_total_cumulative: i64,
 }
+
+/// Represents an aggregated performance metric, typically used for time-bucketed queries.
+/// Fields are optional because not all aggregations will produce all values (e.g., raw data might not have averages).
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct AggregatedPerformanceMetric {
+    pub time: Option<DateTime<Utc>>, // Represents the start of the time bucket, made Option
+    pub vps_id: i32,
+    pub avg_cpu_usage_percent: Option<f64>,
+    pub avg_memory_usage_bytes: Option<f64>, // Using f64 for AVG
+    pub max_memory_total_bytes: Option<i64>, // MAX might be more appropriate for total
+    // Add other aggregated fields as needed
+    // For simplicity, we'll focus on CPU and Memory for now.
+    // Other fields from PerformanceMetric could be added here with Option<type> and AVG/MAX in query
+}

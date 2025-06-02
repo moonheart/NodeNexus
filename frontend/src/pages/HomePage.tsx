@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react'; // Added useEffect
-import CreateVpsModal from '../components/CreateVpsModal'; // Adjust path as needed
-import type { Vps } from '../types'; // Adjust path as needed
-import { getVpsList } from '../services/vpsService'; // Added vpsService import
+import React, { useState, useEffect } from 'react';
+import { Link as RouterLink } from 'react-router-dom'; // Import RouterLink
+import CreateVpsModal from '../components/CreateVpsModal';
+import type { Vps } from '../types';
+import { getVpsList } from '../services/vpsService';
 
 const HomePage: React.FC = () => {
   const [isCreateVpsModalOpen, setIsCreateVpsModalOpen] = useState(false);
@@ -74,8 +75,12 @@ const HomePage: React.FC = () => {
           <tbody>
             {vpsList.map((vps) => (
               <tr key={vps.id}>
-                <td style={{ border: '1px solid #ddd', padding: '8px' }}>{vps.id}</td>
-                <td style={{ border: '1px solid #ddd', padding: '8px' }}>{vps.name}</td>
+                <td style={{ border: '1px solid #ddd', padding: '8px' }}>
+                  <RouterLink to={`/vps/${vps.id}`}>{vps.id}</RouterLink>
+                </td>
+                <td style={{ border: '1px solid #ddd', padding: '8px' }}>
+                  <RouterLink to={`/vps/${vps.id}`}>{vps.name}</RouterLink>
+                </td>
                 <td style={{ border: '1px solid #ddd', padding: '8px' }}>{vps.ip_address || 'N/A'}</td>
                 <td style={{ border: '1px solid #ddd', padding: '8px' }}>{vps.status}</td>
                 <td style={{ border: '1px solid #ddd', padding: '8px' }}>{new Date(vps.created_at).toLocaleString()}</td>
