@@ -339,15 +339,15 @@ pub async fn save_performance_snapshot_batch(
         let timestamp = ChronoUtc.timestamp_millis_opt(snapshot.timestamp_unix_ms).single()
             .unwrap_or_else(|| ChronoUtc::now()); // Fallback to now if conversion fails, or handle error
 
-        // Calculate aggregate network stats
-        let mut total_network_rx_bps: i64 = 0;
-        let mut total_network_tx_bps: i64 = 0;
-        for net_stat in &snapshot.network_interface_stats {
-            total_network_rx_bps += net_stat.rx_bytes_per_sec as i64;
-            total_network_tx_bps += net_stat.tx_bytes_per_sec as i64;
-        }
+       // Network stats are now directly available as cumulative values in the snapshot
+       // let mut total_network_rx_bps: i64 = 0; // Removed calculation loop
+       // let mut total_network_tx_bps: i64 = 0; // Removed calculation loop
+       // for net_stat in &snapshot.network_interface_stats { // Removed calculation loop
+       //     total_network_rx_bps += net_stat.rx_bytes_per_sec as i64; // Removed calculation loop
+       //     total_network_tx_bps += net_stat.tx_bytes_per_sec as i64; // Removed calculation loop
+       // } // Removed calculation loop
 
-        // Insert into performance_metrics and get the ID
+       // Insert into performance_metrics and get the ID
         let metric_id = sqlx::query!(
             r#"
             INSERT INTO performance_metrics (
@@ -369,10 +369,10 @@ pub async fn save_performance_snapshot_batch(
             snapshot.memory_total_bytes as i64,
             snapshot.swap_usage_bytes as i64,
             snapshot.swap_total_bytes as i64,
-            snapshot.disk_total_io_read_bytes_per_sec as i64,
-            snapshot.disk_total_io_write_bytes_per_sec as i64,
-            total_network_rx_bps,
-            total_network_tx_bps,
+            snapshot.disk_total_io_read_bytes_per_sec as i64, // Note: Field name implies BPS, but value is cumulative
+            snapshot.disk_total_io_write_bytes_per_sec as i64, // Note: Field name implies BPS, but value is cumulative
+            snapshot.network_rx_bytes_cumulative as i64, // Use direct cumulative value
+            snapshot.network_tx_bytes_cumulative as i64, // Use direct cumulative value
             snapshot.load_average_one_min as f64,
             snapshot.load_average_five_min as f64,
             snapshot.load_average_fifteen_min as f64,
@@ -405,30 +405,31 @@ pub async fn save_performance_snapshot_batch(
             .await?;
         }
 
-        // Insert network interface stats
-        for net_stat in &snapshot.network_interface_stats {
-            sqlx::query!(
-                r#"
-                INSERT INTO performance_network_interface_stats (
-                    performance_metric_id, interface_name,
-                    rx_bytes_per_sec, tx_bytes_per_sec,
-                    rx_packets_per_sec, tx_packets_per_sec,
-                    rx_errors_total_cumulative, tx_errors_total_cumulative
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                "#,
-                metric_id,
-                net_stat.interface_name,
-                net_stat.rx_bytes_per_sec as i64,
-                net_stat.tx_bytes_per_sec as i64,
-                net_stat.rx_packets_per_sec as i64,
-                net_stat.tx_packets_per_sec as i64,
-                net_stat.rx_errors_total_cumulative as i64,
-                net_stat.tx_errors_total_cumulative as i64
-            )
-            .execute(&mut *tx)
-            .await?;
-        }
+        // Remove insertion into performance_network_interface_stats as the source field is gone
+        // // Insert network interface stats
+        // for net_stat in &snapshot.network_interface_stats { // This field no longer exists
+        //     sqlx::query!(
+        //         r#"
+        //         INSERT INTO performance_network_interface_stats (
+        //             performance_metric_id, interface_name,
+        //             rx_bytes_per_sec, tx_bytes_per_sec,
+        //             rx_packets_per_sec, tx_packets_per_sec,
+        //             rx_errors_total_cumulative, tx_errors_total_cumulative
+        //         )
+        //         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        //         "#,
+        //         metric_id,
+        //         net_stat.interface_name,
+        //         net_stat.rx_bytes_per_sec as i64,
+        //         net_stat.tx_bytes_per_sec as i64,
+        //         net_stat.rx_packets_per_sec as i64,
+        //         net_stat.tx_packets_per_sec as i64,
+        //         net_stat.rx_errors_total_cumulative as i64,
+        //         net_stat.tx_errors_total_cumulative as i64
+        //     )
+        //     .execute(&mut *tx)
+        //     .await?;
+        // }
     }
 
     tx.commit().await?;

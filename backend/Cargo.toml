@@ -13,6 +13,7 @@ futures-util = { version = "0.3" }
 tokio-stream = "0.1" # Added for stream utilities
 uuid = { version = "1.17", features = ["v4"] } # Added for UUID generation
 sysinfo = "0.35" # 添加系统信息收集库
+netdev = "0.35" # Added for getting default network interface info
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sqlx = { version = "0.8", features = [ "runtime-tokio-rustls", "postgres", "macros", "chrono", "json" ] }

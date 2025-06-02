@@ -31,14 +31,15 @@ message PerformanceSnapshot {
   uint64 disk_total_io_read_bytes_per_sec = 7;
   uint64 disk_total_io_write_bytes_per_sec = 8;
   repeated DiskUsage disk_usages = 9;
-  repeated NetworkInterfaceStats network_interface_stats = 10;
-  float load_average_one_min = 11;
-  float load_average_five_min = 12;
-  float load_average_fifteen_min = 13;
-  uint64 uptime_seconds = 14;
-  uint32 total_processes_count = 15;
-  uint32 running_processes_count = 16;
-  uint32 tcp_established_connection_count = 17;
+  uint64 network_rx_bytes_cumulative = 10;
+  uint64 network_tx_bytes_cumulative = 11;
+  float load_average_one_min = 12;
+  float load_average_five_min = 13;
+  float load_average_fifteen_min = 14;
+  uint64 uptime_seconds = 15;
+  uint32 total_processes_count = 16;
+  uint32 running_processes_count = 17;
+  uint32 tcp_established_connection_count = 18;
 }
 
 message PerformanceSnapshotBatch {
