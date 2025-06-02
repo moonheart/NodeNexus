@@ -32,10 +32,13 @@ pub struct LoginResponse {
 use sqlx::PgPool;
 use crate::db::models::User; // Assuming models.rs is in db module and User is public
 use bcrypt::{hash, verify, DEFAULT_COST};
-use jsonwebtoken::{encode, EncodingKey, Header};
+use jsonwebtoken::{decode, encode, EncodingKey, Header, Validation, DecodingKey};
 use chrono::{Utc, Duration};
 use std::env;
 use crate::http_server::AppError;
+use axum::http::{Request, header, StatusCode};
+use axum::middleware::Next;
+use axum::{response::Response, body::Body as AxumBody}; // Import AxumBody
 
 // JWT Claims structure
 #[derive(Debug, Serialize, Deserialize)]
@@ -44,6 +47,14 @@ struct Claims {
     user_id: i32,
     email: String,
     exp: usize,  // Expiration time (timestamp)
+}
+
+/// Struct to hold authenticated user details, to be passed as a request extension.
+#[derive(Debug, Clone)]
+pub struct AuthenticatedUser {
+    pub id: i32,
+    pub username: String,
+    pub email: String,
 }
 
 fn get_jwt_secret() -> String {
@@ -150,4 +161,43 @@ pub async fn login_user(pool: &PgPool, req: LoginRequest) -> Result<LoginRespons
         username: user.username,
         email: user.email,
     })
+}
+
+pub async fn auth(
+    mut req: Request<AxumBody>, // Changed from Request<B> to Request<AxumBody>
+    next: Next, // Removed <B> from Next
+) -> Result<Response, AppError> {
+    let auth_header = req.headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|header| header.to_str().ok());
+
+    let auth_header = if let Some(auth_header) = auth_header {
+        auth_header
+    } else {
+        return Err(AppError::InvalidCredentials); // Or a more specific "MissingToken" error
+    };
+
+    if !auth_header.starts_with("Bearer ") {
+        return Err(AppError::InvalidCredentials); // Or "InvalidTokenFormat"
+    }
+
+    let token = &auth_header[7..];
+    let jwt_secret = get_jwt_secret();
+
+    let token_data = decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(jwt_secret.as_ref()),
+        &Validation::default(), // TODO: Consider more specific validation if needed (e.g., issuer)
+    ).map_err(|e| {
+        eprintln!("JWT decoding error: {:?}", e);
+        AppError::InvalidCredentials // Or "InvalidToken"
+    })?;
+
+    let authenticated_user = AuthenticatedUser {
+        id: token_data.claims.user_id,
+        username: token_data.claims.sub, // Assuming 'sub' is username
+        email: token_data.claims.email,
+    };
+    req.extensions_mut().insert(authenticated_user);
+    Ok(next.run(req).await)
 }

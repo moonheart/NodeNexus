@@ -1,0 +1,107 @@
+# General
+.DS_Store
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json # 如果你使用 yarn.lock 或 pnpm-lock.yaml
+# pnpm-lock.yaml # 如果你使用 pnpm-lock.yaml
+
+# IDEs and editors
+.idea/
+.vscode/ # 通常建议忽略，除非有共享的、非用户特定的配置
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+!.env.example # 如果你有 .env.example 文件，确保它不被忽略
+
+# Operating System files
+Thumbs.db
+ehthumbs.db
+
+# Rust specific (for agent/ and backend/)
+# These should ideally be in agent/.gitignore and backend/.gitignore if they were separate repos,
+# but for a monorepo, putting them at the root prefixed with the directory is also an option
+# or just relying on the global rules below.
+# agent/target/
+# backend/target/
+
+# Cargo build artifacts (applies to both agent and backend)
+**/target/
+# Note: Cargo.lock is usually committed to version control for applications
+# to ensure reproducible builds. For libraries, it's often ignored.
+# Since backend and agent are applications, you might want to commit their Cargo.lock files.
+# If you choose to ignore them globally (less common for apps):
+# Cargo.lock
+
+# Node.js / Frontend specific (for frontend/)
+**/node_modules/
+**/dist/
+**/build/
+**/.next/ # If using Next.js
+**/.nuxt/ # If using Nuxt.js
+**/.svelte-kit/ # If using SvelteKit
+**/coverage/
+.eslintcache
+
+# TypeScript specific
+*.tsbuildinfo
+
+# WebAssembly related (if you compile Rust to Wasm for frontend)
+**/pkg/
+
+# macOS specific
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+Icon?
+
+# Windows specific
+Desktop.ini
+$RECYCLE.BIN/
+
+# Test & Coverage reports
+**/coverage/
+**/junit.xml
+**/lcov.info
+*.profraw
+
+# Secrets and sensitive files
+# Ensure any files containing passwords, API keys, etc., are listed here.
+# Examples:
+# secrets.yml
+# credentials.json
+# *.pem # Be careful with private keys
+
+# Temporary files
+*~
+*.tmp
+*.bak
+*.swo
+*.swp
+
+# Docker related (if not needed in repo)
+# docker-compose.override.yml # Often user-specific overrides
+# .dockerignore # This should be its own file, not in .gitignore
+
+# Specific to some tools
+# .terraform/ # if using Terraform
+# .serverless/ # if using Serverless Framework
+
+# If you are using SQLite for local dev and don't want to commit the db file
+# *.sqlite3
+# *.db
+
+# Compiled outputs (if any other than standard ones)
+# MyCompiledOutput/
+
+agent_config.toml

@@ -21,7 +21,7 @@ pub struct Vps {
     pub id: i32,
     pub user_id: i32, // Foreign key to User
     pub name: String,
-    pub ip_address: String,
+    pub ip_address: Option<String>, // Made optional
     pub os_type: Option<String>,
     pub agent_secret: String, // Secret for agent authentication
     pub status: String,       // e.g., "online", "offline", "pending"

@@ -12,6 +12,8 @@ import "heartbeat.proto";
 
 message MessageToServer {
   uint64 client_message_id = 1;
+  int32 vps_db_id = 9; // The vps.id from the database
+  string agent_secret = 10; // The secret for this specific agent/vps
   oneof payload {
     AgentHandshake agent_handshake = 2;
     PerformanceSnapshotBatch performance_batch = 3;

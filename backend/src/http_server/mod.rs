@@ -1,5 +1,6 @@
 use axum::{
     extract::State,
+    middleware, // Added for from_fn
     http::{StatusCode, Method}, // Added Method and HeaderValue
     response::{IntoResponse, Response},
     routing::{post, get}, // Added get
@@ -15,6 +16,7 @@ use self::auth_logic::{LoginRequest, RegisterRequest};
 
 pub mod auth_logic;
 pub mod metrics_routes;
+pub mod vps_routes; // Added VPS routes module
 
 // Application state to share PgPool
 #[derive(Clone)]
@@ -109,6 +111,10 @@ pub async fn run_http_server(db_pool: PgPool, http_addr: SocketAddr) -> Result<(
         .route("/api/auth/register", post(register_handler))
         .route("/api/auth/login", post(login_handler))
         .merge(metrics_routes::metrics_router()) // 合并指标路由
+        .nest(
+            "/api/vps",
+            vps_routes::vps_router().route_layer(middleware::from_fn(auth_logic::auth)),
+        ) // Added VPS routes with auth middleware
         .with_state(app_state.clone())
         .layer(cors);
 

@@ -1,5 +1,6 @@
 use chrono::Utc;
 use sqlx::{PgPool, Result};
+use uuid::Uuid; // Added for generating agent_secret
 use super::models::{User, Vps};
 
 // --- User Service Functions ---
@@ -51,13 +52,14 @@ pub async fn create_vps(
     pool: &PgPool,
     user_id: i32,
     name: &str,
-    ip_address: &str,
-    os_type: Option<String>,
-    agent_secret: &str,
-    status: &str,
-    metadata: Option<serde_json::Value>,
 ) -> Result<Vps> {
     let now = Utc::now();
+    let generated_agent_secret = Uuid::new_v4().to_string();
+    let initial_status = "pending";
+    let initial_ip_address: Option<String> = None;
+    let initial_os_type: Option<String> = None;
+    let initial_metadata: Option<serde_json::Value> = None;
+
     let vps = sqlx::query_as!(
         Vps,
         r#"
@@ -67,11 +69,11 @@ pub async fn create_vps(
         "#,
         user_id,
         name,
-        ip_address,
-        os_type,
-        agent_secret,
-        status,
-        metadata,
+        initial_ip_address, // Use generated/default value
+        initial_os_type,    // Use generated/default value
+        generated_agent_secret, // Use generated value
+        initial_status,     // Use generated/default value
+        initial_metadata,   // Use generated/default value
         now,
         now
     )
@@ -92,6 +94,12 @@ pub async fn get_vps_by_user_id(pool: &PgPool, user_id: i32) -> Result<Vec<Vps>>
     sqlx::query_as!(Vps, "SELECT * FROM vps WHERE user_id = $1 ORDER BY created_at DESC", user_id)
         .fetch_all(pool)
         .await
+}
+
+/// Retrieves all VPS entries for a given user.
+/// This is an alias for get_vps_by_user_id, but could be different in the future if needed.
+pub async fn get_all_vps_for_user(pool: &PgPool, user_id: i32) -> Result<Vec<Vps>> {
+    get_vps_by_user_id(pool, user_id).await
 }
 
 /// Updates the status of a VPS.

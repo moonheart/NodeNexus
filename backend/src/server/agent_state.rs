@@ -10,6 +10,7 @@ pub struct AgentState {
     pub agent_id: String,
     pub last_heartbeat_ms: i64,
     pub config: AgentConfig,
+    pub vps_db_id: i32,
 }
 
 #[derive(Default, Debug)]

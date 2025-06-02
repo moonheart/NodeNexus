@@ -1,5 +1,7 @@
 use std::error::Error;
 use backend::agent_service::agent_communication_service_client::AgentCommunicationServiceClient;
+use serde::Deserialize; // Added for TOML parsing
+use std::fs; // Added for reading config file
 use backend::agent_service::message_to_server::Payload;
 use backend::agent_service::{
     AgentConfig, AgentHandshake, Heartbeat, MessageToAgent, MessageToServer, NetworkInterfaceStats,
@@ -11,6 +13,14 @@ use sysinfo::{System, Disks, Networks, DiskRefreshKind};
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use uuid::Uuid;
+
+// Structure for agent configuration from TOML file
+#[derive(Deserialize, Debug, Clone)]
+struct AgentCliConfig {
+    server_address: String,
+    vps_id: i32,
+    agent_secret: String,
+}
 
 // Helper function to get next client_message_id
 async fn get_next_client_message_id(counter: &Arc<Mutex<u64>>) -> u64 {
@@ -79,6 +89,8 @@ async fn metrics_collection_loop(
     agent_config: AgentConfig,
     agent_id: String,
     client_message_id_counter: Arc<Mutex<u64>>,
+    vps_db_id: i32, // Added
+    agent_secret: String, // Added
 ) {
     let mut sys = System::new_all(); // System instance for this task
     let mut collect_interval_duration = agent_config.metrics_collect_interval_seconds;
@@ -112,6 +124,8 @@ async fn metrics_collection_loop(
                         if let Err(e) = tx_to_server.send(MessageToServer {
                             client_message_id: msg_id,
                             payload: Some(Payload::PerformanceBatch(batch_payload)),
+                            vps_db_id,
+                            agent_secret: agent_secret.clone(),
                         }).await {
                             eprintln!("[Agent:{}] Failed to send metrics batch (size trigger): {}", agent_id, e);
                         } else {
@@ -129,6 +143,8 @@ async fn metrics_collection_loop(
                      if let Err(e) = tx_to_server.send(MessageToServer {
                         client_message_id: msg_id,
                         payload: Some(Payload::PerformanceBatch(batch_payload)), // batch_payload is moved here
+                        vps_db_id,
+                        agent_secret: agent_secret.clone(),
                     }).await {
                         eprintln!("[Agent:{}] Failed to send metrics batch (interval trigger): {}", agent_id, e);
                     } else {
@@ -146,6 +162,8 @@ async fn heartbeat_loop(
     agent_config: AgentConfig,
     agent_id: String,
     client_message_id_counter: Arc<Mutex<u64>>,
+    vps_db_id: i32, // Added
+    agent_secret: String, // Added
 ) {
     let mut interval_duration = agent_config.heartbeat_interval_seconds;
     if interval_duration == 0 { interval_duration = 30; } // Default to 30s if 0
@@ -161,6 +179,8 @@ async fn heartbeat_loop(
         if let Err(e) = tx_to_server.send(MessageToServer {
             client_message_id: msg_id,
             payload: Some(Payload::Heartbeat(heartbeat_payload)),
+            vps_db_id,
+            agent_secret: agent_secret.clone(),
         }).await {
             eprintln!("[Agent:{}] Failed to send heartbeat: {}. Exiting heartbeat task.", agent_id, e);
             break;
@@ -207,13 +227,25 @@ async fn server_message_handler_loop(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let server_addr = std::env::var("SERVER_ADDR").unwrap_or_else(|_| "http://127.0.0.1:50051".to_string());
-    let agent_token = std::env::var("AGENT_TOKEN").unwrap_or_else(|_| "secure_default_token".to_string());
+    // Load configuration from agent_config.toml
+    // Expects agent_config.toml in the same directory as the executable, or a predefined path.
+    // For simplicity, let's try to read from "agent_config.toml" in the current directory.
+    let current_dir = std::env::current_dir()
+        .map_err(|e| format!("Failed to get current directory: {}", e))?;
+    println!("[Agent] Current directory: {:?}", current_dir);
+    let config_path = "agent_config.toml";
+    let config_str = fs::read_to_string(config_path)
+        .map_err(|e| format!("Failed to read agent config file '{}': {}", config_path, e))?;
     
-    println!("[Agent] Connecting to server: {}", server_addr);
-    let mut client = AgentCommunicationServiceClient::connect(server_addr.clone()).await
+    let agent_cli_config: AgentCliConfig = toml::from_str(&config_str)
+        .map_err(|e| format!("Failed to parse agent config file '{}': {}", config_path, e))?;
+
+    println!("[Agent] Loaded config: {:?}", agent_cli_config);
+    println!("[Agent] Connecting to server: {}", agent_cli_config.server_address);
+
+    let mut client = AgentCommunicationServiceClient::connect(agent_cli_config.server_address.clone()).await
         .map_err(|e| Box::new(e))?;
-    
+
     let (tx_to_server, rx_for_stream) = mpsc::channel(128);
     let response_stream = client.establish_communication_stream(ReceiverStream::new(rx_for_stream)).await
         .map_err(|e| Box::new(e))?;
@@ -235,7 +267,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     
     let handshake_payload = AgentHandshake {
         agent_id_hint: Uuid::new_v4().to_string(),
-        current_agent_secret: agent_token.to_string(),
         agent_version: env!("CARGO_PKG_VERSION").to_string(),
         os_type: i32::from(os_type_proto),
         os_name: System::name().unwrap_or_else(|| "Unknown".to_string()),
@@ -246,6 +277,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tx_to_server.send(MessageToServer {
         client_message_id: 1, // Dedicated ID for handshake
         payload: Some(Payload::AgentHandshake(handshake_payload)),
+        vps_db_id: agent_cli_config.vps_id,
+        agent_secret: agent_cli_config.agent_secret.clone(),
     }).await.map_err(|e| Box::new(e) as Box<dyn Error>)?;
     
     let (assigned_agent_id, initial_agent_config) = match in_stream.next().await {
@@ -280,6 +313,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         initial_agent_config.clone(),
         assigned_agent_id.clone(),
         client_message_id_counter.clone(),
+        agent_cli_config.vps_id,
+        agent_cli_config.agent_secret.clone(),
     ));
 
     let heartbeat_task_handle = tokio::spawn(heartbeat_loop(
@@ -287,6 +322,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         initial_agent_config.clone(),
         assigned_agent_id.clone(),
         client_message_id_counter.clone(),
+        agent_cli_config.vps_id,
+        agent_cli_config.agent_secret.clone(),
     ));
 
     let server_listener_task_handle = tokio::spawn(server_message_handler_loop(
