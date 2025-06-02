@@ -2,9 +2,8 @@ use chrono::Utc;
 use sqlx::{PgPool, Result};
 use uuid::Uuid; // Added for generating agent_secret
 use super::models::{User, Vps, PerformanceMetric, AggregatedPerformanceMetric};
-use sqlx::postgres::types::PgInterval; // Added PgInterval
-use crate::agent_service::OsType as ProtoOsType; // For mapping in handlers, keep imports tidy
-use serde_json::{json, Value as JsonValue}; // Added for JSON manipulation
+use sqlx::postgres::types::PgInterval; // For mapping in handlers, keep imports tidy
+use serde_json::json; // Added for JSON manipulation
 
 // --- User Service Functions ---
 

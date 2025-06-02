@@ -23,6 +23,7 @@ thiserror = "2.0"
 dotenv = "0.15"
 toml = "0.8"
 tower-http = { version = "0.6", features = ["cors"] }
+futures = "0.3.31"
 
 [build-dependencies]
 prost-build = "0.13"

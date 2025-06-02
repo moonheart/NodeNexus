@@ -90,7 +90,7 @@ graph TD
     end
 
     subgraph Data Persistence
-        DB[(Database: TimescaleDB (on PostgreSQL))]
+        DB["(Database: TimescaleDB (on PostgreSQL))"]
     end
 
     subgraph Monitored VPS

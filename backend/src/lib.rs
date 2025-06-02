@@ -6,3 +6,4 @@ pub mod server;
 
 pub mod db;
 pub mod http_server;
+pub mod agent_modules;

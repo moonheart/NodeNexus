@@ -36,7 +36,7 @@ use jsonwebtoken::{decode, encode, EncodingKey, Header, Validation, DecodingKey}
 use chrono::{Utc, Duration};
 use std::env;
 use crate::http_server::AppError;
-use axum::http::{Request, header, StatusCode};
+use axum::http::{Request, header};
 use axum::middleware::Next;
 use axum::{response::Response, body::Body as AxumBody}; // Import AxumBody
 

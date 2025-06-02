@@ -1,11 +1,10 @@
 use axum::{
     extract::{State, Extension},
     http::StatusCode,
-    response::IntoResponse,
     routing::{get, post}, // Added get
     Json, Router,
 };
-use serde::{Deserialize, Serialize}; // Serialize might be needed for Vps if not already
+use serde::Deserialize; // Serialize might be needed for Vps if not already
 use std::sync::Arc;
 use crate::db::{models::Vps, services};
 use super::{AppState, AppError}; // Assuming AppError and AppState are in super module (http_server/mod.rs)
