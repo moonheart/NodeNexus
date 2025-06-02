@@ -33,3 +33,30 @@ export const getVpsMetricsTimeseries = async (
     throw error;
   }
 };
+
+/**
+ * Fetches the latest performance metrics for a specific VPS.
+ * @param vpsId - The ID of the VPS.
+ * @returns A promise that resolves to the latest performance metric object or null if not found.
+ */
+export const getLatestVpsMetrics = async (
+  vpsId: number | string
+): Promise<import('../types').LatestPerformanceMetric | null> => {
+  try {
+    const response = await apiClient.get<import('../types').LatestPerformanceMetric>(
+      `/api/vps/${vpsId}/metrics/latest`
+    );
+    return response.data; // The backend returns the metric object directly, or null/404 if not found
+  } catch (error: unknown) {
+    // Type guard for AxiosError
+    if (typeof error === 'object' && error !== null && 'response' in error) {
+      const axiosError = error as { response?: { status: number } };
+      if (axiosError.response && axiosError.response.status === 404) {
+        console.warn(`No latest metrics found for VPS ${vpsId}`);
+        return null;
+      }
+    }
+    console.error(`Error fetching latest metrics for VPS ${vpsId}:`, error);
+    throw error;
+  }
+};

@@ -11,6 +11,7 @@ message AgentHandshake {
   string os_name = 4;
   string arch = 5;
   string hostname = 6;
+  repeated string public_ip_addresses = 7;
 }
 
 message ServerHandshakeAck {

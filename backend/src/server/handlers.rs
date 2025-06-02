@@ -8,7 +8,7 @@ use uuid::Uuid;
 use sqlx::PgPool; // Added PgPool
 
 use crate::agent_service::{
-    AgentConfig, MessageToAgent, MessageToServer, ServerHandshakeAck, // Added PerformanceSnapshot
+    AgentConfig, MessageToAgent, MessageToServer, ServerHandshakeAck, OsType as ProtoOsType, // Added OsType
     message_to_server::Payload as ServerPayload,
     message_to_agent::Payload as AgentPayload,
 };
@@ -78,21 +78,49 @@ pub async fn handle_connection(
                                 log_level: "INFO".to_string(),
                                 heartbeat_interval_seconds: 30,
                             };
-
+                            
+                            // Convert OsType from i32 to String
+                            let os_type_str = ProtoOsType::try_from(handshake.os_type)
+                                .map(|os_enum| format!("{:?}", os_enum)) // Converts enum variant to string, e.g., "Linux"
+                                .unwrap_or_else(|_| "Unknown".to_string());
+                            
+                            // Update VPS info in the database
+                            // Pass the public_ip_addresses Vec as a slice
+                            match services::update_vps_info_on_handshake(
+                                &pool_clone,
+                                vps_db_id_from_msg,
+                                &os_type_str,
+                                &handshake.os_name,
+                                &handshake.arch,
+                                &handshake.hostname,
+                                &handshake.public_ip_addresses, // Pass as slice
+                            ).await {
+                                Ok(rows_affected) => {
+                                    if rows_affected > 0 {
+                                        println!("[{}] Successfully updated VPS info for VPS ID {}", connection_id, vps_db_id_from_msg);
+                                    } else {
+                                        eprintln!("[{}] VPS info update on handshake for VPS ID {} affected 0 rows (handler level).", connection_id, vps_db_id_from_msg);
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("[{}] Failed to update VPS info for VPS ID {}: {}", connection_id, vps_db_id_from_msg, e);
+                                }
+                            }
+                            
                             let agent_state = AgentState {
                                 agent_id: assigned_agent_id.clone(),
                                 last_heartbeat_ms: Utc::now().timestamp_millis(),
                                 config: initial_config.clone(),
                                 vps_db_id: vps_db_id_from_msg,
                             };
-
+                            
                             {
                                 let mut agents_guard = connected_agents_arc_clone.lock().await;
                                 agents_guard.agents.insert(assigned_agent_id.clone(), agent_state);
                                 println!("[{}] Agent {} (VPS DB ID: {}) registered. Total agents: {}",
                                     connection_id, assigned_agent_id, vps_db_id_from_msg, agents_guard.agents.len());
                             }
-
+                            
                             let ack = ServerHandshakeAck {
                                 authentication_successful: true,
                                 error_message: String::new(),

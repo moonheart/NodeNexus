@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::net::IpAddr; // Added for IP address manipulation
 use backend::agent_service::agent_communication_service_client::AgentCommunicationServiceClient;
 use serde::Deserialize; // Added for TOML parsing
 use std::fs; // Added for reading config file
@@ -225,121 +226,230 @@ async fn server_message_handler_loop(
     println!("[Agent:{}] Server message stream ended.", agent_id);
 }
 
+// Helper function to collect public IP addresses
+fn collect_public_ip_addresses() -> Vec<String> {
+    let mut public_ips = Vec::new();
+    let networks = sysinfo::Networks::new_with_refreshed_list();
+
+    for (_if_name, network_data) in networks.iter() {
+        for ip_network in network_data.ip_networks() {
+            let ip_addr = ip_network.addr;
+            if ip_addr.is_loopback() || ip_addr.is_multicast() {
+                continue;
+            }
+
+            match ip_addr {
+                IpAddr::V4(ipv4_addr) => {
+                    if ipv4_addr.is_link_local() || // 169.254.0.0/16
+                       ipv4_addr.is_private() || // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+                       ipv4_addr.is_documentation() ||
+                       ipv4_addr.is_broadcast() ||
+                       ipv4_addr.is_unspecified() // 0.0.0.0
+                    {
+                        continue;
+                    }
+                    public_ips.push(ipv4_addr.to_string());
+                }
+                IpAddr::V6(ipv6_addr) => {
+                    let segments = ipv6_addr.segments();
+                    if !(ipv6_addr.is_unspecified() ||
+                         ipv6_addr.is_loopback() ||
+                         ipv6_addr.is_multicast() ||
+                         // Link-local (fe80::/10)
+                         (segments[0] & 0xffc0 == 0xfe80) ||
+                         // Unique Local Addresses (fc00::/7)
+                         (segments[0] & 0xfe00 == 0xfc00) ||
+                         // Documentation (2001:db8::/32)
+                         (segments[0] == 0x2001 && segments[1] == 0x0db8))
+                    {
+                        public_ips.push(ipv6_addr.to_string());
+                    }
+                }
+            }
+        }
+    }
+    // Sort and dedup for consistent order and uniqueness, though duplicates are unlikely with sysinfo's per-interface listing.
+    public_ips.sort_unstable();
+    public_ips.dedup();
+    public_ips
+}
+ 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // Load configuration from agent_config.toml
-    // Expects agent_config.toml in the same directory as the executable, or a predefined path.
-    // For simplicity, let's try to read from "agent_config.toml" in the current directory.
     let current_dir = std::env::current_dir()
-        .map_err(|e| format!("Failed to get current directory: {}", e))?;
+        .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to get current directory: {}", e))) as Box<dyn Error>)?;
     println!("[Agent] Current directory: {:?}", current_dir);
     let config_path = "agent_config.toml";
     let config_str = fs::read_to_string(config_path)
-        .map_err(|e| format!("Failed to read agent config file '{}': {}", config_path, e))?;
+        .map_err(|e| {
+            eprintln!("Failed to read agent config file '{}': {}", config_path, e);
+            Box::new(e) as Box<dyn Error>
+        })?;
     
     let agent_cli_config: AgentCliConfig = toml::from_str(&config_str)
-        .map_err(|e| format!("Failed to parse agent config file '{}': {}", config_path, e))?;
+        .map_err(|e| {
+            eprintln!("Failed to parse agent config file '{}': {}", config_path, e);
+            Box::new(e) as Box<dyn Error>
+        })?;
 
     println!("[Agent] Loaded config: {:?}", agent_cli_config);
-    println!("[Agent] Connecting to server: {}", agent_cli_config.server_address);
+    
+    let mut reconnect_delay_seconds = 5; // Initial delay
+    const MAX_RECONNECT_DELAY_SECONDS: u64 = 60 * 5; // Max delay 5 minutes
 
-    let mut client = AgentCommunicationServiceClient::connect(agent_cli_config.server_address.clone()).await
-        .map_err(|e| Box::new(e))?;
-
-    let (tx_to_server, rx_for_stream) = mpsc::channel(128);
-    let response_stream = client.establish_communication_stream(ReceiverStream::new(rx_for_stream)).await
-        .map_err(|e| Box::new(e))?;
-    let mut in_stream = response_stream.into_inner();
-    
-    // sys_for_handshake is not strictly needed to be mutable or refreshed for System::name() and System::host_name()
-    // as those are static methods on System or available after System::new().
-    // let mut sys_for_handshake = System::new();
-
-    let os_type_proto = if cfg!(target_os = "linux") {
-        OsType::Linux
-    } else if cfg!(target_os = "macos") {
-        OsType::Macos
-    } else if cfg!(target_os = "windows") {
-        OsType::Windows
-    } else {
-        OsType::default() // Use default for UNKNOWN_OS
-    };
-    
-    let handshake_payload = AgentHandshake {
-        agent_id_hint: Uuid::new_v4().to_string(),
-        agent_version: env!("CARGO_PKG_VERSION").to_string(),
-        os_type: i32::from(os_type_proto),
-        os_name: System::name().unwrap_or_else(|| "Unknown".to_string()),
-        arch: std::env::consts::ARCH.to_string(),
-        hostname: System::host_name().unwrap_or_else(|| "Unknown".to_string()),
-    };
-    
-    tx_to_server.send(MessageToServer {
-        client_message_id: 1, // Dedicated ID for handshake
-        payload: Some(Payload::AgentHandshake(handshake_payload)),
-        vps_db_id: agent_cli_config.vps_id,
-        agent_secret: agent_cli_config.agent_secret.clone(),
-    }).await.map_err(|e| Box::new(e) as Box<dyn Error>)?;
-    
-    let (assigned_agent_id, initial_agent_config) = match in_stream.next().await {
-        Some(Ok(response_msg)) => {
-            if let Some(backend::agent_service::message_to_agent::Payload::ServerHandshakeAck(ack)) = response_msg.payload {
-                if ack.authentication_successful {
-                    println!("[Agent:{}] Authenticated successfully.", ack.assigned_agent_id);
-                    (ack.assigned_agent_id, ack.initial_config.unwrap_or_default())
-                } else {
-                    eprintln!("[Agent] Authentication failed: {}", ack.error_message);
-                    return Err(Box::new(std::io::Error::new(std::io::ErrorKind::PermissionDenied, ack.error_message) ) as Box<dyn Error>);
-                }
-            } else {
-                eprintln!("[Agent] Unexpected first message from server (not HandshakeAck).");
-                return Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Unexpected handshake response")));
+    loop {
+        println!("[Agent] Attempting to connect to server: {}", agent_cli_config.server_address);
+        
+        let client_result = AgentCommunicationServiceClient::connect(agent_cli_config.server_address.clone()).await;
+        let mut client = match client_result {
+            Ok(c) => {
+                println!("[Agent] Successfully connected to gRPC endpoint.");
+                reconnect_delay_seconds = 5; // Reset delay on successful connection
+                c
             }
+            Err(e) => {
+                eprintln!("[Agent] Failed to connect to server: {}. Retrying in {} seconds...", e, reconnect_delay_seconds);
+                tokio::time::sleep(Duration::from_secs(reconnect_delay_seconds)).await;
+                reconnect_delay_seconds = (reconnect_delay_seconds * 2).min(MAX_RECONNECT_DELAY_SECONDS);
+                continue;
+            }
+        };
+
+        let (tx_to_server, rx_for_stream) = mpsc::channel(128);
+        
+        let stream_result = client.establish_communication_stream(ReceiverStream::new(rx_for_stream)).await;
+        let mut in_stream = match stream_result {
+            Ok(response_stream) => {
+                 println!("[Agent] Communication stream established.");
+                response_stream.into_inner()
+            }
+            Err(e) => {
+                eprintln!("[Agent] Failed to establish communication stream: {}. Retrying in {} seconds...", e, reconnect_delay_seconds);
+                tokio::time::sleep(Duration::from_secs(reconnect_delay_seconds)).await;
+                reconnect_delay_seconds = (reconnect_delay_seconds * 2).min(MAX_RECONNECT_DELAY_SECONDS);
+                continue;
+            }
+        };
+        
+        let os_type_proto = if cfg!(target_os = "linux") { OsType::Linux }
+                          else if cfg!(target_os = "macos") { OsType::Macos }
+                          else if cfg!(target_os = "windows") { OsType::Windows }
+                          else { OsType::default() };
+        
+        let public_ip_addresses = collect_public_ip_addresses();
+        // println!("[Agent] Collected public IP addresses: {:?}", public_ip_addresses); // Less verbose
+
+        let handshake_payload = AgentHandshake {
+            agent_id_hint: Uuid::new_v4().to_string(),
+            agent_version: env!("CARGO_PKG_VERSION").to_string(),
+            os_type: i32::from(os_type_proto),
+            os_name: System::name().unwrap_or_else(|| "Unknown".to_string()),
+            arch: std::env::consts::ARCH.to_string(),
+            hostname: System::host_name().unwrap_or_else(|| "Unknown".to_string()),
+            public_ip_addresses,
+        };
+        
+        if let Err(e) = tx_to_server.send(MessageToServer {
+            client_message_id: 1, // Dedicated ID for handshake
+            payload: Some(Payload::AgentHandshake(handshake_payload)),
+            vps_db_id: agent_cli_config.vps_id,
+            agent_secret: agent_cli_config.agent_secret.clone(),
+        }).await {
+            eprintln!("[Agent] Failed to send handshake: {}. Retrying...", e);
+            // No need to sleep here, loop will handle delay
+            continue;
         }
-        Some(Err(status)) => {
-            eprintln!("[Agent] Error receiving handshake response: {}", status);
-            return Err(Box::new(status) as Box<dyn Error>);
+        
+        let (assigned_agent_id, initial_agent_config) = match in_stream.next().await {
+            Some(Ok(response_msg)) => {
+                if let Some(backend::agent_service::message_to_agent::Payload::ServerHandshakeAck(ack)) = response_msg.payload {
+                    if ack.authentication_successful {
+                        println!("[Agent:{}] Authenticated successfully.", ack.assigned_agent_id);
+                        (ack.assigned_agent_id, ack.initial_config.unwrap_or_default())
+                    } else {
+                        eprintln!("[Agent] Authentication failed: {}. This is a critical error. Agent will not retry automatically for auth failures.", ack.error_message);
+                        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::PermissionDenied, ack.error_message)) as Box<dyn Error>);
+                    }
+                } else {
+                    eprintln!("[Agent] Unexpected first message from server (not HandshakeAck). Retrying...");
+                    continue;
+                }
+            }
+            Some(Err(status)) => {
+                eprintln!("[Agent] Error receiving handshake response: {}. Retrying...", status);
+                continue;
+            }
+            None => {
+                eprintln!("[Agent] Server closed stream during handshake. Retrying...");
+                continue;
+            }
+        };
+
+        let client_message_id_counter = Arc::new(Mutex::new(2u64));
+
+        let metrics_tx = tx_to_server.clone();
+        let metrics_agent_config = initial_agent_config.clone();
+        let metrics_agent_id = assigned_agent_id.clone();
+        let metrics_counter = client_message_id_counter.clone();
+        let metrics_vps_id = agent_cli_config.vps_id;
+        let metrics_agent_secret = agent_cli_config.agent_secret.clone();
+        let metrics_task_handle = tokio::spawn(async move {
+            metrics_collection_loop(
+                metrics_tx,
+                metrics_agent_config,
+                metrics_agent_id,
+                metrics_counter,
+                metrics_vps_id,
+                metrics_agent_secret,
+            ).await
+        });
+
+        let heartbeat_tx = tx_to_server.clone();
+        let heartbeat_agent_config = initial_agent_config.clone();
+        let heartbeat_agent_id = assigned_agent_id.clone();
+        let heartbeat_counter = client_message_id_counter.clone();
+        let heartbeat_vps_id = agent_cli_config.vps_id;
+        let heartbeat_agent_secret = agent_cli_config.agent_secret.clone();
+        let heartbeat_task_handle = tokio::spawn(async move {
+            heartbeat_loop(
+                heartbeat_tx,
+                heartbeat_agent_config,
+                heartbeat_agent_id,
+                heartbeat_counter,
+                heartbeat_vps_id,
+                heartbeat_agent_secret,
+            ).await
+        });
+        
+        let listener_agent_id = assigned_agent_id.clone();
+        let server_listener_task_handle = tokio::spawn(async move {
+            server_message_handler_loop(
+                in_stream, // in_stream is moved here
+                listener_agent_id,
+            ).await
+        });
+
+        // Monitor tasks. If any of them exit, it likely means a disconnection or critical error.
+        // The server_listener_task is the most critical for detecting disconnections.
+        tokio::select! {
+            res = metrics_task_handle => {
+                eprintln!("[Agent:{}] Metrics task ended: {:?}. Will attempt to reconnect.", assigned_agent_id, res);
+            },
+            res = heartbeat_task_handle => {
+                 eprintln!("[Agent:{}] Heartbeat task ended: {:?}. Will attempt to reconnect.", assigned_agent_id, res);
+            },
+            res = server_listener_task_handle => {
+                 eprintln!("[Agent:{}] Server listener task ended: {:?}. Stream likely closed. Will attempt to reconnect.", assigned_agent_id, res);
+            },
+            // Optional: Add Ctrl-C handling here if needed, though it might complicate graceful shutdown within the loop.
+            // For now, rely on task completion to trigger reconnection.
         }
-        None => {
-            eprintln!("[Agent] Server closed stream during handshake.");
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::ConnectionAborted, "Stream closed during handshake")));
-        }
-    };
-
-    let client_message_id_counter = Arc::new(Mutex::new(2u64)); // Start after handshake ID 1
-
-    let metrics_task_handle = tokio::spawn(metrics_collection_loop(
-        tx_to_server.clone(),
-        initial_agent_config.clone(),
-        assigned_agent_id.clone(),
-        client_message_id_counter.clone(),
-        agent_cli_config.vps_id,
-        agent_cli_config.agent_secret.clone(),
-    ));
-
-    let heartbeat_task_handle = tokio::spawn(heartbeat_loop(
-        tx_to_server.clone(),
-        initial_agent_config.clone(),
-        assigned_agent_id.clone(),
-        client_message_id_counter.clone(),
-        agent_cli_config.vps_id,
-        agent_cli_config.agent_secret.clone(),
-    ));
-
-    let server_listener_task_handle = tokio::spawn(server_message_handler_loop(
-        in_stream, // in_stream is moved here
-        assigned_agent_id.clone(),
-    ));
-
-    tokio::select! {
-        res = metrics_task_handle => eprintln!("[Agent:{}] Metrics task ended: {:?}", assigned_agent_id, res),
-        res = heartbeat_task_handle => eprintln!("[Agent:{}] Heartbeat task ended: {:?}", assigned_agent_id, res),
-        res = server_listener_task_handle => eprintln!("[Agent:{}] Server listener task ended: {:?}", assigned_agent_id, res),
-        // _ = tokio::signal::ctrl_c() => println!("[Agent:{}] Received Ctrl-C, initiating shutdown.", assigned_agent_id), // Commented out: Tokio 'signal' feature likely not enabled.
-        // To enable, add `features = ["signal"]` to tokio in Cargo.toml.
-        // For now, agent will run until one of the main tasks errors or stream closes.
+        
+        println!("[Agent:{}] One of the main tasks ended. Preparing to reconnect in {} seconds...", assigned_agent_id, reconnect_delay_seconds);
+        tokio::time::sleep(Duration::from_secs(reconnect_delay_seconds)).await;
+        reconnect_delay_seconds = (reconnect_delay_seconds * 2).min(MAX_RECONNECT_DELAY_SECONDS);
     }
-    
-    println!("[Agent:{}] Shutting down.", assigned_agent_id);
-    Ok(())
+    // Unreachable due to infinite loop, but keeps the function signature.
+    // Ok(())
 }

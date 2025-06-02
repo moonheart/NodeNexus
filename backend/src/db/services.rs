@@ -3,6 +3,8 @@ use sqlx::{PgPool, Result};
 use uuid::Uuid; // Added for generating agent_secret
 use super::models::{User, Vps, PerformanceMetric, AggregatedPerformanceMetric};
 use sqlx::postgres::types::PgInterval; // Added PgInterval
+use crate::agent_service::OsType as ProtoOsType; // For mapping in handlers, keep imports tidy
+use serde_json::{json, Value as JsonValue}; // Added for JSON manipulation
 
 // --- User Service Functions ---
 
@@ -118,6 +120,67 @@ pub async fn update_vps_status(pool: &PgPool, vps_id: i32, status: &str) -> Resu
     Ok(rows_affected)
 }
 
+/// Updates VPS information based on AgentHandshake data.
+/// This includes OS details, hostname, and public IP addresses.
+/// Also sets status to "online".
+pub async fn update_vps_info_on_handshake(
+    pool: &PgPool,
+    vps_id: i32,
+    os_type_str: &str,
+    os_name: &str,
+    arch: &str,
+    hostname: &str,
+    public_ip_list: &[String], // Changed from CSV to slice of Strings
+) -> Result<u64> {
+    let now = Utc::now();
+
+    // Find the first IPv4 address from the list
+    let first_ipv4 = public_ip_list.iter()
+        .find_map(|ip_str| {
+            ip_str.parse::<std::net::IpAddr>().ok().and_then(|ip_addr| {
+                if ip_addr.is_ipv4() {
+                    Some(ip_str.clone())
+                } else {
+                    None
+                }
+            })
+        });
+
+    // Construct the metadata JSON to be updated
+    let agent_info_metadata = json!({
+        "os_name": os_name,
+        "arch": arch,
+        "hostname": hostname,
+        "public_ip_addresses": public_ip_list // Store the full list here
+    });
+
+    let rows_affected = sqlx::query!(
+        r#"
+        UPDATE vps
+        SET os_type = $1,                               -- Direct column
+            ip_address = $2,                            -- Direct column, stores first IPv4 (VARCHAR(45) for now)
+            metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb, -- Merge new info into metadata
+            status = $4,                                -- Direct column
+            updated_at = $5                             -- Direct column
+        WHERE id = $6
+        "#,
+        os_type_str,
+        first_ipv4, // This will be Option<String>, SQL NULL if None. Max length 45 for ip_address column.
+        agent_info_metadata, // Pass the serde_json::Value directly
+        "online",   // Set status to online on successful handshake
+        now,
+        vps_id
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+
+    if rows_affected == 0 {
+        eprintln!("VPS info update on handshake for vps_id {} affected 0 rows. This might indicate the VPS ID was not found for update.", vps_id);
+    }
+    Ok(rows_affected)
+}
+ 
 // --- PerformanceMetric Service Functions ---
 
 // /// Inserts a single performance metric snapshot.

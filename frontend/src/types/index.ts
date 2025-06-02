@@ -15,6 +15,33 @@ export interface Vps {
   metadata: Record<string, unknown> | null; // Can be refined if the structure of metadata is known
   created_at: string; // Represents a `DateTime<Utc>` string, e.g., "2025-06-02T12:34:56.789Z"
   updated_at: string; // Represents a `DateTime<Utc>` string
+  latest_metrics?: LatestPerformanceMetric | null; // Added for real-time display
+}
+
+/**
+ * Represents a complete, latest performance metric snapshot for a VPS.
+ * This should align with the `PerformanceMetric` model in `backend/src/db/models.rs`.
+ */
+export interface LatestPerformanceMetric {
+  id: number;
+  time: string; // DateTime<Utc>
+  vps_id: number;
+  cpu_usage_percent: number;
+  memory_usage_bytes: number;
+  memory_total_bytes: number;
+  swap_usage_bytes: number;
+  swap_total_bytes: number;
+  disk_io_read_bps: number;
+  disk_io_write_bps: number;
+  network_rx_bps: number; // Downstream
+  network_tx_bps: number; // Upstream
+  load_average_one_min: number;
+  load_average_five_min: number;
+  load_average_fifteen_min: number;
+  uptime_seconds: number;
+  total_processes_count: number;
+  running_processes_count: number;
+  tcp_established_connection_count: number;
 }
 
 /**
