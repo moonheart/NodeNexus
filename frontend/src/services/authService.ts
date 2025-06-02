@@ -1,6 +1,9 @@
 // 类型定义需要与 backend/src/http_server/auth_logic.rs 中的结构体对齐
 // 为了减少跨模块直接导入的复杂性，我们在这里重新定义或从共享类型文件导入（如果未来创建的话）
 
+import axios from "axios";
+import apiClient from "./apiClient";
+
 export interface RegisterRequest {
     username: string;
     email: string;
@@ -25,73 +28,68 @@ export interface LoginResponse {
     email: string;
 }
 
-const ENV_API_ROOT = import.meta.env.VITE_API_BASE_URL;
-let AUTH_API_ENDPOINT_BASE: string;
-
-if (ENV_API_ROOT) {
-    // If VITE_API_BASE_URL is set, append /api/auth to it
-    AUTH_API_ENDPOINT_BASE = `${ENV_API_ROOT.replace(/\/$/, '')}/api/auth`;
-} else {
-    // Otherwise, default to relative /api/auth
-    AUTH_API_ENDPOINT_BASE = '/api/auth';
-}
+// 不再需要手动构建 URL，apiClient 会处理 baseURL
+// const ENV_API_ROOT = import.meta.env.VITE_API_BASE_URL;
+// let AUTH_API_ENDPOINT_BASE: string;
+//
+// if (ENV_API_ROOT) {
+//     // If VITE_API_BASE_URL is set, append /api/auth to it
+//     AUTH_API_ENDPOINT_BASE = `${ENV_API_ROOT.replace(/\/$/, '')}/api/auth`;
+// } else {
+//     // Otherwise, default to relative /api/auth
+//     AUTH_API_ENDPOINT_BASE = '/api/auth';
+// }
 
 export const registerUser = async (data: RegisterRequest): Promise<UserResponse> => {
-    console.log('authService.ts: registerUser called with', data, 'to endpoint', `${AUTH_API_ENDPOINT_BASE}/register`);
-    const response = await fetch(`${AUTH_API_ENDPOINT_BASE}/register`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-    });
-    if (!response.ok) {
-        // Try to parse error message from backend, otherwise use a generic one
+    console.log('authService.ts: registerUser called with', data);
+    try {
+        const response = await apiClient.post<UserResponse>('/api/auth/register', data);
+        return response.data;
+    } catch (error: unknown) {
+        console.error('Registration failed:', error);
+        // 尝试从 axios 错误中提取后端返回的错误信息
         let errorMsg = '注册失败';
-        try {
-            const errorData = await response.json();
-            if (errorData && errorData.error) { // Check for .error field
-                errorMsg = errorData.error;
-            } else if (errorData && errorData.message) { // Fallback to .message
-                errorMsg = errorData.message;
-            } else if (typeof errorData === 'string') {
+        if (axios.isAxiosError(error) && error.response?.data) {
+            const errorData = error.response.data;
+            if (typeof errorData === 'string') {
                 errorMsg = errorData;
+            } else if (errorData && typeof errorData === 'object') {
+                if ('error' in errorData && typeof errorData.error === 'string') {
+                    errorMsg = errorData.error;
+                } else if ('message' in errorData && typeof errorData.message === 'string') {
+                    errorMsg = errorData.message; // 备选 message 字段
+                }
             }
-        } catch (_e) { // eslint-disable-line @typescript-eslint/no-unused-vars
-            // If parsing error fails, use the status text or generic message
-            errorMsg = response.statusText || errorMsg;
+        } else if (error instanceof Error) {
+            errorMsg = error.message; // 其他类型的错误
         }
         throw new Error(errorMsg);
     }
-    return response.json();
 };
 
 export const loginUser = async (data: LoginRequest): Promise<LoginResponse> => {
-    console.log('authService.ts: loginUser called with', data, 'to endpoint', `${AUTH_API_ENDPOINT_BASE}/login`);
-    const response = await fetch(`${AUTH_API_ENDPOINT_BASE}/login`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-    });
-    if (!response.ok) {
-        // Try to parse error message from backend, otherwise use a generic one
+    console.log('authService.ts: loginUser called with', data);
+    try {
+        const response = await apiClient.post<LoginResponse>('/api/auth/login', data);
+        return response.data;
+    } catch (error: unknown) {
+        console.error('Login failed:', error);
+        // 尝试从 axios 错误中提取后端返回的错误信息
         let errorMsg = '登录失败';
-        try {
-            const errorData = await response.json();
-            if (errorData && errorData.error) { // Check for .error field
-                errorMsg = errorData.error;
-            } else if (errorData && errorData.message) { // Fallback to .message
-                errorMsg = errorData.message;
-            } else if (typeof errorData === 'string') {
+        if (axios.isAxiosError(error) && error.response?.data) {
+            const errorData = error.response.data;
+             if (typeof errorData === 'string') {
                 errorMsg = errorData;
+            } else if (errorData && typeof errorData === 'object') {
+                 if ('error' in errorData && typeof errorData.error === 'string') {
+                    errorMsg = errorData.error;
+                } else if ('message' in errorData && typeof errorData.message === 'string') {
+                    errorMsg = errorData.message; // 备选 message 字段
+                }
             }
-        } catch (_e) { // eslint-disable-line @typescript-eslint/no-unused-vars
-            // If parsing error fails, use the status text or generic message
-            errorMsg = response.statusText || errorMsg;
+        } else if (error instanceof Error) {
+            errorMsg = error.message; // 其他类型的错误
         }
         throw new Error(errorMsg);
     }
-    return response.json();
 };
