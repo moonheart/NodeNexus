@@ -166,8 +166,9 @@ const HomePage: React.FC = () => {
                 if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KB/s`;
                 return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
               };
-              const downSpeed = formatSpeed(metrics?.network_rx_bps);
-              const upSpeed = formatSpeed(metrics?.network_tx_bps);
+              // Use the correct instantaneous fields for speed display
+              const downSpeed = formatSpeed(metrics?.network_rx_instant_bps);
+              const upSpeed = formatSpeed(metrics?.network_tx_instant_bps);
 
               return (
                 <tr key={vps.id}>

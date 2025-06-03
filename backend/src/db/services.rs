@@ -235,44 +235,72 @@ pub async fn get_performance_metrics_for_vps(
         // If needed, they could be added with appropriate aggregate functions (MAX, MIN, etc.)
         // or by selecting them if the GROUP BY clause allows (e.g. if they are constant within the bucket).
         // For simplicity, focusing on CPU and Memory as per plan.
+        // Perform aggregation and calculate network BPS using window functions
         sqlx::query_as!(
             AggregatedPerformanceMetric,
             r#"
+            WITH TimeBucketed AS (
+                SELECT
+                    time_bucket($4::interval, time) AS bucket_time,
+                    vps_id,
+                    AVG(cpu_usage_percent) AS avg_cpu_usage_percent,
+                    AVG(memory_usage_bytes) AS avg_memory_usage_bytes,
+                    MAX(memory_total_bytes) AS max_memory_total_bytes,
+                    -- Calculate average of the instantaneous BPS values stored in the new columns
+                    AVG(network_rx_instant_bps) AS avg_network_rx_instant_bps,
+                    AVG(network_tx_instant_bps) AS avg_network_tx_instant_bps
+                    -- Removed old logic based on cumulative values and duration
+                FROM performance_metrics
+                WHERE vps_id = $1 AND time >= $2 AND time <= $3
+                GROUP BY bucket_time, vps_id
+            )
             SELECT
-                time_bucket($4::interval, time) AS time,
+                bucket_time AS time, -- Alias bucket_time to time for the final struct
                 vps_id,
-                AVG(cpu_usage_percent) AS avg_cpu_usage_percent,
-                AVG(memory_usage_bytes)::FLOAT8 AS avg_memory_usage_bytes,
-                MAX(memory_total_bytes) AS max_memory_total_bytes
-            FROM performance_metrics
-            WHERE vps_id = $1 AND time >= $2 AND time <= $3
-            GROUP BY time_bucket($4::interval, time), vps_id
+                avg_cpu_usage_percent,
+                avg_memory_usage_bytes::FLOAT8, -- Cast AVG result to FLOAT8
+                max_memory_total_bytes,
+                -- Select the calculated averages directly
+                avg_network_rx_instant_bps::FLOAT8, -- Cast AVG result to FLOAT8
+                avg_network_tx_instant_bps::FLOAT8  -- Cast AVG result to FLOAT8
+            FROM TimeBucketed
             ORDER BY time ASC
             "#,
             vps_id,
             start_time,
             end_time,
-            interval_value // Corrected: Use interval_value instead of interval_str
+            interval_value
         )
         .fetch_all(pool)
         .await
     } else {
-        // Fetch raw data and map to AggregatedPerformanceMetric
-        // This branch might need adjustment if raw PerformanceMetric and AggregatedPerformanceMetric
-        // are not directly compatible or if some fields in AggregatedPerformanceMetric should be None.
-        // For now, assuming a direct mapping for required fields and None for others.
+        // Fetch raw data and calculate instantaneous BPS using LAG window function
         sqlx::query_as!(
-            PerformanceMetric, // Fetch as original PerformanceMetric first
+             AggregatedPerformanceMetric, // Map directly to AggregatedPerformanceMetric
             r#"
+            WITH RankedMetrics AS (
+                SELECT
+                    id, time, vps_id, cpu_usage_percent, memory_usage_bytes, memory_total_bytes,
+                    swap_usage_bytes, swap_total_bytes,
+                    disk_io_read_bps, disk_io_write_bps,
+                    network_rx_bps, network_tx_bps, -- Cumulative
+                    network_rx_instant_bps, network_tx_instant_bps, -- Instantaneous
+                    uptime_seconds, total_processes_count, running_processes_count,
+                    tcp_established_connection_count
+                    -- Removed LAG calculation as we now select instantaneous values directly
+                FROM performance_metrics
+                WHERE vps_id = $1 AND time >= $2 AND time <= $3
+            )
             SELECT
-                id, time, vps_id, cpu_usage_percent, memory_usage_bytes, memory_total_bytes,
-                swap_usage_bytes, swap_total_bytes,
-                disk_io_read_bps, disk_io_write_bps, network_rx_bps, network_tx_bps,
-                load_average_one_min, load_average_five_min, load_average_fifteen_min,
-                uptime_seconds, total_processes_count, running_processes_count,
-                tcp_established_connection_count
-            FROM performance_metrics
-            WHERE vps_id = $1 AND time >= $2 AND time <= $3
+                time, -- Keep original timestamp
+                vps_id,
+                cpu_usage_percent AS avg_cpu_usage_percent, -- Use raw value as 'avg'
+                memory_usage_bytes::FLOAT8 AS avg_memory_usage_bytes, -- Use raw value as 'avg'
+                memory_total_bytes AS max_memory_total_bytes, -- Use raw value as 'max'
+                -- Select the stored instantaneous BPS directly and alias to match AggregatedPerformanceMetric
+                network_rx_instant_bps::FLOAT8 AS avg_network_rx_instant_bps,
+                network_tx_instant_bps::FLOAT8 AS avg_network_tx_instant_bps
+            FROM RankedMetrics
             ORDER BY time ASC
             "#,
             vps_id,
@@ -281,19 +309,7 @@ pub async fn get_performance_metrics_for_vps(
         )
         .fetch_all(pool)
         .await
-        .map(|metrics| {
-            metrics
-                .into_iter()
-                .map(|m| AggregatedPerformanceMetric {
-                    time: Some(m.time), // Wrapped in Some()
-                    vps_id: m.vps_id,
-                    avg_cpu_usage_percent: Some(m.cpu_usage_percent),
-                    avg_memory_usage_bytes: Some(m.memory_usage_bytes as f64), // Cast to f64 for AVG type
-                    max_memory_total_bytes: Some(m.memory_total_bytes),
-                    // other fields from PerformanceMetric would be None or mapped if AggregatedPerformanceMetric had them
-                })
-                .collect()
-        })
+        // The result is already Vec<AggregatedPerformanceMetric>, no need for further mapping
     }
 }
 
@@ -308,10 +324,12 @@ pub async fn get_latest_performance_metric_for_vps(
         SELECT
             id, time, vps_id, cpu_usage_percent, memory_usage_bytes, memory_total_bytes,
             swap_usage_bytes, swap_total_bytes,
-            disk_io_read_bps, disk_io_write_bps, network_rx_bps, network_tx_bps,
-            load_average_one_min, load_average_five_min, load_average_fifteen_min,
+            disk_io_read_bps, disk_io_write_bps,
+            network_rx_bps, network_tx_bps, -- Cumulative
+            network_rx_instant_bps, network_tx_instant_bps, -- Instantaneous
             uptime_seconds, total_processes_count, running_processes_count,
             tcp_established_connection_count
+            -- Removed load_average fields from selection
         FROM performance_metrics
         WHERE vps_id = $1
         ORDER BY time DESC
@@ -339,13 +357,8 @@ pub async fn save_performance_snapshot_batch(
         let timestamp = ChronoUtc.timestamp_millis_opt(snapshot.timestamp_unix_ms).single()
             .unwrap_or_else(|| ChronoUtc::now()); // Fallback to now if conversion fails, or handle error
 
-       // Network stats are now directly available as cumulative values in the snapshot
-       // let mut total_network_rx_bps: i64 = 0; // Removed calculation loop
-       // let mut total_network_tx_bps: i64 = 0; // Removed calculation loop
-       // for net_stat in &snapshot.network_interface_stats { // Removed calculation loop
-       //     total_network_rx_bps += net_stat.rx_bytes_per_sec as i64; // Removed calculation loop
-       //     total_network_tx_bps += net_stat.tx_bytes_per_sec as i64; // Removed calculation loop
-       // } // Removed calculation loop
+        // 输出 snapshot 的内容到日志
+        println!("Saving snapshot for vps_id {} at time {}: {:?}", vps_id, timestamp, snapshot);
 
        // Insert into performance_metrics and get the ID
         let metric_id = sqlx::query!(
@@ -354,12 +367,13 @@ pub async fn save_performance_snapshot_batch(
                 time, vps_id, cpu_usage_percent, memory_usage_bytes, memory_total_bytes,
                 swap_usage_bytes, swap_total_bytes,
                 disk_io_read_bps, disk_io_write_bps,
-                network_rx_bps, network_tx_bps,
-                load_average_one_min, load_average_five_min, load_average_fifteen_min,
+                network_rx_bps, network_tx_bps, -- Cumulative
+                network_rx_instant_bps, network_tx_instant_bps, -- Instantaneous
                 uptime_seconds, total_processes_count, running_processes_count,
                 tcp_established_connection_count
+                -- Removed load_average fields from INSERT list
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) -- Adjusted placeholders (removed 3)
             RETURNING id
             "#,
             timestamp,
@@ -371,21 +385,23 @@ pub async fn save_performance_snapshot_batch(
             snapshot.swap_total_bytes as i64,
             snapshot.disk_total_io_read_bytes_per_sec as i64, // Note: Field name implies BPS, but value is cumulative
             snapshot.disk_total_io_write_bytes_per_sec as i64, // Note: Field name implies BPS, but value is cumulative
-            snapshot.network_rx_bytes_cumulative as i64, // Use direct cumulative value
-            snapshot.network_tx_bytes_cumulative as i64, // Use direct cumulative value
-            snapshot.load_average_one_min as f64,
-            snapshot.load_average_five_min as f64,
-            snapshot.load_average_fifteen_min as f64,
+            snapshot.network_rx_bytes_cumulative as i64, // Map proto cumulative RX to DB cumulative RX (network_rx_bps)
+            snapshot.network_tx_bytes_cumulative as i64, // Map proto cumulative TX to DB cumulative TX (network_tx_bps)
+            snapshot.network_rx_bytes_per_sec as i64, // Map proto instant RX to DB instant RX (network_rx_instant_bps)
+            snapshot.network_tx_bytes_per_sec as i64, // Map proto instant TX to DB instant TX (network_tx_instant_bps)
+            // Removed load_average mappings
             snapshot.uptime_seconds as i64,
             snapshot.total_processes_count as i32,
             snapshot.running_processes_count as i32,
             snapshot.tcp_established_connection_count as i32
+            // Adjusted parameter indices implicitly by removing 3 lines above
+
         )
         .fetch_one(&mut *tx) // Use &mut *tx for the executor
         .await?
         .id;
 
-        // Insert disk usages
+        // Insert disk usages (remains the same)
         for disk_usage in &snapshot.disk_usages {
             sqlx::query!(
                 r#"
@@ -398,38 +414,14 @@ pub async fn save_performance_snapshot_batch(
                 disk_usage.mount_point,
                 disk_usage.used_bytes as i64,
                 disk_usage.total_bytes as i64,
-                disk_usage.fstype, // fstype is string in proto, Option<String> in model, TEXT in DB
+                disk_usage.fstype,
                 disk_usage.usage_percent as f64
             )
             .execute(&mut *tx)
             .await?;
         }
 
-        // Remove insertion into performance_network_interface_stats as the source field is gone
-        // // Insert network interface stats
-        // for net_stat in &snapshot.network_interface_stats { // This field no longer exists
-        //     sqlx::query!(
-        //         r#"
-        //         INSERT INTO performance_network_interface_stats (
-        //             performance_metric_id, interface_name,
-        //             rx_bytes_per_sec, tx_bytes_per_sec,
-        //             rx_packets_per_sec, tx_packets_per_sec,
-        //             rx_errors_total_cumulative, tx_errors_total_cumulative
-        //         )
-        //         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        //         "#,
-        //         metric_id,
-        //         net_stat.interface_name,
-        //         net_stat.rx_bytes_per_sec as i64,
-        //         net_stat.tx_bytes_per_sec as i64,
-        //         net_stat.rx_packets_per_sec as i64,
-        //         net_stat.tx_packets_per_sec as i64,
-        //         net_stat.rx_errors_total_cumulative as i64,
-        //         net_stat.tx_errors_total_cumulative as i64
-        //     )
-        //     .execute(&mut *tx)
-        //     .await?;
-        // }
+        // Insertion into performance_network_interface_stats remains removed
     }
 
     tx.commit().await?;

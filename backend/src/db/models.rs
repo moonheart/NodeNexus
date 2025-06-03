@@ -45,11 +45,11 @@ pub struct PerformanceMetric {
     pub swap_total_bytes: i64,    // Added from migration
     pub disk_io_read_bps: i64,
     pub disk_io_write_bps: i64,
-    pub network_rx_bps: i64,      // This will be the sum from all interfaces
-    pub network_tx_bps: i64,      // This will be the sum from all interfaces
-    pub load_average_one_min: f64, // Added from migration
-    pub load_average_five_min: f64, // Added from migration
-    pub load_average_fifteen_min: f64, // Added from migration
+    pub network_rx_bps: i64,      // Cumulative RX bytes (default interface)
+    pub network_tx_bps: i64,      // Cumulative TX bytes (default interface)
+    pub network_rx_instant_bps: i64, // Instantaneous RX BPS (default interface) - Added
+    pub network_tx_instant_bps: i64, // Instantaneous TX BPS (default interface) - Added
+    // Removed load_average fields
     pub uptime_seconds: i64,      // Added from migration
     pub total_processes_count: i32, // Added from migration
     pub running_processes_count: i32, // Added from migration
@@ -190,7 +190,7 @@ pub struct AggregatedPerformanceMetric {
     pub avg_cpu_usage_percent: Option<f64>,
     pub avg_memory_usage_bytes: Option<f64>, // Using f64 for AVG
     pub max_memory_total_bytes: Option<i64>, // MAX might be more appropriate for total
+    pub avg_network_rx_instant_bps: Option<f64>, // Average of instantaneous Rx BPS
+    pub avg_network_tx_instant_bps: Option<f64>, // Average of instantaneous Tx BPS
     // Add other aggregated fields as needed
-    // For simplicity, we'll focus on CPU and Memory for now.
-    // Other fields from PerformanceMetric could be added here with Option<type> and AVG/MAX in query
 }

@@ -33,11 +33,10 @@ export interface LatestPerformanceMetric {
   swap_total_bytes: number;
   disk_io_read_bps: number;
   disk_io_write_bps: number;
-  network_rx_bps: number; // Downstream
-  network_tx_bps: number; // Upstream
-  load_average_one_min: number;
-  load_average_five_min: number;
-  load_average_fifteen_min: number;
+  network_rx_bps: number; // Cumulative RX bytes (DEPRECATED for rate display)
+  network_tx_bps: number; // Cumulative TX bytes (DEPRECATED for rate display)
+  network_rx_instant_bps: number; // Instantaneous RX BPS (Use this for rate display)
+  network_tx_instant_bps: number; // Instantaneous TX BPS (Use this for rate display)
   uptime_seconds: number;
   total_processes_count: number;
   running_processes_count: number;
@@ -59,6 +58,8 @@ export interface PerformanceMetricPoint {
   max_memory_total_bytes?: number | null; // From MAX(memory_total_bytes)
   memory_total_bytes?: number | null; // From raw memory_total_bytes
   memory_usage_percent?: number | null; // Calculated: (memory_usage_bytes / memory_total_bytes) * 100 or from aggregated
+  avg_network_rx_instant_bps?: number | null; // Calculated average Rx bytes per second (Matches backend AggregatedPerformanceMetric)
+  avg_network_tx_instant_bps?: number | null; // Calculated average Tx bytes per second (Matches backend AggregatedPerformanceMetric)
   // Add other relevant fields that might come from backend (raw or aggregated)
 }
 

@@ -33,13 +33,13 @@ message PerformanceSnapshot {
   repeated DiskUsage disk_usages = 9;
   uint64 network_rx_bytes_cumulative = 10;
   uint64 network_tx_bytes_cumulative = 11;
-  float load_average_one_min = 12;
-  float load_average_five_min = 13;
-  float load_average_fifteen_min = 14;
-  uint64 uptime_seconds = 15;
-  uint32 total_processes_count = 16;
-  uint32 running_processes_count = 17;
-  uint32 tcp_established_connection_count = 18;
+  // Removed load_average fields
+  uint64 uptime_seconds = 12; // Renumbered from 15
+  uint32 total_processes_count = 13; // Renumbered from 16
+  uint32 running_processes_count = 14; // Renumbered from 17
+  uint32 tcp_established_connection_count = 15; // Renumbered from 18
+  uint64 network_rx_bytes_per_sec = 16; // Renumbered from 19
+  uint64 network_tx_bytes_per_sec = 17; // Renumbered from 20
 }
 
 message PerformanceSnapshotBatch {

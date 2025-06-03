@@ -8,9 +8,10 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ButtonGroup from '@mui/material/ButtonGroup';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'; // Removed TooltipProps
 import { getVpsMetricsTimeseries } from '../services/metricsService';
 import type { PerformanceMetricPoint } from '../types';
+import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent'; // Ensured type-only import
 
 // Helper to format date for XAxis
 const formatDateTick = (tickItem: string) => {
@@ -30,12 +31,28 @@ const calculateMemoryUsagePercent = (dataPoint: PerformanceMetricPoint): number 
   return null;
 };
 
+// Helper to format Network Speed (Bytes per second)
+const formatNetworkSpeed = (bps: number | null | undefined): string => {
+  if (bps == null || bps < 0) return 'N/A';
+  if (bps === 0) return '0 B/s';
+  const k = 1024; // Use 1024 for binary prefixes (KiB, MiB) often used for network speed
+  const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s'];
+  // Handle potential log(0) or negative values if bps is very small but positive
+  if (bps < 1) return bps.toFixed(2) + ' B/s';
+  const i = Math.floor(Math.log(bps) / Math.log(k));
+  // Ensure index is within bounds
+  const index = Math.min(i, sizes.length - 1);
+  return parseFloat((bps / Math.pow(k, index)).toFixed(2)) + ' ' + sizes[index];
+};
+
+
 type TimeRangeOption = '1h' | '6h' | '24h' | '7d';
 
 const VpsDetailPage: React.FC = () => {
   const { vpsId } = useParams<{ vpsId: string }>();
   const [cpuData, setCpuData] = useState<PerformanceMetricPoint[]>([]);
   const [memoryData, setMemoryData] = useState<PerformanceMetricPoint[]>([]);
+  const [networkData, setNetworkData] = useState<PerformanceMetricPoint[]>([]); // Added state for network data
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('1h');
@@ -78,9 +95,10 @@ const VpsDetailPage: React.FC = () => {
 
         const cpuPoints: PerformanceMetricPoint[] = [];
         const memoryPoints: PerformanceMetricPoint[] = [];
+        const networkPoints: PerformanceMetricPoint[] = []; // Added array for network points
 
         metrics.forEach(point => {
-          // For CPU, prefer aggregated if available, else raw
+          // --- CPU ---
           const cpuValue = point.avg_cpu_usage_percent ?? point.cpu_usage_percent;
           if (cpuValue != null) {
             cpuPoints.push({
@@ -90,7 +108,7 @@ const VpsDetailPage: React.FC = () => {
             });
           }
 
-          // For Memory, calculate percentage and store
+          // --- Memory ---
           const memoryUsagePercent = calculateMemoryUsagePercent(point);
           if (memoryUsagePercent != null) {
             memoryPoints.push({
@@ -99,10 +117,22 @@ const VpsDetailPage: React.FC = () => {
               memory_usage_percent: memoryUsagePercent,
             });
           }
+
+          // --- Network ---
+          // Backend returns avg_network_rx_instant_bps and avg_network_tx_instant_bps directly
+          if (point.avg_network_rx_instant_bps != null || point.avg_network_tx_instant_bps != null) {
+             networkPoints.push({
+               time: point.time,
+               vps_id: point.vps_id,
+               avg_network_rx_instant_bps: point.avg_network_rx_instant_bps, // Use updated field name
+               avg_network_tx_instant_bps: point.avg_network_tx_instant_bps, // Use updated field name
+             });
+          }
         });
 
         setCpuData(cpuPoints);
         setMemoryData(memoryPoints);
+        setNetworkData(networkPoints); // Set network data state
 
       } catch (err) {
         console.error('Failed to fetch VPS metrics:', err);
@@ -135,8 +165,10 @@ const VpsDetailPage: React.FC = () => {
 
         const cpuPoints: PerformanceMetricPoint[] = [];
         const memoryPoints: PerformanceMetricPoint[] = [];
+        const networkPoints: PerformanceMetricPoint[] = []; // Added array for network points
 
         metrics.forEach(point => {
+          // --- CPU ---
           const cpuValue = point.avg_cpu_usage_percent ?? point.cpu_usage_percent;
           if (cpuValue != null) {
             cpuPoints.push({
@@ -145,6 +177,7 @@ const VpsDetailPage: React.FC = () => {
               cpu_usage_percent: cpuValue,
             });
           }
+          // --- Memory ---
           const memoryUsagePercent = calculateMemoryUsagePercent(point);
           if (memoryUsagePercent != null) {
             memoryPoints.push({
@@ -153,9 +186,19 @@ const VpsDetailPage: React.FC = () => {
               memory_usage_percent: memoryUsagePercent,
             });
           }
+           // --- Network ---
+           if (point.avg_network_rx_instant_bps != null || point.avg_network_tx_instant_bps != null) {
+             networkPoints.push({
+               time: point.time,
+               vps_id: point.vps_id,
+               avg_network_rx_instant_bps: point.avg_network_rx_instant_bps, // Use updated field name
+               avg_network_tx_instant_bps: point.avg_network_tx_instant_bps, // Use updated field name
+             });
+          }
         });
         setCpuData(cpuPoints);
         setMemoryData(memoryPoints);
+        setNetworkData(networkPoints); // Set network data state
       } catch (err) {
         console.error('Failed to refresh VPS metrics:', err);
         setError('刷新指标数据失败。');
@@ -177,6 +220,12 @@ const VpsDetailPage: React.FC = () => {
   if (error) {
     return <Alert severity="error">{error}</Alert>;
   }
+
+  // Custom Tooltip Formatter for Network Speed
+  const networkTooltipFormatter = (value: ValueType, name: NameType): [string, NameType] => {
+    const formattedValue = formatNetworkSpeed(value as number);
+    return [formattedValue, name];
+  };
 
   return (
     <Box sx={{ width: '100%', maxWidth: 1200, margin: 'auto', p: 2 }}>
@@ -240,6 +289,31 @@ const VpsDetailPage: React.FC = () => {
             ) : (
               <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                 <Typography>暂无内存数据。</Typography>
+              </Box>
+            )}
+          </Paper>
+        </Grid>
+        {/* Network Chart */}
+        <Grid size={{ xs: 12 }}> {/* Full width for network chart */}
+          <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
+            <Typography variant="h6" gutterBottom align="center">网络速率</Typography>
+            {networkData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={networkData} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="time" tickFormatter={formatDateTick} />
+                  {/* Adjust YAxis tick formatter for network speed */}
+                  <YAxis tickFormatter={formatNetworkSpeed} width={80} />
+                  {/* Adjust Tooltip formatter */}
+                  <Tooltip formatter={networkTooltipFormatter} />
+                  <Legend />
+                  <Line type="monotone" dataKey="avg_network_rx_instant_bps" stroke="#ff7300" dot={false} name="下载速率" />
+                  <Line type="monotone" dataKey="avg_network_tx_instant_bps" stroke="#387908" dot={false} name="上传速率" />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                <Typography>暂无网络数据。</Typography>
               </Box>
             )}
           </Paper>
