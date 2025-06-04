@@ -436,3 +436,53 @@ pub async fn save_performance_snapshot_batch(
 // - AlertRule (create, update, get, list)
 // - AlertEvent (create, list by rule_id/vps_id)
 // - VpsMonthlyTraffic (upsert, get)
+
+/// Retrieves the summary of total and used disk space from the latest performance metric.
+pub async fn get_latest_disk_usage_summary(
+    pool: &PgPool,
+    vps_id: i32,
+) -> Result<Option<(i64, i64)>> { // Returns (total_bytes, used_bytes)
+    let result = sqlx::query_as!(
+        DiskUsageSummary,
+        r#"
+        WITH LatestMetric AS (
+            SELECT id
+            FROM performance_metrics
+            WHERE vps_id = $1
+            ORDER BY time DESC
+            LIMIT 1
+        )
+        SELECT
+            SUM(pdu.total_bytes)::BIGINT as total_sum_bytes,
+            SUM(pdu.used_bytes)::BIGINT as used_sum_bytes
+        FROM performance_disk_usages pdu
+        JOIN LatestMetric lm ON pdu.performance_metric_id = lm.id
+        WHERE EXISTS (SELECT 1 FROM LatestMetric) -- Ensure we only proceed if a latest metric exists
+        GROUP BY lm.id -- Though lm.id will be unique here due to LIMIT 1
+        "#,
+        vps_id
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    match result {
+        Some(summary) => {
+            // Handle cases where SUM might return NULL if no rows are found by the JOIN,
+            // though EXISTS should prevent this. SUM on no rows is NULL.
+            let total = summary.total_sum_bytes.unwrap_or(0);
+            let used = summary.used_sum_bytes.unwrap_or(0);
+            if total == 0 && used == 0 && summary.total_sum_bytes.is_none() { // Check if SUMs were actually NULL
+                Ok(None) // No disk usage data found for the latest metric
+            } else {
+                Ok(Some((total, used)))
+            }
+        }
+        None => Ok(None), // No latest metric found, or no disk usage for it
+    }
+}
+
+// Helper struct for the above query
+struct DiskUsageSummary {
+    total_sum_bytes: Option<i64>,
+    used_sum_bytes: Option<i64>,
+}

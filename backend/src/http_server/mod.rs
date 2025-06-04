@@ -65,6 +65,10 @@ pub enum AppError {
     InternalServerError(String),
     #[error("Server Error: {0}")]
     ServerError(String),
+    #[error("Not Found: {0}")] // Added NotFound
+    NotFound(String),
+    #[error("Unauthorized: {0}")] // Added Unauthorized
+    Unauthorized(String),
 }
 
 impl IntoResponse for AppError {
@@ -72,13 +76,15 @@ impl IntoResponse for AppError {
         let (status, error_message) = match self {
             AppError::InvalidInput(msg) => (StatusCode::BAD_REQUEST, msg),
             AppError::UserAlreadyExists(msg) => (StatusCode::CONFLICT, msg),
-            AppError::UserNotFound => (StatusCode::UNAUTHORIZED, "无效凭据".to_string()), // Changed from NOT_FOUND
-            AppError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "无效凭据".to_string()), // Ensured same message
+            AppError::UserNotFound => (StatusCode::UNAUTHORIZED, "无效凭据".to_string()),
+            AppError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "无效凭据".to_string()),
             AppError::PasswordHashingError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Password hashing error: {}", msg)),
             AppError::TokenCreationError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Token creation error: {}", msg)),
             AppError::DatabaseError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", msg)),
             AppError::InternalServerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             AppError::ServerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
+            AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg), // Or StatusCode::FORBIDDEN depending on context
         };
         (status, Json(serde_json::json!({ "error": error_message }))).into_response()
     }

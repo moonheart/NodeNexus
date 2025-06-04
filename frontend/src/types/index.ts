@@ -25,22 +25,24 @@ export interface Vps {
 export interface LatestPerformanceMetric {
   id: number;
   time: string; // DateTime<Utc>
-  vps_id: number;
-  cpu_usage_percent: number;
-  memory_usage_bytes: number;
-  memory_total_bytes: number;
-  swap_usage_bytes: number;
-  swap_total_bytes: number;
-  disk_io_read_bps: number;
-  disk_io_write_bps: number;
-  network_rx_bps: number; // Cumulative RX bytes (DEPRECATED for rate display)
-  network_tx_bps: number; // Cumulative TX bytes (DEPRECATED for rate display)
-  network_rx_instant_bps: number; // Instantaneous RX BPS (Use this for rate display)
-  network_tx_instant_bps: number; // Instantaneous TX BPS (Use this for rate display)
-  uptime_seconds: number;
-  total_processes_count: number;
-  running_processes_count: number;
-  tcp_established_connection_count: number;
+  vpsId: number; // camelCase
+  cpuUsagePercent: number; // camelCase
+  memoryUsageBytes: number; // camelCase
+  memoryTotalBytes: number; // camelCase
+  swapUsageBytes: number; // camelCase
+  swapTotalBytes: number; // camelCase
+  diskIoReadBps: number; // camelCase
+  diskIoWriteBps: number; // camelCase
+  networkRxBps: number; // camelCase (Cumulative RX bytes)
+  networkTxBps: number; // camelCase (Cumulative TX bytes)
+  networkRxInstantBps: number; // camelCase
+  networkTxInstantBps: number; // camelCase
+  uptimeSeconds: number; // camelCase
+  totalProcessesCount: number; // camelCase
+  runningProcessesCount: number; // camelCase
+  tcpEstablishedConnectionCount: number; // camelCase
+  diskTotalBytes?: number; // camelCase
+  diskUsedBytes?: number;  // camelCase
 }
 
 /**
@@ -70,4 +72,22 @@ export interface PerformanceMetricPoint {
 export interface VpsChartMetrics {
   cpuUsage: PerformanceMetricPoint[];
   memoryUsage: PerformanceMetricPoint[]; // Points here will need memory_usage_percent calculated
+}
+
+/**
+ * Represents the structure for a VPS item in a list or for detail view,
+ * including its latest metrics. This matches the VpsListItemResponse from the backend.
+ */
+export interface VpsListItemResponse {
+  id: number;
+  userId: number; // camelCase
+  name: string;
+  ipAddress: string | null; // camelCase
+  osType: string | null;    // camelCase
+  agentSecret: string; // camelCase
+  status: string;
+  metadata: Record<string, unknown> | null;
+  createdAt: string; // camelCase
+  updatedAt: string; // camelCase
+  latestMetrics?: LatestPerformanceMetric | null; // camelCase
 }

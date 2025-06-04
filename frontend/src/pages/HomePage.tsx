@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react'; // Added useCallback
 import { Link as RouterLink } from 'react-router-dom';
 import CreateVpsModal from '../components/CreateVpsModal';
-import type { Vps, LatestPerformanceMetric } from '../types'; // Added LatestPerformanceMetric
+import type { Vps, LatestPerformanceMetric, VpsListItemResponse } from '../types'; // Added VpsListItemResponse
 import { getVpsList } from '../services/vpsService';
 import { getLatestVpsMetrics } from '../services/metricsService'; // Added
 
 const HomePage: React.FC = () => {
   const [isCreateVpsModalOpen, setIsCreateVpsModalOpen] = useState(false);
-  // VpsList now includes optional latest_metrics
-  const [vpsList, setVpsList] = useState<Vps[]>([]);
+  // VpsList now holds VpsListItemResponse which includes optional latestMetrics
+  const [vpsList, setVpsList] = useState<VpsListItemResponse[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,18 +23,20 @@ const HomePage: React.FC = () => {
           initialVpsData.map(async (vps) => {
             try {
               const metrics: LatestPerformanceMetric | null = await getLatestVpsMetrics(vps.id);
-              return { ...vps, latest_metrics: metrics };
+              // Ensure the vps object from getVpsList() is compatible with VpsListItemResponse structure if needed,
+              // or adjust mapping here. Assuming getVpsList now returns VpsListItemResponse[].
+              return { ...vps, latestMetrics: metrics };
             } catch (metricError) {
               console.error(`Failed to fetch initial metrics for VPS ${vps.id}`, metricError);
-              return { ...vps, latest_metrics: null };
+              return { ...vps, latestMetrics: null };
             }
           })
         );
-        setVpsList(vpsWithInitialMetrics);
+        setVpsList(vpsWithInitialMetrics as VpsListItemResponse[]); // Cast if initialVpsData was Vps[]
       } else {
-        // If not fetching metrics, just set the list, preserving any existing metrics if logic were more complex
-        // For now, this branch might just set them with null metrics if called with false
-         setVpsList(initialVpsData.map(vps => ({ ...vps, latest_metrics: null })));
+        // If not fetching metrics, just set the list, preserving any existing metrics
+        // Ensure structure matches VpsListItemResponse
+        setVpsList(initialVpsData.map(vps => ({ ...vps, latestMetrics: vps.latestMetrics || null })));
       }
     } catch (err) {
       setError('无法获取VPS列表。');
@@ -51,14 +53,14 @@ const HomePage: React.FC = () => {
       const metrics = await getLatestVpsMetrics(vpsId);
       setVpsList(prevList =>
         prevList.map(vps =>
-          vps.id === vpsId ? { ...vps, latest_metrics: metrics } : vps
+          vps.id === vpsId ? { ...vps, latestMetrics: metrics } : vps
         )
       );
     } catch (error) {
       console.error(`Error updating metrics for VPS ${vpsId}:`, error);
       setVpsList(prevList =>
         prevList.map(vps =>
-          vps.id === vpsId ? { ...vps, latest_metrics: null } : vps // Set to null on error
+          vps.id === vpsId ? { ...vps, latestMetrics: null } : vps // Set to null on error
         )
       );
     }
@@ -114,7 +116,8 @@ const HomePage: React.FC = () => {
   };
 
   const handleVpsCreated = (newVps: Vps) => {
-    console.log('VPS Created:', newVps);
+    console.log('VPS Created:', newVps); // newVps is of type Vps
+    // fetchVpsList will fetch VpsListItemResponse[], which is fine.
     fetchVpsList(); // Refresh the list
     handleCloseCreateVpsModal(); // Close modal after creation
   };
@@ -154,21 +157,20 @@ const HomePage: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {vpsList.map((vps) => {
-              const metrics = vps.latest_metrics;
-              const cpuUsage = metrics ? `${metrics.cpu_usage_percent.toFixed(1)}%` : 'N/A';
-              const memUsage = metrics && metrics.memory_total_bytes > 0
-                ? `${(metrics.memory_usage_bytes / (1024 * 1024)).toFixed(1)}MB / ${(metrics.memory_total_bytes / (1024 * 1024)).toFixed(1)}MB`
+            {vpsList.map((vps) => { // vps is VpsListItemResponse
+              const metrics = vps.latestMetrics; // Use camelCase
+              const cpuUsage = metrics ? `${metrics.cpuUsagePercent.toFixed(1)}%` : 'N/A';
+              const memUsage = metrics && metrics.memoryTotalBytes > 0
+                ? `${(metrics.memoryUsageBytes / (1024 * 1024)).toFixed(1)}MB / ${(metrics.memoryTotalBytes / (1024 * 1024)).toFixed(1)}MB`
                 : 'N/A';
-              const formatSpeed = (bps: number | undefined) => {
-                if (typeof bps !== 'number') return 'N/A';
+              const formatSpeed = (bps: number | undefined | null) => { // Allow null
+                if (typeof bps !== 'number' || bps === null) return 'N/A';
                 if (bps < 1024) return `${bps.toFixed(0)} B/s`;
                 if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KB/s`;
                 return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
               };
-              // Use the correct instantaneous fields for speed display
-              const downSpeed = formatSpeed(metrics?.network_rx_instant_bps);
-              const upSpeed = formatSpeed(metrics?.network_tx_instant_bps);
+              const downSpeed = formatSpeed(metrics?.networkRxInstantBps);
+              const upSpeed = formatSpeed(metrics?.networkTxInstantBps);
 
               return (
                 <tr key={vps.id}>
@@ -178,13 +180,13 @@ const HomePage: React.FC = () => {
                   <td style={{ border: '1px solid #ddd', padding: '8px' }}>
                     <RouterLink to={`/vps/${vps.id}`}>{vps.name}</RouterLink>
                   </td>
-                  <td style={{ border: '1px solid #ddd', padding: '8px' }}>{vps.ip_address || 'N/A'}</td>
+                  <td style={{ border: '1px solid #ddd', padding: '8px' }}>{vps.ipAddress || 'N/A'}</td>
                   <td style={{ border: '1px solid #ddd', padding: '8px' }}>{vps.status}</td>
                   <td style={{ border: '1px solid #ddd', padding: '8px' }}>{cpuUsage}</td>
                   <td style={{ border: '1px solid #ddd', padding: '8px' }}>{memUsage}</td>
                   <td style={{ border: '1px solid #ddd', padding: '8px' }}>{downSpeed}</td>
                   <td style={{ border: '1px solid #ddd', padding: '8px' }}>{upSpeed}</td>
-                  <td style={{ border: '1px solid #ddd', padding: '8px' }}>{new Date(vps.created_at).toLocaleString()}</td>
+                  <td style={{ border: '1px solid #ddd', padding: '8px' }}>{new Date(vps.createdAt).toLocaleString()}</td>
                 </tr>
               );
             })}

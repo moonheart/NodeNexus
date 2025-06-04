@@ -22,7 +22,21 @@ message MessageToServer {
     CommandResponse command_response = 6;
     PtyDataToServer pty_data_to_server = 7;
     Heartbeat heartbeat = 8;
+    StaticSystemInfo static_system_info = 11; // New field for static info
   }
+}
+
+// New message for static system information
+message StaticSystemInfo {
+  string architecture = 1; // e.g., "x86_64", "aarch64"
+  string cpu_model = 2;    // e.g., "Intel(R) Core(TM) i7-8700K CPU @ 3.70GHz"
+  string os_family = 3;    // e.g., "Linux", "Windows", "Darwin"
+  string os_version = 4;   // e.g., "Ubuntu 22.04.1 LTS", "10.0.19044"
+  string kernel_version = 5; // e.g., "5.15.0-48-generic"
+  string hostname = 6;
+  // Potentially add more static info here if needed in the future
+  // string total_disk_space_summary = 7; // e.g. "Total: 500GB (Root: 100GB, Data: 400GB)"
+  // string total_memory_formatted = 8; // e.g. "16 GB"
 }
 
 message MessageToAgent {

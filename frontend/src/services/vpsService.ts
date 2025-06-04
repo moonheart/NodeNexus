@@ -1,5 +1,6 @@
 import apiClient from './apiClient.ts'; // Assuming you have an apiClient for making requests
-import type { Vps } from '../types'; // Assuming Vps type is defined in src/types.ts
+// VpsListItemResponse is the type returned by the backend for list and detail views now
+import type { Vps, VpsListItemResponse } from '../types';
 
 export interface CreateVpsPayload {
   name: string;
@@ -7,12 +8,12 @@ export interface CreateVpsPayload {
 
 // The backend is expected to return the full Vps object upon creation,
 // including id and agent_secret.
+// For create, the backend still returns the basic Vps model.
 export const createVps = async (payload: CreateVpsPayload): Promise<Vps> => {
   try {
-    const response = await apiClient.post<Vps>('/api/vps', payload); // Changed path
+    const response = await apiClient.post<Vps>('/api/vps', payload);
     return response.data;
   } catch (error) {
-    // Handle or throw error as appropriate for your error handling strategy
     console.error('Error creating VPS:', error);
     throw error;
   }
@@ -20,10 +21,11 @@ export const createVps = async (payload: CreateVpsPayload): Promise<Vps> => {
 
 /**
  * Fetches the list of VPS for the authenticated user.
+ * The backend now returns VpsListItemResponse which includes latest_metrics.
  */
-export const getVpsList = async (): Promise<Vps[]> => {
+export const getVpsList = async (): Promise<VpsListItemResponse[]> => {
   try {
-    const response = await apiClient.get<Vps[]>('/api/vps'); // GET request to the same endpoint
+    const response = await apiClient.get<VpsListItemResponse[]>('/api/vps');
     return response.data;
   } catch (error) {
     console.error('Error fetching VPS list:', error);
@@ -31,5 +33,19 @@ export const getVpsList = async (): Promise<Vps[]> => {
   }
 };
 
+/**
+ * Fetches the details for a single VPS.
+ */
+export const getVpsDetail = async (vpsId: string): Promise<VpsListItemResponse> => {
+  try {
+    const response = await apiClient.get<VpsListItemResponse>(`/api/vps/${vpsId}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching VPS detail for ID ${vpsId}:`, error);
+    throw error;
+  }
+};
+
+
 // You might want to add other VPS related API calls here in the future,
-// e.g., getVpsById, deleteVps, etc.
+// e.g., deleteVps, etc.

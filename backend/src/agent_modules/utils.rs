@@ -1,5 +1,6 @@
 use std::net::IpAddr;
-use sysinfo::Networks;
+use sysinfo::{Networks, System}; // Added System
+use crate::agent_service::StaticSystemInfo; // Import the protobuf message
 
 // Helper function to collect public IP addresses
 pub fn collect_public_ip_addresses() -> Vec<String> {
@@ -47,4 +48,37 @@ pub fn collect_public_ip_addresses() -> Vec<String> {
     public_ips.sort_unstable();
     public_ips.dedup();
     public_ips
+}
+
+// Helper function to collect static system information
+pub fn collect_static_system_info() -> StaticSystemInfo {
+    let mut sys = System::new_all();
+    sys.refresh_cpu_specifics(sysinfo::CpuRefreshKind::everything()); // Refresh CPU info for brand
+    // sys.refresh_all(); // Refresh all system information
+
+    let mut architecture = System::cpu_arch();
+    if architecture.is_empty() {
+        architecture = "Unknown".to_string();
+    }
+    // Get the brand of the first CPU, or "Unknown" if no CPUs are found or brand is empty.
+    let cpu_model = sys.cpus().first().map_or_else(
+        || "Unknown".to_string(),
+        |cpu| {
+            let brand = cpu.brand();
+            if brand.is_empty() { "Unknown".to_string() } else { brand.to_string() }
+        }
+    );
+    let os_family = System::name().unwrap_or_else(|| "Unknown".to_string());
+    let os_version = System::os_version().unwrap_or_else(|| "Unknown".to_string());
+    let kernel_version = System::kernel_version().unwrap_or_else(|| "Unknown".to_string());
+    let hostname = System::host_name().unwrap_or_else(|| "Unknown".to_string());
+
+    StaticSystemInfo {
+        architecture,
+        cpu_model,
+        os_family,
+        os_version,
+        kernel_version,
+        hostname,
+    }
 }

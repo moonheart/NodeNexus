@@ -18,6 +18,7 @@ struct PreviousNetworkState {
 /// for both cumulative and instantaneous network data.
 pub fn collect_performance_snapshot(
     sys: &mut System,
+    disks: &mut Disks, // Added Disks as a mutable reference
     networks: &mut Networks,
     prev_net_state: &Option<PreviousNetworkState>, // Pass previous state time
     current_time: Instant, // Pass current time for rate calculation
@@ -37,12 +38,35 @@ pub fn collect_performance_snapshot(
     // Cumulative Disk I/O (Remains the same - sums across all disks)
     let mut total_disk_read_bytes: u64 = 0;
     let mut total_disk_write_bytes: u64 = 0;
-    let mut disks = Disks::new_with_refreshed_list();
-    disks.refresh(true);
-    for disk in disks.list() {
-        let disk_usage = disk.usage();
-        total_disk_read_bytes += disk_usage.total_read_bytes;
-        total_disk_write_bytes += disk_usage.total_written_bytes;
+    // disks.refresh_list(); // Refresh the list of disks
+    disks.refresh(true); // Refresh stats for all disks in the list
+
+    for disk_info in disks.list() {
+        let disk_usage_stats = disk_info.usage();
+        total_disk_read_bytes += disk_usage_stats.total_read_bytes;
+        total_disk_write_bytes += disk_usage_stats.total_written_bytes;
+    }
+
+    // Collect detailed disk usages
+    let mut collected_disk_usages = Vec::new();
+    // The 'disks' variable is already refreshed and contains the list and their stats.
+    for disk_info in disks.list() {
+        let total_space = disk_info.total_space();
+        let available_space = disk_info.available_space();
+        let used_space = total_space.saturating_sub(available_space); // Use saturating_sub for safety
+        let usage_percent = if total_space > 0 {
+            (used_space as f64 / total_space as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        collected_disk_usages.push(crate::agent_service::DiskUsage { // Explicitly use crate::agent_service
+            mount_point: disk_info.mount_point().to_string_lossy().into_owned(),
+            used_bytes: used_space,
+            total_bytes: total_space,
+            fstype: disk_info.file_system().to_string_lossy().into_owned(),
+            usage_percent,
+        });
     }
 
     // --- Network I/O (Default Interface Only) ---
@@ -124,7 +148,7 @@ pub fn collect_performance_snapshot(
         swap_total_bytes: sys.total_swap(),
         disk_total_io_read_bytes_per_sec: total_disk_read_bytes, // CUMULATIVE (All Disks)
         disk_total_io_write_bytes_per_sec: total_disk_write_bytes, // CUMULATIVE (All Disks)
-        disk_usages: Vec::new(),
+        disk_usages: collected_disk_usages, // MODIFIED
         // Cumulative network data (Default Interface Only)
         network_rx_bytes_cumulative: cumulative_rx_bytes, // Field 10
         network_tx_bytes_cumulative: cumulative_tx_bytes, // Field 11
@@ -151,6 +175,7 @@ pub async fn metrics_collection_loop(
     agent_secret: String,
 ) {
     let mut sys = System::new_all();
+    let mut disks = Disks::new_with_refreshed_list(); // Initialize Disks here
     let mut networks = Networks::new_with_refreshed_list();
     // Only need to store the time of the previous collection
     let mut prev_net_state: Option<PreviousNetworkState> = None;
@@ -172,6 +197,7 @@ pub async fn metrics_collection_loop(
         agent_id, collect_interval_duration, upload_interval_duration, batch_max_size);
 
     // Initial refresh to set the baseline for the *next* delta calculation by sysinfo
+    disks.refresh(true); // Initial refresh for disks
     networks.refresh(true);
     prev_net_state = Some(PreviousNetworkState { time: Instant::now() });
 
@@ -181,8 +207,8 @@ pub async fn metrics_collection_loop(
             _ = collect_interval.tick() => {
                 let current_time = Instant::now();
 
-                // collect_performance_snapshot internally calls networks.refresh(true)
-                let snapshot = collect_performance_snapshot(&mut sys, &mut networks, &prev_net_state, current_time);
+                // collect_performance_snapshot internally calls networks.refresh(true) and disks.refresh()
+                let snapshot = collect_performance_snapshot(&mut sys, &mut disks, &mut networks, &prev_net_state, current_time);
                 snapshot_batch_vec.push(snapshot.clone());
 
                 // Update previous state time for the next iteration's calculation
