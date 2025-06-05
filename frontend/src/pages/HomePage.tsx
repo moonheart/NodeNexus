@@ -1,111 +1,39 @@
-import React, { useState, useEffect, useCallback } from 'react'; // Added useCallback
+import React, { useState } from 'react'; // Removed useEffect and useCallback
 import { Link as RouterLink } from 'react-router-dom';
 import CreateVpsModal from '../components/CreateVpsModal';
-import type { Vps, LatestPerformanceMetric, VpsListItemResponse } from '../types'; // Added VpsListItemResponse
-import { getVpsList } from '../services/vpsService';
-import { getLatestVpsMetrics } from '../services/metricsService'; // Added
+import type { Vps, VpsListItemResponse } from '../types'; // Added VpsListItemResponse back
+// import { getVpsList } from '../services/vpsService'; // No longer needed for initial list
+// import { getLatestVpsMetrics } from '../services/metricsService'; // No longer needed
+import { useServerListStore, type ServerListState, type ConnectionStatus } from '../store/serverListStore'; // Import ServerListState and ConnectionStatus
+import { useShallow } from 'zustand/react/shallow'; // Import useShallow
+
+interface HomePageStateSlice {
+  servers: VpsListItemResponse[];
+  isLoading: boolean;
+  error: string | null;
+  connectionStatus: ConnectionStatus;
+}
+
+// Define the selector function outside the component for stability
+const selectHomePageData = (state: ServerListState): HomePageStateSlice => ({
+  servers: state.servers,
+  isLoading: state.isLoading,
+  error: state.error,
+  connectionStatus: state.connectionStatus,
+});
 
 const HomePage: React.FC = () => {
   const [isCreateVpsModalOpen, setIsCreateVpsModalOpen] = useState(false);
-  // VpsList now holds VpsListItemResponse which includes optional latestMetrics
-  const [vpsList, setVpsList] = useState<VpsListItemResponse[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  
+  const {
+    servers: vpsList,
+    isLoading,
+    error: wsError,
+    connectionStatus
+  } = useServerListStore(useShallow(selectHomePageData)); // Correctly use useShallow to wrap the selector
 
-  // Stable function to fetch the initial list of VPS and their first metrics
-  const fetchVpsList = useCallback(async (fetchInitialMetrics = true) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const initialVpsData = await getVpsList();
-      if (fetchInitialMetrics) {
-        const vpsWithInitialMetrics = await Promise.all(
-          initialVpsData.map(async (vps) => {
-            try {
-              const metrics: LatestPerformanceMetric | null = await getLatestVpsMetrics(vps.id);
-              // Ensure the vps object from getVpsList() is compatible with VpsListItemResponse structure if needed,
-              // or adjust mapping here. Assuming getVpsList now returns VpsListItemResponse[].
-              return { ...vps, latestMetrics: metrics };
-            } catch (metricError) {
-              console.error(`Failed to fetch initial metrics for VPS ${vps.id}`, metricError);
-              return { ...vps, latestMetrics: null };
-            }
-          })
-        );
-        setVpsList(vpsWithInitialMetrics as VpsListItemResponse[]); // Cast if initialVpsData was Vps[]
-      } else {
-        // If not fetching metrics, just set the list, preserving any existing metrics
-        // Ensure structure matches VpsListItemResponse
-        setVpsList(initialVpsData.map(vps => ({ ...vps, latestMetrics: vps.latestMetrics || null })));
-      }
-    } catch (err) {
-      setError('无法获取VPS列表。');
-      console.error(err);
-      setVpsList([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []); // Empty dependency array makes fetchVpsList stable
-
-  // Stable function to update metrics for a single VPS
-  const updateSingleVpsMetrics = useCallback(async (vpsId: number) => {
-    try {
-      const metrics = await getLatestVpsMetrics(vpsId);
-      setVpsList(prevList =>
-        prevList.map(vps =>
-          vps.id === vpsId ? { ...vps, latestMetrics: metrics } : vps
-        )
-      );
-    } catch (error) {
-      console.error(`Error updating metrics for VPS ${vpsId}:`, error);
-      setVpsList(prevList =>
-        prevList.map(vps =>
-          vps.id === vpsId ? { ...vps, latestMetrics: null } : vps // Set to null on error
-        )
-      );
-    }
-  }, []); // Empty dependency array makes updateSingleVpsMetrics stable
-
-  // useRef to hold the callback that updates all VPS metrics.
-  // This allows the setInterval effect to not depend on vpsList directly.
-  const metricsUpdateCallbackRef = React.useRef<(() => Promise<void>) | undefined>(undefined);
-
-  useEffect(() => {
-    // This function is (re)created whenever vpsList or updateSingleVpsMetrics changes.
-    // updateSingleVpsMetrics is stable. So this mainly reacts to vpsList changes.
-    metricsUpdateCallbackRef.current = async () => {
-      // Access the latest vpsList directly from state here
-      // Use a functional update for setVpsList if reading and writing to it in the same callback
-      // to ensure we're working with the most up-to-date state.
-      // However, here we are reading vpsList to get IDs and then calling updateSingleVpsMetrics
-      // which itself calls setVpsList. This should be fine.
-      const currentVpsIds = vpsList.map(vps => vps.id);
-      if (currentVpsIds.length === 0) return;
-      // console.log('RefCallback: Updating metrics for VPS IDs:', currentVpsIds);
-      await Promise.all(currentVpsIds.map(id => updateSingleVpsMetrics(id)));
-    };
-  }, [vpsList, updateSingleVpsMetrics]); // Runs when vpsList or updateSingleVpsMetrics changes
-
-  // Effect to fetch the initial list ONCE on mount
-  useEffect(() => {
-    fetchVpsList(true);
-  }, [fetchVpsList]); // fetchVpsList is stable, so this runs once.
-
-  // Effect to set up and clear the interval for periodic metrics updates
-  useEffect(() => {
-    const tick = () => {
-      if (metricsUpdateCallbackRef.current) {
-        // console.log('Interval tick: calling metricsUpdateCallbackRef.current');
-        metricsUpdateCallbackRef.current();
-      }
-    };
-    // console.log('Setting up metrics update interval.');
-    const intervalId = setInterval(tick, 5000); // Refresh every 5 seconds
-    return () => {
-      // console.log('Clearing metrics update interval on unmount or re-run.');
-      clearInterval(intervalId);
-    };
-  }, []); // Empty dependency array: interval is set up once and cleaned up on unmount.
+  // The useEffect for initializing WebSocket is now in App.tsx
+  // Old data fetching and interval logic is removed.
 
   const handleOpenCreateVpsModal = () => {
     setIsCreateVpsModalOpen(true);
@@ -116,11 +44,23 @@ const HomePage: React.FC = () => {
   };
 
   const handleVpsCreated = (newVps: Vps) => {
-    console.log('VPS Created:', newVps); // newVps is of type Vps
-    // fetchVpsList will fetch VpsListItemResponse[], which is fine.
-    fetchVpsList(); // Refresh the list
-    handleCloseCreateVpsModal(); // Close modal after creation
+    console.log('VPS Created:', newVps);
+    // The list will be updated via WebSocket push. No explicit fetch needed here.
+    // If an immediate fetch is desired for some reason (e.g. backend doesn't push instantly after creation),
+    // a separate action in the store could be triggered, or rely on the next WebSocket push.
+    handleCloseCreateVpsModal();
   };
+
+  // Display connection status messages
+  let statusMessage = '';
+  if (connectionStatus === 'connecting') {
+    statusMessage = '正在连接到实时服务器...';
+  } else if (connectionStatus === 'reconnecting') {
+    statusMessage = '连接已断开，正在尝试重新连接...';
+  } else if (connectionStatus === 'error' || connectionStatus === 'permanently_failed') {
+    statusMessage = `无法连接到实时服务器: ${wsError || '未知错误'}`;
+  }
+
 
   return (
     <div style={{ padding: '20px' }}>
@@ -136,12 +76,16 @@ const HomePage: React.FC = () => {
       />
 
       <h2>您的VPS列表</h2>
-      {isLoading && <p>加载中...</p>}
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-      {!isLoading && !error && vpsList.length === 0 && (
+      {statusMessage && <p style={{ color: connectionStatus === 'error' || connectionStatus === 'permanently_failed' ? 'red' : 'orange', textAlign: 'center', marginBottom: '10px' }}>{statusMessage}</p>}
+      
+      <h2>您的VPS列表</h2>
+      {isLoading && connectionStatus !== 'connected' && <p>加载中...</p>} {/* Show loading only if not yet connected or initial data not received */}
+      {wsError && connectionStatus !== 'reconnecting' && <p style={{ color: 'red' }}>{wsError}</p>} {/* Show error if not in reconnecting state */}
+      
+      {!isLoading && vpsList.length === 0 && connectionStatus === 'connected' && (
         <p>您还没有任何VPS。点击上面的按钮创建一个吧！</p>
       )}
-      {!isLoading && !error && vpsList.length > 0 && (
+      {vpsList.length > 0 && (
         <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
           <thead>
             <tr style={{ backgroundColor: '#f0f0f0' }}>
@@ -157,7 +101,7 @@ const HomePage: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {vpsList.map((vps) => { // vps is VpsListItemResponse
+            {vpsList.map((vps: VpsListItemResponse) => { // Explicitly type vps
               const metrics = vps.latestMetrics; // Use camelCase
               const cpuUsage = metrics ? `${metrics.cpuUsagePercent.toFixed(1)}%` : 'N/A';
               const memUsage = metrics && metrics.memoryTotalBytes > 0

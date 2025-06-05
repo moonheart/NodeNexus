@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react'; // Added useEffect
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, createTheme, CssBaseline, AppBar, Toolbar, Typography, Button, Box } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
@@ -10,6 +10,7 @@ import NotFoundPage from './pages/NotFoundPage';
 import VpsDetailPage from './pages/VpsDetailPage'; // Import the new page
 import ProtectedRoute from './components/ProtectedRoute';
 import { useAuthStore } from './store/authStore';
+import { useServerListStore } from './store/serverListStore'; // Added serverListStore
 
 // 一个简单的亮色主题
 const lightTheme = createTheme({
@@ -20,6 +21,31 @@ const lightTheme = createTheme({
 
 function App() {
   const { isAuthenticated, logout } = useAuthStore();
+  const { initializeWebSocket, disconnectWebSocket } = useServerListStore();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      console.log('App.tsx: User is authenticated, initializing WebSocket.');
+      initializeWebSocket();
+    } else {
+      console.log('App.tsx: User is not authenticated, disconnecting WebSocket.');
+      disconnectWebSocket();
+    }
+
+    // Cleanup on component unmount or when isAuthenticated changes to false
+    return () => {
+      // This cleanup will also run if isAuthenticated becomes false before unmount
+      // console.log('App.tsx: Cleanup effect, disconnecting WebSocket.');
+      // disconnectWebSocket(); // Covered by the else block, but good for unmount
+    };
+  }, [isAuthenticated, initializeWebSocket, disconnectWebSocket]);
+
+  // Additional cleanup specifically for logout action
+  const handleLogout = () => {
+    logout(); // This will set isAuthenticated to false, triggering the useEffect above
+    // disconnectWebSocket(); // Explicitly disconnect, though useEffect should also handle it.
+                           // The useEffect is preferred as it centralizes the logic based on isAuthenticated.
+  };
 
   return (
     <ThemeProvider theme={lightTheme}>
@@ -34,7 +60,7 @@ function App() {
                 </RouterLink>
               </Typography>
               {isAuthenticated ? (
-                <Button color="inherit" onClick={logout}>
+                <Button color="inherit" onClick={handleLogout}> {/* Changed to handleLogout */}
                   登出
                 </Button>
               ) : (

@@ -4,18 +4,27 @@ use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use std::sync::Arc;
 
-use super::agent_state::ConnectedAgents;
+use super::agent_state::{ConnectedAgents, LiveServerDataCache}; // Added LiveServerDataCache
 use super::handlers::handle_connection;
 
 #[derive(Debug)]
 pub struct MyAgentCommService {
     pub connected_agents: Arc<Mutex<ConnectedAgents>>,
     pub db_pool: Arc<PgPool>,
+    pub live_server_data_cache: LiveServerDataCache, // Added cache field
 }
 
 impl MyAgentCommService {
-    pub fn new(connected_agents: Arc<Mutex<ConnectedAgents>>, db_pool: Arc<PgPool>) -> Self {
-        Self { connected_agents, db_pool }
+    pub fn new(
+        connected_agents: Arc<Mutex<ConnectedAgents>>,
+        db_pool: Arc<PgPool>,
+        live_server_data_cache: LiveServerDataCache, // Added cache parameter
+    ) -> Self {
+        Self {
+            connected_agents,
+            db_pool,
+            live_server_data_cache, // Store cache
+        }
     }
 }
 
@@ -31,6 +40,7 @@ impl crate::agent_service::agent_communication_service_server::AgentCommunicatio
             request.into_inner(),
             self.connected_agents.clone(),
             self.db_pool.clone(),
+            self.live_server_data_cache.clone(), // Pass cache to handler
         ).await
     }
 }

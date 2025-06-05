@@ -1,6 +1,7 @@
 
 
 use std::collections::HashMap;
+use crate::websocket_models::ServerWithDetails; // Added import
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use crate::agent_service::AgentConfig;
@@ -23,3 +24,6 @@ impl ConnectedAgents {
         Arc::new(Mutex::new(Self::default()))
     }
 }
+
+// Cache for live server data including basic info and latest metrics
+pub type LiveServerDataCache = Arc<Mutex<HashMap<i32, ServerWithDetails>>>;

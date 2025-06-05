@@ -1,6 +1,9 @@
 use std::sync::Arc;
-use chrono::Utc; // Removed DateTime
+use chrono::{TimeZone, Utc}; // Added TimeZone
 use tokio::sync::{mpsc, Mutex};
+use crate::server::agent_state::LiveServerDataCache; // Added for cache
+use crate::websocket_models::{ServerMetricsSnapshot, ServerWithDetails, ServerBasicInfo}; // Added for cache update
+use crate::agent_service::PerformanceSnapshot; // To map from
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Status};
@@ -15,11 +18,13 @@ use crate::agent_service::{
 use crate::server::agent_state::{AgentState, ConnectedAgents};
 // use crate::db::models::PerformanceMetric; // No longer directly used here
 use crate::db::services; // Will be used later for db operations
+use crate::db::models::Vps as DbVps; // For fetching VPS details if not in cache
 
 pub async fn handle_connection(
     mut in_stream: tonic::Streaming<MessageToServer>,
     connected_agents_arc: Arc<Mutex<ConnectedAgents>>,
     pool: Arc<PgPool>, // Added PgPool
+    live_server_data_cache: LiveServerDataCache, // Added cache
 ) -> Result<Response<ReceiverStream<Result<MessageToAgent, Status>>>, Status> {
     let (tx_to_agent, rx_from_server) = mpsc::channel(128);
     let connection_id = Uuid::new_v4().to_string();
@@ -27,6 +32,8 @@ pub async fn handle_connection(
 
     let connected_agents_arc_clone = connected_agents_arc.clone();
     let pool_clone = pool.clone(); // Clone pool for the spawned task
+    let cache_clone = live_server_data_cache.clone(); // Clone cache for the spawned task
+
     tokio::spawn(async move {
         let mut current_session_agent_id: Option<String> = None; // Server-generated session ID
         let mut server_message_id_counter: u64 = 1; // Counter for messages sent from server to agent
@@ -183,6 +190,75 @@ pub async fn handle_connection(
                                         match services::save_performance_snapshot_batch(&pool_clone, vps_db_id_from_msg, &batch).await {
                                             Ok(_) => {
                                                 println!("[{}] Successfully saved performance batch for agent {} (VPS DB ID {})", connection_id, session_id, vps_db_id_from_msg);
+                                                
+                                                // Update the live_server_data_cache with the latest snapshot from the batch
+                                                if let Some(latest_snapshot_proto) = batch.snapshots.last() {
+                                                   let mut cache_guard = cache_clone.lock().await;
+                                                   if let Some(server_details_entry) = cache_guard.get_mut(&vps_db_id_from_msg) {
+                                                       // Map PerformanceSnapshot (proto) to ServerMetricsSnapshot (websocket_models)
+                                                       let snapshot_time = Utc.timestamp_millis_opt(latest_snapshot_proto.timestamp_unix_ms).single().unwrap_or_else(Utc::now);
+                                                       let new_metrics_snapshot = ServerMetricsSnapshot {
+                                                           time: snapshot_time, // Add time from proto
+                                                           cpu_usage_percent: latest_snapshot_proto.cpu_overall_usage_percent,
+                                                           memory_usage_bytes: latest_snapshot_proto.memory_usage_bytes,
+                                                           memory_total_bytes: latest_snapshot_proto.memory_total_bytes,
+                                                           network_rx_instant_bps: Some(latest_snapshot_proto.network_rx_bytes_per_sec),
+                                                           network_tx_instant_bps: Some(latest_snapshot_proto.network_tx_bytes_per_sec),
+                                                           uptime_seconds: Some(latest_snapshot_proto.uptime_seconds),
+                                                           // Assuming disk_used_bytes and disk_total_bytes are summed from latest_snapshot_proto.disk_usages
+                                                           // This might need more complex logic if you want to sum them up.
+                                                           // For simplicity, let's assume they are directly available or can be approximated.
+                                                           // If not directly available, these might need to be fetched or calculated differently.
+                                                           // For now, let's use the first disk if available, or None.
+                                                           disk_used_bytes: latest_snapshot_proto.disk_usages.first().map(|d| d.used_bytes),
+                                                           disk_total_bytes: latest_snapshot_proto.disk_usages.first().map(|d| d.total_bytes),
+                                                       };
+                                                       server_details_entry.latest_metrics = Some(new_metrics_snapshot);
+                                                       println!("[{}] Updated live cache for VPS ID {}", connection_id, vps_db_id_from_msg);
+                                                   } else {
+                                                       // VPS not in cache, might be a new VPS or cache not yet populated.
+                                                       // For now, log it. Ideally, the cache should be pre-populated.
+                                                       // Or, fetch basic info and insert.
+                                                       eprintln!("[{}] VPS ID {} not found in live_server_data_cache during metrics update. Attempting to fetch and insert.", connection_id, vps_db_id_from_msg);
+                                                       // Attempt to fetch basic info and create an entry
+                                                       match services::get_vps_by_id(&pool_clone, vps_db_id_from_msg).await {
+                                                           Ok(Some(db_vps)) => {
+                                                               let basic_info = ServerBasicInfo {
+                                                                   id: db_vps.id,
+                                                                   name: db_vps.name,
+                                                                   ip_address: db_vps.ip_address,
+                                                                   status: db_vps.status,
+                                                               };
+                                                               let snapshot_time_for_new_entry = Utc.timestamp_millis_opt(latest_snapshot_proto.timestamp_unix_ms).single().unwrap_or_else(Utc::now);
+                                                               let metrics_snapshot = ServerMetricsSnapshot {
+                                                                   time: snapshot_time_for_new_entry, // Add time from proto
+                                                                   cpu_usage_percent: latest_snapshot_proto.cpu_overall_usage_percent,
+                                                                   memory_usage_bytes: latest_snapshot_proto.memory_usage_bytes,
+                                                                   memory_total_bytes: latest_snapshot_proto.memory_total_bytes,
+                                                                   network_rx_instant_bps: Some(latest_snapshot_proto.network_rx_bytes_per_sec),
+                                                                   network_tx_instant_bps: Some(latest_snapshot_proto.network_tx_bytes_per_sec),
+                                                                   uptime_seconds: Some(latest_snapshot_proto.uptime_seconds),
+                                                                   disk_used_bytes: latest_snapshot_proto.disk_usages.first().map(|d| d.used_bytes),
+                                                                   disk_total_bytes: latest_snapshot_proto.disk_usages.first().map(|d| d.total_bytes),
+                                                               };
+                                                               let new_server_details = ServerWithDetails {
+                                                                   basic_info,
+                                                                   latest_metrics: Some(metrics_snapshot),
+                                                                   os_type: db_vps.os_type,
+                                                                   created_at: db_vps.created_at,
+                                                               };
+                                                               cache_guard.insert(vps_db_id_from_msg, new_server_details);
+                                                               println!("[{}] Inserted new entry into live cache for VPS ID {}", connection_id, vps_db_id_from_msg);
+                                                           }
+                                                           Ok(None) => {
+                                                               eprintln!("[{}] VPS ID {} not found in DB either. Cannot update cache.", connection_id, vps_db_id_from_msg);
+                                                           }
+                                                           Err(e) => {
+                                                               eprintln!("[{}] Error fetching VPS ID {} from DB for cache update: {}", connection_id, vps_db_id_from_msg, e);
+                                                           }
+                                                       }
+                                                   }
+                                                }
                                             }
                                             Err(e) => {
                                                 eprintln!("[{}] Failed to save performance batch for agent {} (VPS DB ID {}): {}", connection_id, session_id, vps_db_id_from_msg, e);

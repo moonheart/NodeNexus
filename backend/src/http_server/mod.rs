@@ -9,19 +9,26 @@ use axum::{
 };
 use sqlx::PgPool;
 use std::sync::Arc;
+use std::collections::HashMap; // Added for LiveServerDataCache
+use tokio::sync::broadcast; // Added for ws_data_broadcaster_tx
 use std::net::SocketAddr;
 use thiserror::Error;
+use crate::server::agent_state::LiveServerDataCache; // Added import
+use crate::websocket_models::FullServerListPush; // Added import
 use tower_http::cors::{CorsLayer, Any}; // Added CorsLayer and Any
 use self::auth_logic::{LoginRequest, RegisterRequest};
 
 pub mod auth_logic;
 pub mod metrics_routes;
 pub mod vps_routes; // Added VPS routes module
+pub mod websocket_handler; // Added WebSocket handler module
 
 // Application state to share PgPool
 #[derive(Clone)]
 pub struct AppState {
     db_pool: PgPool,
+    live_server_data_cache: LiveServerDataCache,
+    ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
 }
 
 async fn register_handler(
@@ -100,8 +107,17 @@ async fn login_test_handler() -> (StatusCode, Json<serde_json::Value>) {
     (StatusCode::OK, Json(serde_json::json!({ "message": "POST test successful" })))
 }
 
-pub async fn run_http_server(db_pool: PgPool, http_addr: SocketAddr) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let app_state = Arc::new(AppState { db_pool });
+pub async fn run_http_server(
+    db_pool: PgPool,
+    http_addr: SocketAddr,
+    live_server_data_cache: LiveServerDataCache, // Added parameter
+    ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>, // Added parameter
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let app_state = Arc::new(AppState {
+        db_pool,
+        live_server_data_cache, // Use passed-in cache
+        ws_data_broadcaster_tx, // Use passed-in broadcaster
+    });
 
     // Configure CORS
     let cors = CorsLayer::new()
@@ -116,6 +132,7 @@ pub async fn run_http_server(db_pool: PgPool, http_addr: SocketAddr) -> Result<(
         .route("/api/auth/login_test", post(login_test_handler))
         .route("/api/auth/register", post(register_handler))
         .route("/api/auth/login", post(login_handler))
+        .route("/ws/metrics", get(websocket_handler::websocket_handler)) // Added WebSocket route
         .merge(metrics_routes::metrics_router()) // 合并指标路由
         .nest(
             "/api/vps",

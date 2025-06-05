@@ -2,6 +2,8 @@ use chrono::Utc;
 use sqlx::{PgPool, Result};
 use uuid::Uuid; // Added for generating agent_secret
 use super::models::{User, Vps, PerformanceMetric, AggregatedPerformanceMetric};
+use crate::websocket_models::{ServerBasicInfo, ServerMetricsSnapshot, ServerWithDetails}; // Added for cache population
+use sqlx::FromRow; // Added for deriving FromRow for helper struct
 use sqlx::postgres::types::PgInterval; // For mapping in handlers, keep imports tidy
 use serde_json::json; // Added for JSON manipulation
 
@@ -358,7 +360,7 @@ pub async fn save_performance_snapshot_batch(
             .unwrap_or_else(|| ChronoUtc::now()); // Fallback to now if conversion fails, or handle error
 
         // 输出 snapshot 的内容到日志
-        println!("Saving snapshot for vps_id {} at time {}: {:?}", vps_id, timestamp, snapshot);
+        // println!("Saving snapshot for vps_id {} at time {}: {:?}", vps_id, timestamp, snapshot);
 
        // Insert into performance_metrics and get the ID
         let metric_id = sqlx::query!(
@@ -485,4 +487,108 @@ pub async fn get_latest_disk_usage_summary(
 struct DiskUsageSummary {
     total_sum_bytes: Option<i64>,
     used_sum_bytes: Option<i64>,
+}
+
+// Helper struct for the get_all_vps_with_details_for_cache query result
+#[derive(FromRow, Debug)]
+struct VpsDetailQueryResult {
+    vps_id: i32,
+    vps_name: String,
+    vps_ip_address: Option<String>,
+    vps_status: String,
+    vps_os_type: Option<String>,
+    vps_created_at: chrono::DateTime<Utc>,
+    // Metrics fields (all optional because of LEFT JOIN)
+    cpu_usage_percent: Option<f64>,
+    memory_usage_bytes: Option<i64>,
+    memory_total_bytes: Option<i64>,
+    network_rx_instant_bps: Option<i64>,
+    network_tx_instant_bps: Option<i64>,
+    uptime_seconds: Option<i64>,
+    total_disk_used_bytes: Option<i64>,
+    total_disk_total_bytes: Option<i64>,
+    metric_time: Option<chrono::DateTime<Utc>>, // Added to store the time of the metric
+}
+
+/// Retrieves all VPS along with their latest metrics and disk usage for cache initialization.
+pub async fn get_all_vps_with_details_for_cache(pool: &PgPool) -> Result<Vec<ServerWithDetails>> {
+    let query_results = sqlx::query_as::<_, VpsDetailQueryResult>(
+        r#"
+        WITH RankedMetrics AS (
+            SELECT
+                *,
+                ROW_NUMBER() OVER (PARTITION BY vps_id ORDER BY time DESC) as rn
+            FROM performance_metrics
+        ),
+        LatestVpsMetrics AS (
+            SELECT * FROM RankedMetrics WHERE rn = 1
+        ),
+        LatestVpsDiskUsage AS (
+            SELECT
+                lvm.vps_id,
+                SUM(pdu.used_bytes) as total_disk_used_bytes,
+                SUM(pdu.total_bytes) as total_disk_total_bytes
+            FROM performance_disk_usages pdu
+            JOIN LatestVpsMetrics lvm ON pdu.performance_metric_id = lvm.id
+            GROUP BY lvm.vps_id
+        )
+        SELECT
+            v.id as vps_id,
+            v.name as vps_name,
+            v.ip_address as vps_ip_address,
+            v.status as vps_status,
+            v.os_type as vps_os_type,
+            v.created_at as vps_created_at,
+            lvm.cpu_usage_percent,
+            lvm.memory_usage_bytes,
+            lvm.memory_total_bytes,
+            lvm.network_rx_instant_bps,
+            lvm.network_tx_instant_bps,
+            lvm.uptime_seconds,
+            lvdu.total_disk_used_bytes,
+            lvdu.total_disk_total_bytes,
+            lvm.time as metric_time -- Select the metric time
+        FROM vps v
+        LEFT JOIN LatestVpsMetrics lvm ON v.id = lvm.vps_id
+        LEFT JOIN LatestVpsDiskUsage lvdu ON v.id = lvdu.vps_id
+        ORDER BY v.id;
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut servers_with_details = Vec::new();
+    for row in query_results {
+        let basic_info = ServerBasicInfo {
+            id: row.vps_id,
+            name: row.vps_name,
+            ip_address: row.vps_ip_address,
+            status: row.vps_status,
+        };
+
+        let latest_metrics = if row.cpu_usage_percent.is_some() && row.metric_time.is_some() { // Ensure metric_time is also present
+            Some(ServerMetricsSnapshot {
+                time: row.metric_time.unwrap(), // Use the metric_time
+                cpu_usage_percent: row.cpu_usage_percent.unwrap_or(0.0) as f32,
+                memory_usage_bytes: row.memory_usage_bytes.unwrap_or(0) as u64,
+                memory_total_bytes: row.memory_total_bytes.unwrap_or(0) as u64,
+                network_rx_instant_bps: row.network_rx_instant_bps.map(|val| val as u64),
+                network_tx_instant_bps: row.network_tx_instant_bps.map(|val| val as u64),
+                uptime_seconds: row.uptime_seconds.map(|val| val as u64),
+                disk_used_bytes: row.total_disk_used_bytes.map(|val| val as u64),
+                disk_total_bytes: row.total_disk_total_bytes.map(|val| val as u64),
+            })
+        } else {
+            None
+        };
+
+        servers_with_details.push(ServerWithDetails {
+            basic_info,
+            latest_metrics,
+            os_type: row.vps_os_type,
+            created_at: row.vps_created_at,
+        });
+    }
+
+    Ok(servers_with_details)
 }

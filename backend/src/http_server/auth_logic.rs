@@ -42,11 +42,11 @@ use axum::{response::Response, body::Body as AxumBody}; // Import AxumBody
 
 // JWT Claims structure
 #[derive(Debug, Serialize, Deserialize)]
-struct Claims {
-    sub: String, // Subject (user_id or username)
-    user_id: i32,
-    email: String,
-    exp: usize,  // Expiration time (timestamp)
+pub struct Claims { // Made public
+    pub sub: String, // Subject (user_id or username)
+    pub user_id: i32,
+    pub email: String,
+    pub exp: usize,  // Expiration time (timestamp)
 }
 
 /// Struct to hold authenticated user details, to be passed as a request extension.
@@ -57,7 +57,7 @@ pub struct AuthenticatedUser {
     pub email: String,
 }
 
-fn get_jwt_secret() -> String {
+pub fn get_jwt_secret() -> String { // Made public
     env::var("JWT_SECRET").unwrap_or_else(|_| {
         // Fallback for development if JWT_SECRET is not set.
         // WARNING: Do NOT use this fallback in production.

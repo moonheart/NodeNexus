@@ -10,8 +10,10 @@ import Button from '@mui/material/Button';
 import ButtonGroup from '@mui/material/ButtonGroup';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { getVpsMetricsTimeseries } from '../services/metricsService';
-import { getVpsDetail } from '../services/vpsService'; // Added
-import type { PerformanceMetricPoint, VpsListItemResponse } from '../types'; // Added VpsListItemResponse
+// import { getVpsDetail } from '../services/vpsService'; // No longer needed for main detail, will use store
+import type { PerformanceMetricPoint } from '../types'; // Removed VpsListItemResponse
+import { useServerListStore } from '../store/serverListStore'; // Import the new store
+import { useShallow } from 'zustand/react/shallow'; // Import useShallow
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
@@ -87,15 +89,39 @@ return uptimeString.trim();
 type TimeRangeOption = '1h' | '6h' | '24h' | '7d';
 
 const VpsDetailPage: React.FC = () => {
-const { vpsId } = useParams<{ vpsId: string }>();
-const [vpsDetail, setVpsDetail] = useState<VpsListItemResponse | null>(null); // Added state for VPS details
-const [cpuData, setCpuData] = useState<PerformanceMetricPoint[]>([]);
-const [memoryData, setMemoryData] = useState<PerformanceMetricPoint[]>([]);
+  const { vpsId } = useParams<{ vpsId: string }>();
+  
+  // Get servers list and connection status from the store
+  const { servers, connectionStatus: wsConnectionStatus, isLoading: isServerListLoading } = useServerListStore(useShallow(state => ({
+    servers: state.servers,
+    connectionStatus: state.connectionStatus,
+    isLoading: state.isLoading,
+  })));
+
+  // Find the specific VPS detail from the store's list
+  const vpsDetailFromStore = React.useMemo(() => {
+    if (!vpsId) return null;
+    const numericVpsId = parseInt(vpsId, 10);
+    return servers.find(server => server.id === numericVpsId) || null;
+  }, [servers, vpsId]);
+
+  // Local state for historical chart data and its loading/error state
+  const [cpuData, setCpuData] = useState<PerformanceMetricPoint[]>([]);
+  const [memoryData, setMemoryData] = useState<PerformanceMetricPoint[]>([]);
 const [networkData, setNetworkData] = useState<PerformanceMetricPoint[]>([]);
-const [loading, setLoading] = useState(true);
-const [loadingMetrics, setLoadingMetrics] = useState(true); // Separate loading for metrics
-const [error, setError] = useState<string | null>(null);
+// const [loading, setLoading] = useState(true); // This will now depend on vpsDetailFromStore and isServerListLoading
+const [loadingChartMetrics, setLoadingChartMetrics] = useState(true); // Renamed for clarity
+const [chartError, setChartError] = useState<string | null>(null); // Renamed for clarity
 const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('1h');
+
+// Use vpsDetailFromStore for displaying server info.
+// The old vpsDetail state and its fetching logic (fetchVpsDetails) are removed.
+// The `loading` state for overall page can be derived from `isServerListLoading` and whether `vpsDetailFromStore` is found.
+const isLoadingPage = isServerListLoading || (wsConnectionStatus === 'connected' && !vpsDetailFromStore && !!vpsId);
+const pageError = wsConnectionStatus === 'error' || wsConnectionStatus === 'permanently_failed'
+  ? "WebSocket connection error."
+  : (wsConnectionStatus === 'connected' && !vpsDetailFromStore && !!vpsId && !isServerListLoading ? "VPS details not found in the live list." : null);
+
 
   const timeRangeToMillis: Record<TimeRangeOption, number> = {
     '1h': 60 * 60 * 1000,
@@ -111,37 +137,17 @@ const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('1h'
     '7d': '1h', // 1 hour interval for 7 days
   };
 
+  // useEffect for fetching historical chart metrics (remains largely the same)
   useEffect(() => {
     if (!vpsId) {
-      setError('VPS ID not found.');
-      setLoading(false);
-      setLoadingMetrics(false);
-      return;
+        setChartError('VPS ID not found for charts.');
+        setLoadingChartMetrics(false);
+        return;
     }
 
-    const fetchVpsDetails = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const details = await getVpsDetail(vpsId);
-        setVpsDetail(details);
-      } catch (err) {
-        console.error('Failed to fetch VPS details:', err);
-        setError('无法加载VPS详细信息。请稍后再试。');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchVpsDetails();
-  }, [vpsId]);
-
-  useEffect(() => {
-    if (!vpsId) return;
-
-    const fetchMetricsData = async () => {
-      setLoadingMetrics(true);
-      // setError(null); // Keep previous errors unless specifically for metrics
+    const fetchChartMetricsData = async () => {
+      setLoadingChartMetrics(true);
+      setChartError(null);
       try {
         const endTime = new Date();
         const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange]);
@@ -180,36 +186,22 @@ const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('1h'
         setMemoryData(memoryPoints);
         setNetworkData(networkPoints);
       } catch (err) {
-        console.error('Failed to fetch VPS metrics timeseries:', err);
-        // setError('无法加载VPS指标数据。请稍后再试。'); // Avoid overwriting detail fetch error
-        if (!error) setError('无法加载VPS指标数据。请稍后再试。');
+        console.error('Failed to fetch VPS chart metrics timeseries:', err);
+        setChartError('无法加载图表指标数据。请稍后再试。');
       } finally {
-        setLoadingMetrics(false);
+        setLoadingChartMetrics(false);
       }
     };
 
-    fetchMetricsData();
-  }, [vpsId, selectedTimeRange, error]); // Added error to dependency to avoid loop if detail fails
+    fetchChartMetricsData();
+  }, [vpsId, selectedTimeRange]);
 
-  const handleRefresh = () => {
+  const handleRefreshCharts = () => {
     if (!vpsId) return;
-    // Refetch both details and metrics
-    const fetchDetailsForRefresh = async () => {
-      setLoading(true);
-      setError(null); // Clear previous errors
-      try {
-        const details = await getVpsDetail(vpsId);
-        setVpsDetail(details);
-      } catch (err) {
-        console.error('Failed to refresh VPS details:', err);
-        setError('刷新VPS详细信息失败。');
-      } finally {
-        setLoading(false);
-      }
-    };
-
+     // Only refetch chart metrics
     const fetchMetricsForRefresh = async () => {
-      setLoadingMetrics(true);
+      setLoadingChartMetrics(true);
+      setChartError(null);
       try {
         const endTime = new Date();
         const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange]);
@@ -235,18 +227,100 @@ const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('1h'
         setMemoryData(memoryPoints);
         setNetworkData(networkPoints);
       } catch (err) {
-        console.error('Failed to refresh VPS metrics timeseries:', err);
-        if (!error) setError('刷新指标数据失败。');
+        console.error('Failed to refresh VPS chart metrics timeseries:', err);
+        setChartError('刷新图表指标数据失败。');
       } finally {
-        setLoadingMetrics(false);
+        setLoadingChartMetrics(false);
       }
     };
-    fetchDetailsForRefresh(); // Fetch details first
-    fetchMetricsForRefresh(); // Then fetch metrics
+    fetchMetricsForRefresh();
   };
 
+  const MAX_CHART_POINTS = 300; // Max points to keep in the chart to prevent performance issues
 
-  if (loading) { // Initial loading for VPS details
+  // Log the vpsDetailFromStore and its latestMetrics.time on every render
+  console.log('VpsDetailPage Render Cycle: vpsDetailFromStore:', vpsDetailFromStore);
+  if (vpsDetailFromStore) {
+    console.log('VpsDetailPage Render Cycle: vpsDetailFromStore.latestMetrics.time:', vpsDetailFromStore.latestMetrics?.time);
+  } else {
+    console.log('VpsDetailPage Render Cycle: vpsDetailFromStore is null/undefined');
+  }
+
+  // Effect to append latest metrics from WebSocket to chart data
+  useEffect(() => {
+    console.log('VpsDetailPage useEffect triggered. Current latestMetrics.time for dependency:', vpsDetailFromStore?.latestMetrics?.time, 'vpsId:', vpsId);
+
+    if (vpsDetailFromStore?.latestMetrics && vpsId) {
+      console.log('VpsDetailPage useEffect: Condition met. Processing latestMetrics:', vpsDetailFromStore.latestMetrics);
+      const newMetrics = vpsDetailFromStore.latestMetrics;
+      const newTime = newMetrics.time;
+      const numericVpsId = parseInt(vpsId, 10);
+
+      // Helper to append and trim data
+      const appendAndTrim = <T extends { time: string }>(chartName: string, prevData: T[], newDataPoint: T): T[] => {
+        if (!newDataPoint.time) {
+            console.warn(`VpsDetailPage (${chartName}): newDataPoint is missing time property. Skipping append.`);
+            return prevData;
+        }
+        // Add if new point is newer than the last point in prevData, or if prevData is empty
+        if (prevData.length === 0 || new Date(newDataPoint.time).getTime() > new Date(prevData[prevData.length - 1].time).getTime()) {
+          console.log(`VpsDetailPage (${chartName}): Appending new data point at ${newDataPoint.time}`);
+          let updated = [...prevData, newDataPoint];
+          if (updated.length > MAX_CHART_POINTS) {
+            updated = updated.slice(updated.length - MAX_CHART_POINTS);
+          }
+          return updated;
+        }
+        // console.log(`VpsDetailPage (${chartName}): New data point at ${newDataPoint.time} is not newer than last point at ${prevData.length > 0 ? prevData[prevData.length -1].time : 'N/A'}. Skipping append.`);
+        return prevData; // No change if not newer or same timestamp
+      };
+
+      // CPU
+      if (newMetrics.cpuUsagePercent != null) {
+        const newCpuPoint: PerformanceMetricPoint = {
+          time: newTime,
+          vps_id: numericVpsId,
+          cpu_usage_percent: newMetrics.cpuUsagePercent,
+        };
+        setCpuData(prevData => appendAndTrim('CPU', prevData, newCpuPoint));
+      }
+
+      // Memory
+      const tempMetricForCalc: Partial<PerformanceMetricPoint> = {
+        memory_usage_bytes: newMetrics.memoryUsageBytes,
+        memory_total_bytes: newMetrics.memoryTotalBytes,
+      };
+      const memoryUsagePercent = calculateMemoryUsagePercent(tempMetricForCalc as PerformanceMetricPoint);
+      if (memoryUsagePercent != null) {
+        const newMemoryPoint: PerformanceMetricPoint = {
+          time: newTime,
+          vps_id: numericVpsId,
+          memory_usage_percent: memoryUsagePercent,
+        };
+        setMemoryData(prevData => appendAndTrim('Memory', prevData, newMemoryPoint));
+      }
+
+      // Network
+      if (newMetrics.networkRxInstantBps != null || newMetrics.networkTxInstantBps != null) {
+        const newNetworkPoint: PerformanceMetricPoint = {
+          time: newTime,
+          vps_id: numericVpsId,
+          avg_network_rx_instant_bps: newMetrics.networkRxInstantBps,
+          avg_network_tx_instant_bps: newMetrics.networkTxInstantBps,
+        };
+        setNetworkData(prevData => appendAndTrim('Network', prevData, newNetworkPoint));
+      }
+    } else {
+      console.log('VpsDetailPage useEffect: Condition NOT met.', {
+        hasVpsDetail: !!vpsDetailFromStore,
+        hasLatestMetrics: !!vpsDetailFromStore?.latestMetrics,
+        vpsIdExists: !!vpsId,
+      });
+    }
+  }, [vpsDetailFromStore?.latestMetrics?.time, vpsId]);
+
+
+  if (isLoadingPage) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 200px)' }}>
         <CircularProgress />
@@ -254,13 +328,17 @@ const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('1h'
     );
   }
 
-  if (error && !vpsDetail) { // If error and no vpsDetail, show full page error
-    return <Alert severity="error" sx={{ m: 2 }}>{error}</Alert>;
+  if (pageError && !vpsDetailFromStore) {
+    return <Alert severity="error" sx={{ m: 2 }}>{pageError}</Alert>;
   }
   
-  if (!vpsDetail) { // Should not happen if not loading and no error, but as a fallback
-    return <Alert severity="info" sx={{ m: 2 }}>VPS详情未找到。</Alert>;
+  if (!vpsDetailFromStore) {
+    // This case should ideally be covered by isLoadingPage or pageError
+    return <Alert severity="info" sx={{ m: 2 }}>VPS详情未找到或仍在加载中。</Alert>;
   }
+
+  // Use vpsDetailFromStore for rendering server info
+  const currentVpsDetail = vpsDetailFromStore;
 
   // Custom Tooltip Formatter for Network Speed
   const networkTooltipFormatter = (value: ValueType, name: NameType): [string, NameType] => {
@@ -271,60 +349,66 @@ const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('1h'
   return (
     <Box sx={{ width: '100%', maxWidth: 1200, margin: 'auto', p: 2 }}>
       <Typography variant="h4" gutterBottom>
-        {vpsDetail.name} (ID: {vpsDetail.id})
+        {currentVpsDetail.name} (ID: {currentVpsDetail.id})
       </Typography>
 
-      {/* VPS Info Section */}
+      {/* VPS Info Section - uses currentVpsDetail from store */}
       <Paper sx={{ p: 2, mb: 3 }}>
         <Typography variant="h6" gutterBottom>服务器信息</Typography>
         <List dense>
           <ListItem>
-            <ListItemText primary="状态" secondary={
-              <Chip
-                label={vpsDetail.status?.toUpperCase()}
-                color={vpsDetail.status === 'online' ? 'success' : vpsDetail.status === 'offline' ? 'error' : 'default'}
-                size="small"
-              />
-            } />
+            <ListItemText
+              primary="状态"
+              secondary={
+                <Typography component="span" variant="body2" color="textSecondary">
+                  <Chip
+                    label={currentVpsDetail.status?.toUpperCase()}
+                    color={currentVpsDetail.status === 'online' ? 'success' : currentVpsDetail.status === 'offline' ? 'error' : 'default'}
+                    size="small"
+                  />
+                </Typography>
+              }
+            />
           </ListItem>
           <Divider component="li" />
           <ListItem>
-            <ListItemText primary="运行时间" secondary={formatUptime(vpsDetail.latestMetrics?.uptimeSeconds)} />
+            <ListItemText primary="运行时间" secondary={formatUptime(currentVpsDetail.latestMetrics?.uptimeSeconds)} />
           </ListItem>
           <Divider component="li" />
           <ListItem>
             <ListItemText
               primary="操作系统"
-              secondary={`${vpsDetail.metadata?.os_family || vpsDetail.osType || (vpsDetail.metadata?.os_name as string) || 'N/A'} (${(vpsDetail.metadata?.os_version as string) || 'N/A'})`}
+              secondary={`${currentVpsDetail.metadata?.os_family || currentVpsDetail.osType || (currentVpsDetail.metadata?.os_name as string) || 'N/A'} (${(currentVpsDetail.metadata?.os_version as string) || 'N/A'})`}
             />
           </ListItem>
           <Divider component="li" />
            <ListItem>
-            <ListItemText primary="内核版本" secondary={`${(vpsDetail.metadata?.kernel_version as string) || 'N/A'}`} />
+            <ListItemText primary="内核版本" secondary={`${(currentVpsDetail.metadata?.kernel_version as string) || 'N/A'}`} />
           </ListItem>
           <Divider component="li" />
           <ListItem>
-            <ListItemText primary="架构" secondary={`${(vpsDetail.metadata?.architecture as string) || (vpsDetail.metadata?.arch as string) || 'N/A'}`} />
+            <ListItemText primary="架构" secondary={`${(currentVpsDetail.metadata?.architecture as string) || (currentVpsDetail.metadata?.arch as string) || 'N/A'}`} />
           </ListItem>
           <Divider component="li" />
           <ListItem>
-            <ListItemText primary="CPU型号" secondary={`${(vpsDetail.metadata?.cpu_model as string) || 'N/A'}`} />
+            <ListItemText primary="CPU型号" secondary={`${(currentVpsDetail.metadata?.cpu_model as string) || 'N/A'}`} />
           </ListItem>
           <Divider component="li" />
           <ListItem>
-            <ListItemText primary="内存大小" secondary={formatBytes(vpsDetail.latestMetrics?.memoryTotalBytes)} />
+            <ListItemText primary="内存大小" secondary={formatBytes(currentVpsDetail.latestMetrics?.memoryTotalBytes)} />
           </ListItem>
           <Divider component="li" />
           <ListItem>
             <ListItemText
               primary="磁盘大小"
-              secondary={`${formatBytes(vpsDetail.latestMetrics?.diskUsedBytes)} / ${formatBytes(vpsDetail.latestMetrics?.diskTotalBytes)}`}
+              secondary={`${formatBytes(currentVpsDetail.latestMetrics?.diskUsedBytes)} / ${formatBytes(currentVpsDetail.latestMetrics?.diskTotalBytes)}`}
             />
           </ListItem>
         </List>
       </Paper>
 
-      {error && <Alert severity="warning" sx={{ mb: 2 }}>{error}</Alert>}
+      {/* Display chart-specific errors here */}
+      {chartError && <Alert severity="warning" sx={{ mb: 2 }}>{chartError}</Alert>}
 
 
       <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -339,19 +423,19 @@ const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('1h'
             </Button>
           ))}
         </ButtonGroup>
-        <Button variant="outlined" onClick={handleRefresh} disabled={loading || loadingMetrics}>
-          刷新
+        <Button variant="outlined" onClick={handleRefreshCharts} disabled={isLoadingPage || loadingChartMetrics}>
+          刷新图表
         </Button>
       </Box>
 
-      {loadingMetrics && (
+      {loadingChartMetrics && (
          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
            <CircularProgress />
          </Box>
       )}
-      {!loadingMetrics && (
+      {!loadingChartMetrics && (
         <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 6 }}>
+          <Grid size={{ xs: 12, md: 6 }}> {/* Reverted to size prop */}
             <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
               <Typography variant="h6" gutterBottom align="center">CPU 使用率 (%)</Typography>
               {cpuData.length > 0 ? (
@@ -372,7 +456,7 @@ const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('1h'
               )}
             </Paper>
           </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
+          <Grid size={{ xs: 12, md: 6 }}> {/* Reverted to size prop */}
             <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
               <Typography variant="h6" gutterBottom align="center">内存使用率 (%)</Typography>
               {memoryData.length > 0 ? (
@@ -394,7 +478,7 @@ const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('1h'
             </Paper>
           </Grid>
           {/* Network Chart */}
-          <Grid size={{ xs: 12 }}> {/* Full width for network chart */}
+          <Grid size={{ xs: 12 }}> {/* Reverted to size prop */}
             <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
               <Typography variant="h6" gutterBottom align="center">网络速率</Typography>
               {networkData.length > 0 ? (

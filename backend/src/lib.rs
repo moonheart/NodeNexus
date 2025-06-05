@@ -7,3 +7,4 @@ pub mod server;
 pub mod db;
 pub mod http_server;
 pub mod agent_modules;
+pub mod websocket_models; // Added websocket_models module

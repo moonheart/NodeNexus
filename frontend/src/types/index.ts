@@ -91,3 +91,11 @@ export interface VpsListItemResponse {
   updatedAt: string; // camelCase
   latestMetrics?: LatestPerformanceMetric | null; // camelCase
 }
+
+/**
+ * Represents the top-level structure of the data pushed via WebSocket.
+ * It contains a list of all servers with their details and latest metrics.
+ */
+export interface FullServerListPushType {
+  servers: VpsListItemResponse[];
+}
