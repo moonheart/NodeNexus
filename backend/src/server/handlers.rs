@@ -20,19 +20,25 @@ use crate::server::agent_state::{AgentState, ConnectedAgents};
 use crate::db::services; // Will be used later for db operations
  // For fetching VPS details if not in cache
 
+use crate::http_server::vps_routes::LatestPerformanceMetricResponse;
+use crate::websocket_models::FullServerListPush;
+use tokio::sync::broadcast;
+
 pub async fn handle_connection(
     mut in_stream: tonic::Streaming<MessageToServer>,
     connected_agents_arc: Arc<Mutex<ConnectedAgents>>,
-    pool: Arc<PgPool>, // Added PgPool
-    live_server_data_cache: LiveServerDataCache, // Added cache
+    pool: Arc<PgPool>,
+    live_server_data_cache: LiveServerDataCache,
+    ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
 ) -> Result<Response<ReceiverStream<Result<MessageToAgent, Status>>>, Status> {
     let (tx_to_agent, rx_from_server) = mpsc::channel(128);
     let connection_id = Uuid::new_v4().to_string();
     println!("[{}] New connection stream established", connection_id);
 
     let connected_agents_arc_clone = connected_agents_arc.clone();
-    let pool_clone = pool.clone(); // Clone pool for the spawned task
-    let cache_clone = live_server_data_cache.clone(); // Clone cache for the spawned task
+    let pool_clone = pool.clone();
+    let cache_clone = live_server_data_cache.clone();
+    let broadcaster_clone = ws_data_broadcaster_tx.clone();
 
     tokio::spawn(async move {
         let mut current_session_agent_id: Option<String> = None; // Server-generated session ID
@@ -119,6 +125,7 @@ pub async fn handle_connection(
                                 last_heartbeat_ms: Utc::now().timestamp_millis(),
                                 config: initial_config.clone(),
                                 vps_db_id: vps_db_id_from_msg,
+                                sender: tx_to_agent.clone(),
                             };
                             
                             {
@@ -184,12 +191,12 @@ pub async fn handle_connection(
                                         }
                                     }
                                     ServerPayload::PerformanceBatch(batch) => {
-                                        println!("[{}] Received PerformanceBatch from {} (VPS ID {}). Snapshots: {}",
-                                            connection_id, session_id, vps_db_id_from_msg, batch.snapshots.len());
+                                        // println!("[{}] Received PerformanceBatch from {} (VPS ID {}). Snapshots: {}",
+                                        //     connection_id, session_id, vps_db_id_from_msg, batch.snapshots.len());
 
                                         match services::save_performance_snapshot_batch(&pool_clone, vps_db_id_from_msg, &batch).await {
                                             Ok(_) => {
-                                                println!("[{}] Successfully saved performance batch for agent {} (VPS DB ID {})", connection_id, session_id, vps_db_id_from_msg);
+                                                // println!("[{}] Successfully saved performance batch for agent {} (VPS DB ID {})", connection_id, session_id, vps_db_id_from_msg);
                                                 
                                                 // Update the live_server_data_cache with the latest snapshot from the batch
                                                 if let Some(latest_snapshot_proto) = batch.snapshots.last() {
@@ -214,7 +221,7 @@ pub async fn handle_connection(
                                                            disk_total_bytes: latest_snapshot_proto.disk_usages.first().map(|d| d.total_bytes),
                                                        };
                                                        server_details_entry.latest_metrics = Some(new_metrics_snapshot);
-                                                       println!("[{}] Updated live cache for VPS ID {}", connection_id, vps_db_id_from_msg);
+                                                       // println!("[{}] Updated live cache for VPS ID {}", connection_id, vps_db_id_from_msg);
                                                    } else {
                                                        // VPS not in cache, might be a new VPS or cache not yet populated.
                                                        // For now, log it. Ideally, the cache should be pre-populated.
@@ -230,6 +237,9 @@ pub async fn handle_connection(
                                                                    status: db_vps.status,
                                                                    group: db_vps.group,
                                                                    tags: db_vps.tags,
+                                                                   config_status: db_vps.config_status,
+                                                                   last_config_update_at: db_vps.last_config_update_at,
+                                                                   last_config_error: db_vps.last_config_error,
                                                                };
                                                                let snapshot_time_for_new_entry = Utc.timestamp_millis_opt(latest_snapshot_proto.timestamp_unix_ms).single().unwrap_or_else(Utc::now);
                                                                let metrics_snapshot = ServerMetricsSnapshot {
@@ -270,6 +280,49 @@ pub async fn handle_connection(
                                     ServerPayload::AgentHandshake(_) => {
                                         // This case should have been handled above. If reached, it's an anomaly.
                                         eprintln!("[{}] Received duplicate AgentHandshake from VPS ID {} after initial handshake. Ignoring.", connection_id, vps_db_id_from_msg);
+                                    }
+                                    ServerPayload::UpdateConfigResponse(response) => {
+                                       println!("[{}] Received UpdateConfigResponse from {} (VPS ID {}): success={}, version_id={}",
+                                           connection_id, session_id, vps_db_id_from_msg, response.success, response.config_version_id);
+                                       
+                                       let status = if response.success { "synced" } else { "failed" };
+                                       let error_msg = if response.success { None } else { Some(response.error_message.as_str()) };
+
+                                       match services::update_vps_config_status(&pool_clone, vps_db_id_from_msg, status, error_msg).await {
+                                           Ok(_) => {
+                                               println!("[{}] Successfully updated config status for VPS ID {}. Triggering cache update and broadcast.", connection_id, vps_db_id_from_msg);
+                                               
+                                               // Correctly update cache and broadcast
+                                               let updated_vps_result = services::get_vps_by_id(&pool_clone, vps_db_id_from_msg).await;
+                                               if let Ok(Some(updated_vps)) = updated_vps_result {
+                                                   let latest_metric_db = services::get_latest_performance_metric_for_vps(&pool_clone, vps_db_id_from_msg).await.unwrap_or_default();
+                                                   let latest_disk_summary = services::get_latest_disk_usage_summary(&pool_clone, vps_db_id_from_msg).await.unwrap_or_default();
+                                                   let latest_metrics_response: Option<LatestPerformanceMetricResponse> = latest_metric_db.map(|m| (m, latest_disk_summary).into());
+                                                   
+                                                   let server_details_for_cache: ServerWithDetails = (updated_vps, latest_metrics_response).into();
+
+                                                   {
+                                                       let mut cache_guard = cache_clone.lock().await;
+                                                       cache_guard.insert(vps_db_id_from_msg, server_details_for_cache);
+                                                   }
+
+                                                   let servers_list: Vec<ServerWithDetails> = {
+                                                       let cache_guard = cache_clone.lock().await;
+                                                       cache_guard.values().cloned().collect()
+                                                   };
+                                                   let full_list_push = Arc::new(FullServerListPush { servers: servers_list });
+                                                   
+                                                   if broadcaster_clone.send(full_list_push).is_err() {
+                                                       println!("[{}] No web clients listening, skipping broadcast.", connection_id);
+                                                   } else {
+                                                       println!("[{}] Broadcasted updated server list.", connection_id);
+                                                   }
+                                               } else {
+                                                   eprintln!("[{}] Failed to re-fetch VPS after config status update for VPS ID: {}", connection_id, vps_db_id_from_msg);
+                                               }
+                                           }
+                                           Err(e) => eprintln!("[{}] Failed to update config status for VPS ID {}: {}", connection_id, vps_db_id_from_msg, e),
+                                       }
                                     }
                                     _ => {
                                         println!("[{}] Received unhandled message type from {} (VPS ID {}): client_msg_id={}, payload_type: {:?}",

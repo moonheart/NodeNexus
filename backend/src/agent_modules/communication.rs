@@ -55,9 +55,11 @@ pub async fn heartbeat_loop(
 
 pub async fn server_message_handler_loop(
     mut in_stream: tonic::Streaming<MessageToAgent>,
+    tx_to_server: mpsc::Sender<MessageToServer>,
     agent_id: String,
-    // TODO: Consider how to pass AgentConfig updates if needed by other parts of this loop
-    // For now, it only prints received config.
+    mut id_provider: impl FnMut() -> u64 + Send + 'static,
+    vps_db_id: i32,
+    agent_secret: String,
 ) {
     println!("[Agent:{}] Listening for messages from server...", agent_id);
     while let Some(message_result) = in_stream.next().await {
@@ -65,9 +67,26 @@ pub async fn server_message_handler_loop(
             Ok(message_to_agent) => {
                 if let Some(payload) = message_to_agent.payload {
                     match payload {
-                        crate::agent_service::message_to_agent::Payload::AgentConfig(new_config) => {
-                            println!("[Agent:{}] Received new AgentConfig from server: {:?}", agent_id, new_config);
+                        crate::agent_service::message_to_agent::Payload::UpdateConfigRequest(update_req) => {
+                            println!("[Agent:{}] Received new AgentConfig from server: {:?}", agent_id, &update_req.new_config);
                             // TODO: Implement dynamic config update logic (e.g., via a shared state or channel)
+                            // For now, just acknowledge the update.
+                            let success = true;
+                            let response = crate::agent_service::UpdateConfigResponse {
+                                config_version_id: update_req.config_version_id,
+                                success,
+                                error_message: if success { String::new() } else { "Failed to apply config".to_string() },
+                            };
+
+                            let msg_id = id_provider();
+                            if let Err(e) = tx_to_server.send(MessageToServer {
+                                client_message_id: msg_id,
+                                payload: Some(Payload::UpdateConfigResponse(response)),
+                                vps_db_id,
+                                agent_secret: agent_secret.clone(),
+                            }).await {
+                                eprintln!("[Agent:{}] Failed to send config update response: {}", agent_id, e);
+                            }
                         }
                         crate::agent_service::message_to_agent::Payload::CommandRequest(cmd_req) => {
                             println!("[Agent:{}] Received CommandRequest: {:?}", agent_id, cmd_req);
@@ -75,7 +94,7 @@ pub async fn server_message_handler_loop(
                         }
                         _ => {
                             // Potentially log unhandled payload types if verbose logging is enabled
-                            // println!("[Agent:{}] Received unhandled payload type from server: {:?}", agent_id, payload);
+                            // println!("[Agent:{}] Received unhandled payload type from server.", agent_id);
                         }
                     }
                 }

@@ -11,7 +11,10 @@ pub struct ServerBasicInfo {
     #[serde(rename = "group")]
     pub group: Option<String>,
     pub tags: Option<String>,
-    // Add other fields as necessary to match VpsListItemResponse or db model
+    // Config status fields
+    pub config_status: String,
+    pub last_config_update_at: Option<DateTime<Utc>>,
+    pub last_config_error: Option<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]

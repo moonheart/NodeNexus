@@ -98,16 +98,25 @@ async fn spawn_and_monitor_core_tasks(
     }));
     
     // Server Listener Task
+    let listener_tx = tx_to_server.clone();
     let listener_agent_id = assigned_agent_id.clone();
+    let listener_id_provider_counter = client_message_id_counter.clone();
+    let listener_vps_id = agent_cli_config.vps_id;
+    let listener_agent_secret = agent_cli_config.agent_secret.clone();
+    let listener_id_provider = backend::agent_modules::communication::ConnectionHandler::get_id_provider_closure(listener_id_provider_counter);
+
     // Note: server_message_handler_loop takes ownership of in_stream
     tasks.push(tokio::spawn(async move {
+        let agent_id_for_log = listener_agent_id.clone();
         server_message_handler_loop(
             in_stream,
-            listener_agent_id.clone(), // Clone for the print message
-            // If server_message_handler_loop needed to update a shared AgentConfig,
-            // an Arc<Mutex<AgentConfig>> would be passed here and also to metrics/heartbeat.
+            listener_tx,
+            listener_agent_id,
+            listener_id_provider,
+            listener_vps_id,
+            listener_agent_secret,
         ).await;
-        println!("[Agent:{}] Server message handler loop ended.", listener_agent_id);
+        println!("[Agent:{}] Server message handler loop ended.", agent_id_for_log);
     }));
 
     println!("[Agent:{}] All core tasks spawned.", assigned_agent_id);

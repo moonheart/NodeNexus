@@ -7,7 +7,7 @@ use axum::{
 use serde::{Deserialize, Serialize}; // Added Serialize
 use std::sync::Arc;
 use crate::db::{models::{Vps, PerformanceMetric as DbPerformanceMetric}, services};
-use super::{AppState, AppError};
+use super::{AppState, AppError, config_routes};
 use crate::http_server::auth_logic::AuthenticatedUser;
 
 // Frontend expects this structure for latest metrics
@@ -81,6 +81,11 @@ pub struct VpsListItemResponse {
     #[serde(rename = "group")]
     pub group: Option<String>,
     pub latest_metrics: Option<LatestPerformanceMetricResponse>,
+    // New fields for config status
+    pub config_status: String,
+    pub last_config_update_at: Option<String>,
+    pub last_config_error: Option<String>,
+    pub agent_config_override: Option<serde_json::Value>,
 }
 
 // Conversion from DB models to the WebSocket model
@@ -94,6 +99,9 @@ impl From<(Vps, Option<LatestPerformanceMetricResponse>)> for crate::websocket_m
                 status: vps.status,
                 group: vps.group,
                 tags: vps.tags,
+                config_status: vps.config_status,
+                last_config_update_at: vps.last_config_update_at,
+                last_config_error: vps.last_config_error,
             },
             latest_metrics: latest_metrics.map(|m| crate::websocket_models::ServerMetricsSnapshot {
                 time: chrono::DateTime::parse_from_rfc3339(&m.time).unwrap_or_else(|_| chrono::Utc::now().into()).with_timezone(&chrono::Utc),
@@ -129,6 +137,10 @@ impl From<(Vps, Option<LatestPerformanceMetricResponse>)> for VpsListItemRespons
             tags: vps.tags,
             group: vps.group,
             latest_metrics,
+            config_status: vps.config_status,
+            last_config_update_at: vps.last_config_update_at.map(|dt| dt.to_rfc3339()),
+            last_config_error: vps.last_config_error,
+            agent_config_override: vps.agent_config_override,
         }
     }
 }
@@ -245,8 +257,10 @@ async fn update_vps_handler(
             .ok_or_else(|| AppError::NotFound("Failed to re-fetch VPS after update".to_string()))?;
 
         // 2. Fetch its latest metrics to construct the full ServerWithDetails object.
-        let latest_metric_db = services::get_latest_performance_metric_for_vps(&app_state.db_pool, vps_id).await.unwrap_or_default();
-        let latest_disk_summary = services::get_latest_disk_usage_summary(&app_state.db_pool, vps_id).await.unwrap_or_default();
+        let latest_metric_db = services::get_latest_performance_metric_for_vps(&app_state.db_pool, vps_id).await
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        let latest_disk_summary = services::get_latest_disk_usage_summary(&app_state.db_pool, vps_id).await
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
         let latest_metrics_response = latest_metric_db.map(|m| (m, latest_disk_summary).into());
         
         // 3. Construct the same object that the websocket system uses.
@@ -279,6 +293,7 @@ pub fn vps_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", post(create_vps_handler))
         .route("/", get(get_all_vps_handler))
-        .route("/{vps_id}", get(get_vps_detail_handler)) // Added detail route
+        .route("/{vps_id}", get(get_vps_detail_handler))
         .route("/{vps_id}", put(update_vps_handler))
+        .merge(config_routes::create_vps_config_router())
 }

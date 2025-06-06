@@ -23,6 +23,7 @@ message MessageToServer {
     PtyDataToServer pty_data_to_server = 7;
     Heartbeat heartbeat = 8;
     StaticSystemInfo static_system_info = 11; // New field for static info
+    UpdateConfigResponse update_config_response = 12;
   }
 }
 
@@ -39,13 +40,28 @@ message StaticSystemInfo {
   // string total_memory_formatted = 8; // e.g. "16 GB"
 }
 
+// Messages for dynamic configuration updates
+message UpdateConfigRequest {
+  AgentConfig new_config = 1;
+  // A version identifier for this config update, e.g., a timestamp or a hash.
+  string config_version_id = 2;
+}
+
+message UpdateConfigResponse {
+  // The version id from the request, to correlate response with request.
+  string config_version_id = 1;
+  bool success = 2;
+  string error_message = 3; // Optional, for when success is false.
+}
+
 message MessageToAgent {
   uint64 server_message_id = 1;
   oneof payload {
     ServerHandshakeAck server_handshake_ack = 2;
-    AgentConfig agent_config = 3;
+    // AgentConfig is now sent only in ServerHandshakeAck, so field 3 is removed.
     CommandRequest command_request = 4;
     PtyDataToAgent pty_data_to_agent = 5;
     Heartbeat heartbeat_request = 6;
+    UpdateConfigRequest update_config_request = 7;
   }
 }

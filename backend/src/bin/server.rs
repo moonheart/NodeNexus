@@ -55,6 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         connected_agents.clone(),
         Arc::from(db_pool.clone()),
         live_server_data_cache.clone(), // Pass cache to gRPC service
+        ws_data_broadcaster_tx.clone(), // Pass broadcaster to gRPC service
     );
     
     let grpc_service = AgentCommunicationServiceServer::new(agent_comm_service);
@@ -108,6 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         http_addr,
         live_server_data_cache.clone(), // Pass cache to HTTP service
         ws_data_broadcaster_tx.clone(), // Pass broadcaster to HTTP service (for AppState)
+        connected_agents.clone(), // Pass connected agents state to HTTP service
     );
 
     // Run all servers and tasks concurrently

@@ -69,21 +69,30 @@ pub async fn create_vps(
     let vps = sqlx::query_as!(
         Vps,
         r#"
-        INSERT INTO vps (user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, tags, "group")
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        RETURNING id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, tags, "group"
+        INSERT INTO vps (
+            user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, tags, "group",
+            agent_config_override, config_status, last_config_update_at, last_config_error
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        RETURNING
+            id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, tags, "group",
+            agent_config_override, config_status, last_config_update_at, last_config_error
         "#,
         user_id,
         name,
-        initial_ip_address, // Use generated/default value
-        initial_os_type,    // Use generated/default value
-        generated_agent_secret, // Use generated value
-        initial_status,     // Use generated/default value
-        initial_metadata,   // Use generated/default value
+        initial_ip_address,
+        initial_os_type,
+        generated_agent_secret,
+        initial_status,
+        initial_metadata,
         now,
         now,
         initial_tags,
-        initial_group
+        initial_group,
+        None::<serde_json::Value>, // agent_config_override
+        "unknown",                 // config_status
+        None::<chrono::DateTime<Utc>>, // last_config_update_at
+        None::<String>             // last_config_error
     )
     .fetch_one(pool)
     .await?;
@@ -92,14 +101,14 @@ pub async fn create_vps(
 
 /// Retrieves a VPS by its ID.
 pub async fn get_vps_by_id(pool: &PgPool, vps_id: i32) -> Result<Option<Vps>> {
-    sqlx::query_as!(Vps, r#"SELECT id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, tags, "group" FROM vps WHERE id = $1"#, vps_id)
+    sqlx::query_as!(Vps, r#"SELECT id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, tags, "group", agent_config_override, config_status, last_config_update_at, last_config_error FROM vps WHERE id = $1"#, vps_id)
         .fetch_optional(pool)
         .await
 }
 
 /// Retrieves all VPS entries for a given user.
 pub async fn get_vps_by_user_id(pool: &PgPool, user_id: i32) -> Result<Vec<Vps>> {
-    sqlx::query_as!(Vps, r#"SELECT id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, tags, "group" FROM vps WHERE user_id = $1 ORDER BY created_at DESC"#, user_id)
+    sqlx::query_as!(Vps, r#"SELECT id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, tags, "group", agent_config_override, config_status, last_config_update_at, last_config_error FROM vps WHERE user_id = $1 ORDER BY created_at DESC"#, user_id)
         .fetch_all(pool)
         .await
 }
@@ -572,6 +581,10 @@ struct VpsDetailQueryResult {
     vps_group: Option<String>,
     vps_tags: Option<String>,
     vps_created_at: chrono::DateTime<Utc>,
+    // New config fields
+    vps_config_status: String,
+    vps_last_config_update_at: Option<chrono::DateTime<Utc>>,
+    vps_last_config_error: Option<String>,
     // Metrics fields (all optional because of LEFT JOIN)
     cpu_usage_percent: Option<f64>,
     memory_usage_bytes: Option<i64>,
@@ -615,6 +628,9 @@ pub async fn get_all_vps_with_details_for_cache(pool: &PgPool) -> Result<Vec<Ser
             v."group" as vps_group,
             v.tags as vps_tags,
             v.created_at as vps_created_at,
+            v.config_status as vps_config_status,
+            v.last_config_update_at as vps_last_config_update_at,
+            v.last_config_error as vps_last_config_error,
             lvm.cpu_usage_percent,
             lvm.memory_usage_bytes,
             lvm.memory_total_bytes,
@@ -642,6 +658,9 @@ pub async fn get_all_vps_with_details_for_cache(pool: &PgPool) -> Result<Vec<Ser
             status: row.vps_status,
             group: row.vps_group,
             tags: row.vps_tags,
+            config_status: row.vps_config_status,
+            last_config_update_at: row.vps_last_config_update_at,
+            last_config_error: row.vps_last_config_error,
         };
 
         let latest_metrics = if row.cpu_usage_percent.is_some() && row.metric_time.is_some() { // Ensure metric_time is also present
@@ -669,4 +688,101 @@ pub async fn get_all_vps_with_details_for_cache(pool: &PgPool) -> Result<Vec<Ser
     }
 
     Ok(servers_with_details)
+}
+
+// --- Settings Service Functions ---
+
+use super::models::Setting;
+
+/// Retrieves a setting by its key.
+pub async fn get_setting(pool: &PgPool, key: &str) -> Result<Option<Setting>> {
+    sqlx::query_as!(
+        Setting,
+        r#"
+        SELECT key, value, updated_at
+        FROM settings
+        WHERE key = $1
+        "#,
+        key
+    )
+    .fetch_optional(pool)
+    .await
+}
+
+/// Creates or updates a setting.
+pub async fn update_setting(pool: &PgPool, key: &str, value: &serde_json::Value) -> Result<u64> {
+    let now = Utc::now();
+    let rows_affected = sqlx::query!(
+        r#"
+        INSERT INTO settings (key, value, updated_at)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (key) DO UPDATE SET
+            value = EXCLUDED.value,
+            updated_at = EXCLUDED.updated_at
+        "#,
+        key,
+        value,
+        now
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(rows_affected)
+}
+
+/// Updates a VPS's config override field.
+pub async fn update_vps_config_override(
+    pool: &PgPool,
+    vps_id: i32,
+    user_id: i32, // For authorization
+    config_override: &serde_json::Value,
+) -> Result<u64> {
+    let now = Utc::now();
+    let rows_affected = sqlx::query!(
+        r#"
+        UPDATE vps
+        SET
+            agent_config_override = $1,
+            updated_at = $2
+        WHERE id = $3 AND user_id = $4
+        "#,
+        config_override,
+        now,
+        vps_id,
+        user_id
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(rows_affected)
+}
+
+/// Updates the config status of a VPS.
+pub async fn update_vps_config_status(
+    pool: &PgPool,
+    vps_id: i32,
+    status: &str,
+    error: Option<&str>,
+) -> Result<u64> {
+    let now = Utc::now();
+    let rows_affected = sqlx::query!(
+        r#"
+        UPDATE vps
+        SET
+            config_status = $1,
+            last_config_error = $2,
+            last_config_update_at = $3,
+            updated_at = $4
+        WHERE id = $5
+        "#,
+        status,
+        error,
+        now,
+        now,
+        vps_id
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(rows_affected)
 }

@@ -31,6 +31,11 @@ pub struct Vps {
     pub tags: Option<String>,
     #[serde(rename = "group")]
     pub group: Option<String>,
+    // New fields for config management
+    pub agent_config_override: Option<serde_json::Value>,
+    pub config_status: String,
+    pub last_config_update_at: Option<DateTime<Utc>>,
+    pub last_config_error: Option<String>,
 }
 
 /// Represents a performance metric snapshot for a VPS.
@@ -196,4 +201,12 @@ pub struct AggregatedPerformanceMetric {
     pub avg_network_rx_instant_bps: Option<f64>, // Average of instantaneous Rx BPS
     pub avg_network_tx_instant_bps: Option<f64>, // Average of instantaneous Tx BPS
     // Add other aggregated fields as needed
+}
+
+/// Represents a global setting in the `settings` table.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Setting {
+    pub key: String,
+    pub value: serde_json::Value,
+    pub updated_at: DateTime<Utc>,
 }

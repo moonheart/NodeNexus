@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import NotFoundPage from './pages/NotFoundPage';
 import VpsDetailPage from './pages/VpsDetailPage';
+import SettingsPage from './pages/SettingsPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout'; // Import the new Layout component
 import { useAuthStore } from './store/authStore';
@@ -38,6 +39,7 @@ function App() {
           <Route element={<Layout />}>
             <Route path="/" element={<HomePage />} />
             <Route path="/vps/:vpsId" element={<VpsDetailPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             {/* Add other protected routes that need the layout here */}
           </Route>
         </Route>

@@ -111,6 +111,10 @@ export interface VpsListItemResponse {
   tags?: string | null;
   group?: string | null;
   latestMetrics?: LatestPerformanceMetric | null; // camelCase
+  configStatus: string;
+  lastConfigUpdateAt?: string | null;
+  lastConfigError?: string | null;
+  agentConfigOverride?: Record<string, unknown> | null;
 }
 
 /**
@@ -121,3 +125,19 @@ export interface FullServerListPushType {
   servers: VpsListItemResponse[];
 }
 export type ViewMode = 'card' | 'list';
+/**
+ * Represents the configuration for an agent.
+ * This should match the structure of the `AgentConfig` message in `backend/proto/config.proto`.
+ */
+export interface AgentConfig {
+  metrics_collect_interval_seconds: number;
+  metrics_upload_batch_max_size: number;
+  metrics_upload_interval_seconds: number;
+  docker_info_collect_interval_seconds: number;
+  docker_info_upload_interval_seconds: number;
+  generic_metrics_upload_batch_max_size: number;
+  generic_metrics_upload_interval_seconds: number;
+  feature_flags: Record<string, string>;
+  log_level: string;
+  heartbeat_interval_seconds: number;
+}
