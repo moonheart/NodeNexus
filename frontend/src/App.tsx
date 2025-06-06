@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'; // Added useEffect
+import { useEffect } from 'react'; // Added useEffect
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, createTheme, CssBaseline, AppBar, Toolbar, Typography, Button, Box } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';

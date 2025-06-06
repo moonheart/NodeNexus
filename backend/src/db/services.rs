@@ -1,7 +1,7 @@
 use chrono::Utc;
 use sqlx::{PgPool, Result};
 use uuid::Uuid; // Added for generating agent_secret
-use super::models::{User, Vps, PerformanceMetric, AggregatedPerformanceMetric};
+use super::models::{User, Vps, AggregatedPerformanceMetric};
 use crate::websocket_models::{ServerBasicInfo, ServerMetricsSnapshot, ServerWithDetails}; // Added for cache population
 use sqlx::FromRow; // Added for deriving FromRow for helper struct
 use sqlx::postgres::types::PgInterval; // For mapping in handlers, keep imports tidy

@@ -2,7 +2,6 @@ use crate::agent_service::{
     AgentConfig, MessageToServer, PerformanceSnapshot, PerformanceSnapshotBatch,
     message_to_server::Payload,
 };
-use std::collections::HashMap;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sysinfo::{Disks, Networks, ProcessRefreshKind, System};
 use netdev;
@@ -16,7 +15,7 @@ struct PreviousNetworkState {
 
 /// Collects a performance snapshot focusing ONLY on the default network interface
 /// for both cumulative and instantaneous network data.
-pub fn collect_performance_snapshot(
+fn collect_performance_snapshot(
     sys: &mut System,
     disks: &mut Disks, // Added Disks as a mutable reference
     networks: &mut Networks,
@@ -177,8 +176,6 @@ pub async fn metrics_collection_loop(
     let mut sys = System::new_all();
     let mut disks = Disks::new_with_refreshed_list(); // Initialize Disks here
     let mut networks = Networks::new_with_refreshed_list();
-    // Only need to store the time of the previous collection
-    let mut prev_net_state: Option<PreviousNetworkState> = None;
 
     let mut collect_interval_duration = agent_config.metrics_collect_interval_seconds;
     if collect_interval_duration == 0 { collect_interval_duration = 60; }
@@ -199,7 +196,7 @@ pub async fn metrics_collection_loop(
     // Initial refresh to set the baseline for the *next* delta calculation by sysinfo
     disks.refresh(true); // Initial refresh for disks
     networks.refresh(true);
-    prev_net_state = Some(PreviousNetworkState { time: Instant::now() });
+    let mut prev_net_state = Some(PreviousNetworkState { time: Instant::now() });
 
 
     loop {

@@ -3,10 +3,9 @@ use axum::{
         ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade}, Query, State
     }, response::IntoResponse
 };
-use futures_util::{sink::SinkExt, stream::StreamExt};
+use futures_util::stream::StreamExt;
 use std::sync::Arc;
 use serde::Deserialize;
-use tokio::sync::broadcast;
 use jsonwebtoken::{decode, DecodingKey, Validation}; // Added for JWT decoding
 
 use crate::http_server::auth_logic::{AuthenticatedUser, Claims, get_jwt_secret}; // Import Claims and get_jwt_secret

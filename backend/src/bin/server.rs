@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         .and_then(|s| s.parse().ok())
         .unwrap_or(2); // Default to 2 seconds
 
-    let periodic_push_task_future = tokio::spawn(async move {
+    let _periodic_push_task_future = tokio::spawn(async move {
         println!("WebSocket periodic push task started with interval: {}s", push_interval_seconds);
         let mut tick_interval = interval(Duration::from_secs(push_interval_seconds));
         loop {
