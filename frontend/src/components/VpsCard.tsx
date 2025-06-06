@@ -38,9 +38,15 @@ const getStatusAppearance = (status: ServerStatus): { cardBorderClass: string; b
   }
 };
 
+const getUsageColorClass = (value: number): string => {
+  if (value > 90) return 'bg-red-500';
+  if (value > 70) return 'bg-yellow-500';
+  return 'bg-green-500';
+};
+
 const ProgressBar: React.FC<{ value: number; colorClass: string }> = ({ value, colorClass }) => (
   <div className="w-full bg-slate-200 rounded-full h-2 dark:bg-slate-700">
-    <div className={`${colorClass.replace('text-', 'bg-')} h-2 rounded-full`} style={{ width: `${Math.max(0, Math.min(value, 100))}%` }}></div>
+    <div className={`${colorClass} h-2 rounded-full`} style={{ width: `${Math.max(0, Math.min(value, 100))}%` }}></div>
   </div>
 );
 
@@ -92,7 +98,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit }) => {
               <CpuChipIcon className="w-4 h-4 mr-1.5 text-indigo-500 flex-shrink-0" />
               <span>CPU: <span className={`font-semibold ${statusTextClass}`}>{cpuUsage.toFixed(1)}%</span></span>
             </div>
-            <ProgressBar value={cpuUsage} colorClass={statusTextClass} />
+            <ProgressBar value={cpuUsage} colorClass={getUsageColorClass(cpuUsage)} />
           </div>
         )}
 
@@ -104,7 +110,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit }) => {
                 <span className="text-slate-500 text-xxs"> ({ (memoryUsageBytes / (1024*1024)).toFixed(0) }MB / { (memoryTotalBytes / (1024*1024)).toFixed(0) }MB)</span>
               </span>
             </div>
-            <ProgressBar value={memoryUsagePercent} colorClass={statusTextClass} />
+            <ProgressBar value={memoryUsagePercent} colorClass={getUsageColorClass(memoryUsagePercent)} />
           </div>
         )}
         
@@ -116,7 +122,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit }) => {
               <span className="text-slate-500 text-xxs"> ({ (diskUsedBytes / (1024*1024*1024)).toFixed(1) }GB / { (diskTotalBytes / (1024*1024*1024)).toFixed(1) }GB)</span>
               </span>
             </div>
-            <ProgressBar value={diskUsagePercent} colorClass={statusTextClass} />
+            <ProgressBar value={diskUsagePercent} colorClass={getUsageColorClass(diskUsagePercent)} />
           </div>
         )}
 

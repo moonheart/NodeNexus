@@ -260,13 +260,13 @@ pub async fn get_performance_metrics_for_vps(
     vps_id: i32,
     start_time: chrono::DateTime<chrono::Utc>,
     end_time: chrono::DateTime<chrono::Utc>,
-    interval_minutes: Option<u32>,
+    interval_seconds: Option<u32>,
 ) -> Result<Vec<AggregatedPerformanceMetric>> {
-    if let Some(minutes) = interval_minutes {
+    if let Some(seconds) = interval_seconds {
         let interval_value = PgInterval {
             months: 0,
             days: 0,
-            microseconds: (minutes.max(1) as i64) * 60 * 1_000_000,
+            microseconds: (seconds.max(1) as i64) * 1_000_000,
         };
 
         // Perform aggregation
@@ -379,6 +379,40 @@ pub async fn get_latest_performance_metric_for_vps(
     )
     .fetch_optional(pool)
     .await
+}
+
+/// Retrieves the latest N performance metrics for a given VPS.
+/// The results are sorted by time in ascending order.
+pub async fn get_latest_n_performance_metrics_for_vps(
+    pool: &PgPool,
+    vps_id: i32,
+    count: u32,
+) -> Result<Vec<super::models::PerformanceMetric>> {
+    let metrics = sqlx::query_as!(
+        super::models::PerformanceMetric,
+        r#"
+        SELECT
+            id, time, vps_id, cpu_usage_percent, memory_usage_bytes, memory_total_bytes,
+            swap_usage_bytes, swap_total_bytes,
+            disk_io_read_bps, disk_io_write_bps,
+            network_rx_bps, network_tx_bps,
+            network_rx_instant_bps, network_tx_instant_bps,
+            uptime_seconds, total_processes_count, running_processes_count,
+            tcp_established_connection_count
+        FROM (
+            SELECT * FROM performance_metrics
+            WHERE vps_id = $1
+            ORDER BY time DESC
+            LIMIT $2
+        ) AS latest_metrics
+        ORDER BY time ASC
+        "#,
+        vps_id,
+        count as i64 // LIMIT requires i64
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(metrics)
 }
 use crate::agent_service::PerformanceSnapshotBatch; // Corrected path for protobuf generated types
 use chrono::{TimeZone, Utc as ChronoUtc}; // Alias Utc from chrono to avoid conflict if any

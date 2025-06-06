@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { getVpsMetricsTimeseries } from '../services/metricsService';
+import { getVpsMetricsTimeseries, getLatestNMetrics } from '../services/metricsService';
 import type { PerformanceMetricPoint, ServerStatus } from '../types';
 import { useServerListStore } from '../store/serverListStore';
 import EditVpsModal from '../components/EditVpsModal';
@@ -111,6 +111,7 @@ const getStatusIcon = (status: ServerStatus): React.ReactNode => {
 };
 
 const TIME_RANGE_OPTIONS = [
+  { label: '实时', value: 'realtime' as const },
   { label: '1H', value: '1h' as const },
   { label: '6H', value: '6h' as const },
   { label: '24H', value: '24h' as const },
@@ -139,7 +140,7 @@ const VpsDetailPage: React.FC = () => {
   const [networkData, setNetworkData] = useState<PerformanceMetricPoint[]>([]);
   const [loadingChartMetrics, setLoadingChartMetrics] = useState(true);
   const [chartError, setChartError] = useState<string | null>(null);
-  const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('1h');
+  const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('realtime');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   const handleVpsUpdated = () => {
@@ -153,8 +154,7 @@ const VpsDetailPage: React.FC = () => {
     ? "WebSocket connection error."
     : (connectionStatus === 'connected' && !vpsDetail && !isServerListLoading ? "VPS details not found." : null);
 
-  const timeRangeToMillis: Record<TimeRangeOption, number> = { '1h': 36e5, '6h': 216e5, '24h': 864e5, '7d': 6048e5 };
-  const intervalMap: Record<TimeRangeOption, string> = { '1h': '1m', '6h': '5m', '24h': '15m', '7d': '1h' };
+  const timeRangeToMillis: Record<Exclude<TimeRangeOption, 'realtime'>, number> = { '1h': 36e5, '6h': 216e5, '24h': 864e5, '7d': 6048e5 };
 
   useEffect(() => {
     if (!vpsId) {
@@ -167,10 +167,18 @@ const VpsDetailPage: React.FC = () => {
       setLoadingChartMetrics(true);
       setChartError(null);
       try {
-        const endTime = new Date();
-        const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange]);
-        const interval = intervalMap[selectedTimeRange];
-        const metrics = await getVpsMetricsTimeseries(vpsId, startTime.toISOString(), endTime.toISOString(), interval);
+        let metrics: PerformanceMetricPoint[];
+        if (selectedTimeRange === 'realtime') {
+          metrics = await getLatestNMetrics(vpsId, 300);
+        } else {
+          const endTime = new Date();
+          const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange]);
+          // Calculate interval to get ~300 points
+          const intervalSeconds = Math.round(timeRangeToMillis[selectedTimeRange] / 1000 / 300);
+          const interval = `${intervalSeconds}s`;
+          metrics = await getVpsMetricsTimeseries(vpsId, startTime.toISOString(), endTime.toISOString(), interval);
+        }
+
         if (!isMounted) return;
 
         const cpuPoints: PerformanceMetricPoint[] = [];
@@ -182,7 +190,12 @@ const VpsDetailPage: React.FC = () => {
           if (cpuValue != null) cpuPoints.push({ ...point, cpu_usage_percent: cpuValue });
           const memoryUsagePercent = calculateMemoryUsagePercent(point);
           if (memoryUsagePercent != null) memoryPoints.push({ ...point, memory_usage_percent: memoryUsagePercent });
-          if (point.avg_network_rx_instant_bps != null || point.avg_network_tx_instant_bps != null) networkPoints.push(point);
+          
+          const rxBps = point.avg_network_rx_instant_bps ?? point.network_rx_instant_bps;
+          const txBps = point.avg_network_tx_instant_bps ?? point.network_tx_instant_bps;
+          if (rxBps != null || txBps != null) {
+            networkPoints.push({ ...point, avg_network_rx_instant_bps: rxBps, avg_network_tx_instant_bps: txBps });
+          }
         });
         setCpuData(cpuPoints);
         setMemoryData(memoryPoints);
@@ -201,31 +214,36 @@ const VpsDetailPage: React.FC = () => {
   // This effect for real-time updates can be simplified or removed if historical fetch is fast enough on range change
   // For now, we keep it to ensure live data continues to flow.
   useEffect(() => {
-    if (vpsDetail?.latestMetrics && vpsId) {
-      const newMetrics = vpsDetail.latestMetrics;
-      const newTime = newMetrics.time;
-      const numericVpsId = parseInt(vpsId, 10);
-
-      const appendAndTrim = <T extends { time: string }>(prevData: T[], newDataPoint: T): T[] => {
-        if (prevData.length === 0 || new Date(newDataPoint.time).getTime() > new Date(prevData[prevData.length - 1].time).getTime()) {
-          const updated = [...prevData, newDataPoint];
-          return updated.length > 300 ? updated.slice(updated.length - 300) : updated;
-        }
-        return prevData;
-      };
-
-      if (newMetrics.cpuUsagePercent != null) {
-        setCpuData(prev => appendAndTrim(prev, { time: newTime, vps_id: numericVpsId, cpu_usage_percent: newMetrics.cpuUsagePercent }));
-      }
-      const memoryUsagePercent = calculateMemoryUsagePercent({ memory_usage_bytes: newMetrics.memoryUsageBytes, memory_total_bytes: newMetrics.memoryTotalBytes } as PerformanceMetricPoint);
-      if (memoryUsagePercent != null) {
-        setMemoryData(prev => appendAndTrim(prev, { time: newTime, vps_id: numericVpsId, memory_usage_percent: memoryUsagePercent }));
-      }
-      if (newMetrics.networkRxInstantBps != null || newMetrics.networkTxInstantBps != null) {
-        setNetworkData(prev => appendAndTrim(prev, { time: newTime, vps_id: numericVpsId, avg_network_rx_instant_bps: newMetrics.networkRxInstantBps, avg_network_tx_instant_bps: newMetrics.networkTxInstantBps }));
-      }
+    // Only apply websocket updates in real-time mode
+    if (selectedTimeRange !== 'realtime' || !vpsDetail?.latestMetrics || !vpsId) {
+      return;
     }
-  }, [vpsDetail?.latestMetrics?.time, vpsId]);
+
+    const newMetrics = vpsDetail.latestMetrics;
+    const newTime = newMetrics.time;
+    const numericVpsId = parseInt(vpsId, 10);
+
+    const appendAndTrim = <T extends { time: string }>(prevData: T[], newDataPoint: T): T[] => {
+      // Check for duplicates based on timestamp
+      if (prevData.some(p => p.time === newDataPoint.time)) {
+        return prevData;
+      }
+      // Ensure data is sorted by time
+      const combined = [...prevData, newDataPoint].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+      return combined.length > 300 ? combined.slice(combined.length - 300) : combined;
+    };
+
+    if (newMetrics.cpuUsagePercent != null) {
+      setCpuData(prev => appendAndTrim(prev, { time: newTime, vps_id: numericVpsId, cpu_usage_percent: newMetrics.cpuUsagePercent }));
+    }
+    const memoryUsagePercent = calculateMemoryUsagePercent({ memory_usage_bytes: newMetrics.memoryUsageBytes, memory_total_bytes: newMetrics.memoryTotalBytes } as PerformanceMetricPoint);
+    if (memoryUsagePercent != null) {
+      setMemoryData(prev => appendAndTrim(prev, { time: newTime, vps_id: numericVpsId, memory_usage_percent: memoryUsagePercent }));
+    }
+    if (newMetrics.networkRxInstantBps != null || newMetrics.networkTxInstantBps != null) {
+      setNetworkData(prev => appendAndTrim(prev, { time: newTime, vps_id: numericVpsId, avg_network_rx_instant_bps: newMetrics.networkRxInstantBps, avg_network_tx_instant_bps: newMetrics.networkTxInstantBps }));
+    }
+  }, [vpsDetail?.latestMetrics?.time, vpsId, selectedTimeRange]);
 
 
   if (isLoadingPage) {

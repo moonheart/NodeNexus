@@ -60,3 +60,28 @@ export const getLatestVpsMetrics = async (
     throw error;
   }
 };
+/**
+ * Fetches the latest N performance metrics for a specific VPS.
+ * @param vpsId - The ID of the VPS.
+ * @param count - The number of latest data points to fetch.
+ * @returns A promise that resolves to an array of performance metric points.
+ */
+export const getLatestNMetrics = async (
+  vpsId: number | string,
+  count: number
+): Promise<PerformanceMetricPoint[]> => {
+  try {
+    const response = await apiClient.get<PerformanceMetricPoint[]>(
+      `/api/vps/${vpsId}/metrics/latest-n`,
+      {
+        params: {
+          count: count,
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching latest ${count} metrics for VPS ${vpsId}:`, error);
+    throw error;
+  }
+};

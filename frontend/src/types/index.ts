@@ -79,6 +79,8 @@ export interface PerformanceMetricPoint {
   memory_usage_percent?: number | null; // Calculated: (memory_usage_bytes / memory_total_bytes) * 100 or from aggregated
   avg_network_rx_instant_bps?: number | null; // Calculated average Rx bytes per second (Matches backend AggregatedPerformanceMetric)
   avg_network_tx_instant_bps?: number | null; // Calculated average Tx bytes per second (Matches backend AggregatedPerformanceMetric)
+  network_rx_instant_bps?: number | null; // From raw performance_metrics
+  network_tx_instant_bps?: number | null; // From raw performance_metrics
   // Add other relevant fields that might come from backend (raw or aggregated)
 }
 
