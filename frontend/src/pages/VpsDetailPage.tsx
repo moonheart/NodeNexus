@@ -1,25 +1,25 @@
-import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import Typography from '@mui/material/Typography';
-import Paper from '@mui/material/Paper';
-import Grid from '@mui/material/Grid'; // Explicit import
-import CircularProgress from '@mui/material/CircularProgress';
-import Alert from '@mui/material/Alert';
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import ButtonGroup from '@mui/material/ButtonGroup';
+import React, { useEffect, useState, useMemo } from 'react';
+import { useParams, Link } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { getVpsMetricsTimeseries } from '../services/metricsService';
-// import { getVpsDetail } from '../services/vpsService'; // No longer needed for main detail, will use store
-import type { PerformanceMetricPoint } from '../types'; // Removed VpsListItemResponse
-import { useServerListStore } from '../store/serverListStore'; // Import the new store
-import { useShallow } from 'zustand/react/shallow'; // Import useShallow
-import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
-import List from '@mui/material/List';
-import ListItem from '@mui/material/ListItem';
-import ListItemText from '@mui/material/ListItemText';
-import Divider from '@mui/material/Divider';
-import Chip from '@mui/material/Chip';
+import type { PerformanceMetricPoint, ServerStatus } from '../types';
+import { useServerListStore } from '../store/serverListStore';
+import { useShallow } from 'zustand/react/shallow';
+import type { ValueType } from 'recharts/types/component/DefaultTooltipContent';
+import StatCard from '../components/StatCard';
+import {
+  ServerIcon,
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+  XCircleIcon,
+  ArrowLeftIcon,
+  CpuChipIcon,
+  MemoryStickIcon,
+  HardDiskIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
+} from '../components/Icons';
+import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_ERROR } from '../types';
 
 // Helper to format date for XAxis
 const formatDateTick = (tickItem: string) => {
@@ -86,65 +86,74 @@ return uptimeString.trim();
 };
 
 
-type TimeRangeOption = '1h' | '6h' | '24h' | '7d';
+
+const getStatusBadgeClasses = (status: ServerStatus): string => {
+  switch (status) {
+    case STATUS_ONLINE: return "bg-green-100 text-green-800";
+    case STATUS_REBOOTING: return "bg-yellow-100 text-yellow-800 animate-pulse";
+    case STATUS_OFFLINE: return "bg-red-100 text-red-800";
+    case STATUS_ERROR: return "bg-red-200 text-red-900";
+    case STATUS_PROVISIONING: return "bg-blue-100 text-blue-800";
+    default: return "bg-slate-100 text-slate-800";
+  }
+};
+
+const getStatusIcon = (status: ServerStatus): React.ReactNode => {
+  switch (status) {
+    case STATUS_ONLINE: return <CheckCircleIcon className="w-5 h-5 text-green-500" />;
+    case STATUS_REBOOTING: return <ExclamationTriangleIcon className="w-5 h-5 text-yellow-500" />;
+    case STATUS_OFFLINE: return <XCircleIcon className="w-5 h-5 text-red-500" />;
+    case STATUS_ERROR: return <XCircleIcon className="w-5 h-5 text-red-700" />;
+    default: return <ExclamationTriangleIcon className="w-5 h-5 text-slate-500" />;
+  }
+};
+
+const TIME_RANGE_OPTIONS = [
+  { label: '1H', value: '1h' as const },
+  { label: '6H', value: '6h' as const },
+  { label: '24H', value: '24h' as const },
+  { label: '7D', value: '7d' as const },
+];
+type TimeRangeOption = typeof TIME_RANGE_OPTIONS[number]['value'];
+
 
 const VpsDetailPage: React.FC = () => {
   const { vpsId } = useParams<{ vpsId: string }>();
-  
-  // Get servers list and connection status from the store
-  const { servers, connectionStatus: wsConnectionStatus, isLoading: isServerListLoading } = useServerListStore(useShallow(state => ({
+
+  const { servers, connectionStatus, isLoading: isServerListLoading } = useServerListStore(useShallow(state => ({
     servers: state.servers,
     connectionStatus: state.connectionStatus,
     isLoading: state.isLoading,
   })));
 
-  // Find the specific VPS detail from the store's list
-  const vpsDetailFromStore = React.useMemo(() => {
+  const vpsDetail = useMemo(() => {
     if (!vpsId) return null;
     const numericVpsId = parseInt(vpsId, 10);
     return servers.find(server => server.id === numericVpsId) || null;
   }, [servers, vpsId]);
 
-  // Local state for historical chart data and its loading/error state
   const [cpuData, setCpuData] = useState<PerformanceMetricPoint[]>([]);
   const [memoryData, setMemoryData] = useState<PerformanceMetricPoint[]>([]);
-const [networkData, setNetworkData] = useState<PerformanceMetricPoint[]>([]);
-// const [loading, setLoading] = useState(true); // This will now depend on vpsDetailFromStore and isServerListLoading
-const [loadingChartMetrics, setLoadingChartMetrics] = useState(true); // Renamed for clarity
-const [chartError, setChartError] = useState<string | null>(null); // Renamed for clarity
-const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('1h');
+  const [networkData, setNetworkData] = useState<PerformanceMetricPoint[]>([]);
+  const [loadingChartMetrics, setLoadingChartMetrics] = useState(true);
+  const [chartError, setChartError] = useState<string | null>(null);
+  const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('1h');
 
-// Use vpsDetailFromStore for displaying server info.
-// The old vpsDetail state and its fetching logic (fetchVpsDetails) are removed.
-// The `loading` state for overall page can be derived from `isServerListLoading` and whether `vpsDetailFromStore` is found.
-const isLoadingPage = isServerListLoading || (wsConnectionStatus === 'connected' && !vpsDetailFromStore && !!vpsId);
-const pageError = wsConnectionStatus === 'error' || wsConnectionStatus === 'permanently_failed'
-  ? "WebSocket connection error."
-  : (wsConnectionStatus === 'connected' && !vpsDetailFromStore && !!vpsId && !isServerListLoading ? "VPS details not found in the live list." : null);
+  const isLoadingPage = isServerListLoading && !vpsDetail;
+  const pageError = connectionStatus === 'error' || connectionStatus === 'permanently_failed'
+    ? "WebSocket connection error."
+    : (connectionStatus === 'connected' && !vpsDetail && !isServerListLoading ? "VPS details not found." : null);
 
+  const timeRangeToMillis: Record<TimeRangeOption, number> = { '1h': 36e5, '6h': 216e5, '24h': 864e5, '7d': 6048e5 };
+  const intervalMap: Record<TimeRangeOption, string> = { '1h': '1m', '6h': '5m', '24h': '15m', '7d': '1h' };
 
-  const timeRangeToMillis: Record<TimeRangeOption, number> = {
-    '1h': 60 * 60 * 1000,
-    '6h': 6 * 60 * 60 * 1000,
-    '24h': 24 * 60 * 60 * 1000,
-    '7d': 7 * 24 * 60 * 60 * 1000,
-  };
-
-  const intervalMap: Record<TimeRangeOption, string> = {
-    '1h': '1m', // 1 minute interval for 1 hour
-    '6h': '5m', // 5 minutes interval for 6 hours
-    '24h': '15m', // 15 minutes interval for 24 hours
-    '7d': '1h', // 1 hour interval for 7 days
-  };
-
-  // useEffect for fetching historical chart metrics (remains largely the same)
   useEffect(() => {
     if (!vpsId) {
-        setChartError('VPS ID not found for charts.');
-        setLoadingChartMetrics(false);
-        return;
+      setChartError('VPS ID not found.');
+      setLoadingChartMetrics(false);
+      return;
     }
-
+    let isMounted = true;
     const fetchChartMetricsData = async () => {
       setLoadingChartMetrics(true);
       setChartError(null);
@@ -152,13 +161,8 @@ const pageError = wsConnectionStatus === 'error' || wsConnectionStatus === 'perm
         const endTime = new Date();
         const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange]);
         const interval = intervalMap[selectedTimeRange];
-
-        const metrics = await getVpsMetricsTimeseries(
-          vpsId,
-          startTime.toISOString(),
-          endTime.toISOString(),
-          interval
-        );
+        const metrics = await getVpsMetricsTimeseries(vpsId, startTime.toISOString(), endTime.toISOString(), interval);
+        if (!isMounted) return;
 
         const cpuPoints: PerformanceMetricPoint[] = [];
         const memoryPoints: PerformanceMetricPoint[] = [];
@@ -166,346 +170,204 @@ const pageError = wsConnectionStatus === 'error' || wsConnectionStatus === 'perm
 
         metrics.forEach(point => {
           const cpuValue = point.avg_cpu_usage_percent ?? point.cpu_usage_percent;
-          if (cpuValue != null) {
-            cpuPoints.push({ time: point.time, vps_id: point.vps_id, cpu_usage_percent: cpuValue });
-          }
+          if (cpuValue != null) cpuPoints.push({ ...point, cpu_usage_percent: cpuValue });
           const memoryUsagePercent = calculateMemoryUsagePercent(point);
-          if (memoryUsagePercent != null) {
-            memoryPoints.push({ time: point.time, vps_id: point.vps_id, memory_usage_percent: memoryUsagePercent });
-          }
-          if (point.avg_network_rx_instant_bps != null || point.avg_network_tx_instant_bps != null) {
-            networkPoints.push({
-              time: point.time,
-              vps_id: point.vps_id,
-              avg_network_rx_instant_bps: point.avg_network_rx_instant_bps,
-              avg_network_tx_instant_bps: point.avg_network_tx_instant_bps,
-            });
-          }
+          if (memoryUsagePercent != null) memoryPoints.push({ ...point, memory_usage_percent: memoryUsagePercent });
+          if (point.avg_network_rx_instant_bps != null || point.avg_network_tx_instant_bps != null) networkPoints.push(point);
         });
         setCpuData(cpuPoints);
         setMemoryData(memoryPoints);
         setNetworkData(networkPoints);
       } catch (err) {
-        console.error('Failed to fetch VPS chart metrics timeseries:', err);
-        setChartError('无法加载图表指标数据。请稍后再试。');
+        console.error('Failed to fetch chart metrics:', err);
+        if (isMounted) setChartError('Could not load chart data.');
       } finally {
-        setLoadingChartMetrics(false);
+        if (isMounted) setLoadingChartMetrics(false);
       }
     };
-
     fetchChartMetricsData();
+    return () => { isMounted = false; };
   }, [vpsId, selectedTimeRange]);
 
-  const handleRefreshCharts = () => {
-    if (!vpsId) return;
-     // Only refetch chart metrics
-    const fetchMetricsForRefresh = async () => {
-      setLoadingChartMetrics(true);
-      setChartError(null);
-      try {
-        const endTime = new Date();
-        const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange]);
-        const interval = intervalMap[selectedTimeRange];
-        const metrics = await getVpsMetricsTimeseries(vpsId, startTime.toISOString(), endTime.toISOString(), interval);
-        const cpuPoints: PerformanceMetricPoint[] = [];
-        const memoryPoints: PerformanceMetricPoint[] = [];
-        const networkPoints: PerformanceMetricPoint[] = [];
-        metrics.forEach(point => {
-          const cpuValue = point.avg_cpu_usage_percent ?? point.cpu_usage_percent;
-          if (cpuValue != null) cpuPoints.push({ time: point.time, vps_id: point.vps_id, cpu_usage_percent: cpuValue });
-          const memUsagePct = calculateMemoryUsagePercent(point);
-          if (memUsagePct != null) memoryPoints.push({ time: point.time, vps_id: point.vps_id, memory_usage_percent: memUsagePct });
-          if (point.avg_network_rx_instant_bps != null || point.avg_network_tx_instant_bps != null) {
-            networkPoints.push({
-              time: point.time, vps_id: point.vps_id,
-              avg_network_rx_instant_bps: point.avg_network_rx_instant_bps,
-              avg_network_tx_instant_bps: point.avg_network_tx_instant_bps,
-            });
-          }
-        });
-        setCpuData(cpuPoints);
-        setMemoryData(memoryPoints);
-        setNetworkData(networkPoints);
-      } catch (err) {
-        console.error('Failed to refresh VPS chart metrics timeseries:', err);
-        setChartError('刷新图表指标数据失败。');
-      } finally {
-        setLoadingChartMetrics(false);
-      }
-    };
-    fetchMetricsForRefresh();
-  };
-
-  const MAX_CHART_POINTS = 300; // Max points to keep in the chart to prevent performance issues
-
-  // Log the vpsDetailFromStore and its latestMetrics.time on every render
-  console.log('VpsDetailPage Render Cycle: vpsDetailFromStore:', vpsDetailFromStore);
-  if (vpsDetailFromStore) {
-    console.log('VpsDetailPage Render Cycle: vpsDetailFromStore.latestMetrics.time:', vpsDetailFromStore.latestMetrics?.time);
-  } else {
-    console.log('VpsDetailPage Render Cycle: vpsDetailFromStore is null/undefined');
-  }
-
-  // Effect to append latest metrics from WebSocket to chart data
+  // This effect for real-time updates can be simplified or removed if historical fetch is fast enough on range change
+  // For now, we keep it to ensure live data continues to flow.
   useEffect(() => {
-    console.log('VpsDetailPage useEffect triggered. Current latestMetrics.time for dependency:', vpsDetailFromStore?.latestMetrics?.time, 'vpsId:', vpsId);
-
-    if (vpsDetailFromStore?.latestMetrics && vpsId) {
-      console.log('VpsDetailPage useEffect: Condition met. Processing latestMetrics:', vpsDetailFromStore.latestMetrics);
-      const newMetrics = vpsDetailFromStore.latestMetrics;
+    if (vpsDetail?.latestMetrics && vpsId) {
+      const newMetrics = vpsDetail.latestMetrics;
       const newTime = newMetrics.time;
       const numericVpsId = parseInt(vpsId, 10);
 
-      // Helper to append and trim data
-      const appendAndTrim = <T extends { time: string }>(chartName: string, prevData: T[], newDataPoint: T): T[] => {
-        if (!newDataPoint.time) {
-            console.warn(`VpsDetailPage (${chartName}): newDataPoint is missing time property. Skipping append.`);
-            return prevData;
-        }
-        // Add if new point is newer than the last point in prevData, or if prevData is empty
+      const appendAndTrim = <T extends { time: string }>(prevData: T[], newDataPoint: T): T[] => {
         if (prevData.length === 0 || new Date(newDataPoint.time).getTime() > new Date(prevData[prevData.length - 1].time).getTime()) {
-          console.log(`VpsDetailPage (${chartName}): Appending new data point at ${newDataPoint.time}`);
-          let updated = [...prevData, newDataPoint];
-          if (updated.length > MAX_CHART_POINTS) {
-            updated = updated.slice(updated.length - MAX_CHART_POINTS);
-          }
-          return updated;
+          const updated = [...prevData, newDataPoint];
+          return updated.length > 300 ? updated.slice(updated.length - 300) : updated;
         }
-        // console.log(`VpsDetailPage (${chartName}): New data point at ${newDataPoint.time} is not newer than last point at ${prevData.length > 0 ? prevData[prevData.length -1].time : 'N/A'}. Skipping append.`);
-        return prevData; // No change if not newer or same timestamp
+        return prevData;
       };
 
-      // CPU
       if (newMetrics.cpuUsagePercent != null) {
-        const newCpuPoint: PerformanceMetricPoint = {
-          time: newTime,
-          vps_id: numericVpsId,
-          cpu_usage_percent: newMetrics.cpuUsagePercent,
-        };
-        setCpuData(prevData => appendAndTrim('CPU', prevData, newCpuPoint));
+        setCpuData(prev => appendAndTrim(prev, { time: newTime, vps_id: numericVpsId, cpu_usage_percent: newMetrics.cpuUsagePercent }));
       }
-
-      // Memory
-      const tempMetricForCalc: Partial<PerformanceMetricPoint> = {
-        memory_usage_bytes: newMetrics.memoryUsageBytes,
-        memory_total_bytes: newMetrics.memoryTotalBytes,
-      };
-      const memoryUsagePercent = calculateMemoryUsagePercent(tempMetricForCalc as PerformanceMetricPoint);
+      const memoryUsagePercent = calculateMemoryUsagePercent({ memory_usage_bytes: newMetrics.memoryUsageBytes, memory_total_bytes: newMetrics.memoryTotalBytes } as PerformanceMetricPoint);
       if (memoryUsagePercent != null) {
-        const newMemoryPoint: PerformanceMetricPoint = {
-          time: newTime,
-          vps_id: numericVpsId,
-          memory_usage_percent: memoryUsagePercent,
-        };
-        setMemoryData(prevData => appendAndTrim('Memory', prevData, newMemoryPoint));
+        setMemoryData(prev => appendAndTrim(prev, { time: newTime, vps_id: numericVpsId, memory_usage_percent: memoryUsagePercent }));
       }
-
-      // Network
       if (newMetrics.networkRxInstantBps != null || newMetrics.networkTxInstantBps != null) {
-        const newNetworkPoint: PerformanceMetricPoint = {
-          time: newTime,
-          vps_id: numericVpsId,
-          avg_network_rx_instant_bps: newMetrics.networkRxInstantBps,
-          avg_network_tx_instant_bps: newMetrics.networkTxInstantBps,
-        };
-        setNetworkData(prevData => appendAndTrim('Network', prevData, newNetworkPoint));
+        setNetworkData(prev => appendAndTrim(prev, { time: newTime, vps_id: numericVpsId, avg_network_rx_instant_bps: newMetrics.networkRxInstantBps, avg_network_tx_instant_bps: newMetrics.networkTxInstantBps }));
       }
-    } else {
-      console.log('VpsDetailPage useEffect: Condition NOT met.', {
-        hasVpsDetail: !!vpsDetailFromStore,
-        hasLatestMetrics: !!vpsDetailFromStore?.latestMetrics,
-        vpsIdExists: !!vpsId,
-      });
     }
-  }, [vpsDetailFromStore?.latestMetrics?.time, vpsId]);
+  }, [vpsDetail?.latestMetrics?.time, vpsId]);
 
 
   if (isLoadingPage) {
+    return <div className="flex justify-center items-center h-64"><p>Loading server details...</p></div>;
+  }
+
+  if (pageError) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 200px)' }}>
-        <CircularProgress />
-      </Box>
+      <div className="text-center py-10">
+        <XCircleIcon className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <p className="text-xl text-red-600 bg-red-100 p-4 rounded-lg">{pageError}</p>
+        <Link to="/" className="mt-6 inline-flex items-center bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors">
+          <ArrowLeftIcon className="w-5 h-5 inline mr-2" />Back to Dashboard
+        </Link>
+      </div>
     );
   }
 
-  if (pageError && !vpsDetailFromStore) {
-    return <Alert severity="error" sx={{ m: 2 }}>{pageError}</Alert>;
-  }
-  
-  if (!vpsDetailFromStore) {
-    // This case should ideally be covered by isLoadingPage or pageError
-    return <Alert severity="info" sx={{ m: 2 }}>VPS详情未找到或仍在加载中。</Alert>;
+  if (!vpsDetail) {
+    return <div className="text-center text-slate-500">Server data not available.</div>;
   }
 
-  // Use vpsDetailFromStore for rendering server info
-  const currentVpsDetail = vpsDetailFromStore;
-
-  // Custom Tooltip Formatter for Network Speed
-  const networkTooltipFormatter = (value: ValueType, name: NameType): [string, NameType] => {
-    const formattedValue = formatNetworkSpeed(value as number);
-    return [formattedValue, name];
-  };
+  const { latestMetrics: metrics, metadata } = vpsDetail;
+  const memUsed = metrics?.memoryUsageBytes ?? 0;
+  const memTotal = metrics?.memoryTotalBytes ?? 0;
+  const diskUsed = metrics?.diskUsedBytes ?? 0;
+  const diskTotal = metrics?.diskTotalBytes ?? 0;
 
   return (
-    <Box sx={{ width: '100%', maxWidth: 1200, margin: 'auto', p: 2 }}>
-      <Typography variant="h4" gutterBottom>
-        {currentVpsDetail.name} (ID: {currentVpsDetail.id})
-      </Typography>
+    <div className="p-4 md:p-6 lg:p-8 space-y-8 bg-slate-50 min-h-screen">
+      {/* Header Section */}
+      <section className="bg-white p-6 rounded-xl shadow-md">
+        <div className="flex flex-col sm:flex-row justify-between items-start">
+          <div>
+            <div className="flex items-center mb-2">
+              <ServerIcon className="w-8 h-8 mr-3 text-indigo-600 flex-shrink-0" />
+              <h1 className="text-3xl font-bold text-slate-800">{vpsDetail.name}</h1>
+            </div>
+            <p className="text-slate-500 mt-1 ml-11">IP: {vpsDetail.ipAddress || 'N/A'}</p>
+          </div>
+          <div className="mt-4 sm:mt-0 sm:text-right space-y-2">
+            <div className={`px-3 py-1.5 text-sm font-semibold rounded-full inline-flex items-center gap-2 ${getStatusBadgeClasses(vpsDetail.status)}`}>
+              {getStatusIcon(vpsDetail.status)}
+              {vpsDetail.status.toUpperCase()}
+            </div>
+            <div>
+              <Link to="/" className="inline-flex items-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3.5 rounded-lg transition-colors text-sm">
+                <ArrowLeftIcon className="w-4 h-4 mr-1.5" /> Dashboard
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
 
-      {/* VPS Info Section - uses currentVpsDetail from store */}
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>服务器信息</Typography>
-        <List dense>
-          <ListItem>
-            <ListItemText
-              primary="状态"
-              secondary={
-                <Typography component="span" variant="body2" color="textSecondary">
-                  <Chip
-                    label={currentVpsDetail.status?.toUpperCase()}
-                    color={currentVpsDetail.status === 'online' ? 'success' : currentVpsDetail.status === 'offline' ? 'error' : 'default'}
-                    size="small"
-                  />
-                </Typography>
-              }
-            />
-          </ListItem>
-          <Divider component="li" />
-          <ListItem>
-            <ListItemText primary="运行时间" secondary={formatUptime(currentVpsDetail.latestMetrics?.uptimeSeconds)} />
-          </ListItem>
-          <Divider component="li" />
-          <ListItem>
-            <ListItemText
-              primary="操作系统"
-              secondary={`${currentVpsDetail.metadata?.os_family || currentVpsDetail.osType || (currentVpsDetail.metadata?.os_name as string) || 'N/A'} (${(currentVpsDetail.metadata?.os_version as string) || 'N/A'})`}
-            />
-          </ListItem>
-          <Divider component="li" />
-           <ListItem>
-            <ListItemText primary="内核版本" secondary={`${(currentVpsDetail.metadata?.kernel_version as string) || 'N/A'}`} />
-          </ListItem>
-          <Divider component="li" />
-          <ListItem>
-            <ListItemText primary="架构" secondary={`${(currentVpsDetail.metadata?.architecture as string) || (currentVpsDetail.metadata?.arch as string) || 'N/A'}`} />
-          </ListItem>
-          <Divider component="li" />
-          <ListItem>
-            <ListItemText primary="CPU型号" secondary={`${(currentVpsDetail.metadata?.cpu_model as string) || 'N/A'}`} />
-          </ListItem>
-          <Divider component="li" />
-          <ListItem>
-            <ListItemText primary="内存大小" secondary={formatBytes(currentVpsDetail.latestMetrics?.memoryTotalBytes)} />
-          </ListItem>
-          <Divider component="li" />
-          <ListItem>
-            <ListItemText
-              primary="磁盘大小"
-              secondary={`${formatBytes(currentVpsDetail.latestMetrics?.diskUsedBytes)} / ${formatBytes(currentVpsDetail.latestMetrics?.diskTotalBytes)}`}
-            />
-          </ListItem>
-        </List>
-      </Paper>
+      {/* Quick Stats Section */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
+        <StatCard title="CPU Usage" value={metrics?.cpuUsagePercent?.toFixed(1) ?? 'N/A'} unit="%" icon={<CpuChipIcon />} colorClass="text-blue-500" description={vpsDetail.status === 'offline' ? "Offline" : `${(metadata?.cpu_model as string) || ''}`} />
+        <StatCard title="RAM Usage" value={memTotal > 0 ? ((memUsed / memTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<MemoryStickIcon />} colorClass="text-purple-500" description={vpsDetail.status === 'offline' ? "Offline" : `${formatBytes(memUsed)} / ${formatBytes(memTotal)}`} />
+        <StatCard title="Disk Usage" value={diskTotal > 0 ? ((diskUsed / diskTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<HardDiskIcon />} colorClass="text-orange-500" description={vpsDetail.status === 'offline' ? "Offline" : `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`} />
+        <StatCard title="Upload" value={formatNetworkSpeed(metrics?.networkTxInstantBps)} icon={<ArrowUpIcon />} colorClass="text-green-500" description="Current outgoing" />
+        <StatCard title="Download" value={formatNetworkSpeed(metrics?.networkRxInstantBps)} icon={<ArrowDownIcon />} colorClass="text-sky-500" description="Current incoming" />
+        <StatCard title="Uptime" value={formatUptime(metrics?.uptimeSeconds)} icon={<ExclamationTriangleIcon />} colorClass="text-teal-500" description="Current session" />
+      </section>
 
-      {/* Display chart-specific errors here */}
-      {chartError && <Alert severity="warning" sx={{ mb: 2 }}>{chartError}</Alert>}
+      {/* Charts Section */}
+      <section className="bg-white p-4 rounded-xl shadow-md">
+        <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold text-slate-700">Performance Metrics</h2>
+          <div className="flex items-center space-x-1 mt-3 sm:mt-0 p-1 bg-slate-100 rounded-lg">
+            {TIME_RANGE_OPTIONS.map(period => (
+              <button
+                key={period.value}
+                onClick={() => setSelectedTimeRange(period.value)}
+                aria-pressed={selectedTimeRange === period.value}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${selectedTimeRange === period.value ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-200'}`}
+              >
+                {period.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {chartError && <p className="text-red-500 text-center">{chartError}</p>}
+        {loadingChartMetrics ? <div className="h-72 flex justify-center items-center"><p>Loading charts...</p></div> : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
+            <ChartComponent title="CPU Usage (%)" data={cpuData} dataKey="cpu_usage_percent" stroke="#8884d8" yDomain={[0, 100]} />
+            <ChartComponent title="Memory Usage (%)" data={memoryData} dataKey="memory_usage_percent" stroke="#82ca9d" yDomain={[0, 100]} />
+            <div className="lg:col-span-2">
+              <NetworkChartComponent data={networkData} />
+            </div>
+          </div>
+        )}
+      </section>
 
-
-      <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <ButtonGroup variant="outlined" aria-label="Time range selection">
-          {(Object.keys(timeRangeToMillis) as TimeRangeOption[]).map((range) => (
-            <Button
-              key={range}
-              onClick={() => setSelectedTimeRange(range)}
-              variant={selectedTimeRange === range ? "contained" : "outlined"}
-            >
-              {range.toUpperCase()}
-            </Button>
-          ))}
-        </ButtonGroup>
-        <Button variant="outlined" onClick={handleRefreshCharts} disabled={isLoadingPage || loadingChartMetrics}>
-          刷新图表
-        </Button>
-      </Box>
-
-      {loadingChartMetrics && (
-         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
-           <CircularProgress />
-         </Box>
-      )}
-      {!loadingChartMetrics && (
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 6 }}> {/* Reverted to size prop */}
-            <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
-              <Typography variant="h6" gutterBottom align="center">CPU 使用率 (%)</Typography>
-              {cpuData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={cpuData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" tickFormatter={formatDateTick} />
-                    <YAxis domain={[0, 100]} />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="cpu_usage_percent" stroke="#8884d8" dot={false} name="CPU %" />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                  <Typography>暂无CPU数据。</Typography>
-                </Box>
-              )}
-            </Paper>
-          </Grid>
-          <Grid size={{ xs: 12, md: 6 }}> {/* Reverted to size prop */}
-            <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
-              <Typography variant="h6" gutterBottom align="center">内存使用率 (%)</Typography>
-              {memoryData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={memoryData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" tickFormatter={formatDateTick} />
-                    <YAxis domain={[0, 100]} />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="memory_usage_percent" stroke="#82ca9d" dot={false} name="内存 %" />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                  <Typography>暂无内存数据。</Typography>
-                </Box>
-              )}
-            </Paper>
-          </Grid>
-          {/* Network Chart */}
-          <Grid size={{ xs: 12 }}> {/* Reverted to size prop */}
-            <Paper sx={{ p: 2, height: 350, display: 'flex', flexDirection: 'column' }}>
-              <Typography variant="h6" gutterBottom align="center">网络速率</Typography>
-              {networkData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={networkData} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" tickFormatter={formatDateTick} />
-                    {/* Adjust YAxis tick formatter for network speed */}
-                    <YAxis tickFormatter={formatNetworkSpeed} width={80} />
-                    {/* Adjust Tooltip formatter */}
-                    <Tooltip formatter={networkTooltipFormatter} />
-                    <Legend />
-                    <Line type="monotone" dataKey="avg_network_rx_instant_bps" stroke="#ff7300" dot={false} name="下载速率" />
-                    <Line type="monotone" dataKey="avg_network_tx_instant_bps" stroke="#387908" dot={false} name="上传速率" />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                  <Typography>暂无网络数据。</Typography>
-                </Box>
-              )}
-            </Paper>
-          </Grid>
-        </Grid>
-      )}
-    </Box>
+      {/* System Info Section */}
+      <section className="bg-white p-6 rounded-xl shadow-md">
+        <h2 className="text-xl font-semibold text-slate-700 mb-6">System Information</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6 text-sm">
+          <InfoBlock title="Operating System" value={`${metadata?.os_family || vpsDetail.osType || metadata?.os_name || 'N/A'} (${metadata?.os_version || 'N/A'})`} />
+          <InfoBlock title="Kernel Version" value={`${metadata?.kernel_version || 'N/A'}`} />
+          <InfoBlock title="Architecture" value={`${metadata?.architecture || metadata?.arch || 'N/A'}`} />
+          <InfoBlock title="CPU Model" value={`${metadata?.cpu_model || 'N/A'}`} />
+          <InfoBlock title="Total RAM" value={formatBytes(metrics?.memoryTotalBytes)} />
+          <InfoBlock title="Total Disk" value={formatBytes(metrics?.diskTotalBytes)} />
+        </div>
+      </section>
+    </div>
   );
 };
+
+const ChartComponent: React.FC<{ title: string, data: PerformanceMetricPoint[], dataKey: string, stroke: string, yDomain: [number, number] }> = ({ title, data, dataKey, stroke, yDomain }) => (
+  <div className="h-72">
+    <h3 className="text-lg font-semibold text-slate-600 text-center mb-2">{title}</h3>
+    {data.length > 0 ? (
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
+          <YAxis domain={yDomain} tick={{ fontSize: 11 }} />
+          <Tooltip contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(2px)', borderRadius: '0.5rem', fontSize: '0.8rem' }} />
+          <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
+          <Line type="monotone" dataKey={dataKey} stroke={stroke} dot={false} name={title.split(' ')[0]} />
+        </LineChart>
+      </ResponsiveContainer>
+    ) : <p className="text-center text-slate-500 pt-16">No data available.</p>}
+  </div>
+);
+
+const NetworkChartComponent: React.FC<{ data: PerformanceMetricPoint[] }> = ({ data }) => (
+  <div className="h-72">
+    <h3 className="text-lg font-semibold text-slate-600 text-center mb-2">Network Speed</h3>
+    {data.length > 0 ? (
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
+          <YAxis tickFormatter={formatNetworkSpeed} width={80} tick={{ fontSize: 11 }} />
+          <Tooltip formatter={(value: ValueType) => formatNetworkSpeed(value as number)} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(2px)', borderRadius: '0.5rem', fontSize: '0.8rem' }} />
+          <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
+          <Line type="monotone" dataKey="avg_network_rx_instant_bps" stroke="#38bdf8" dot={false} name="Download" />
+          <Line type="monotone" dataKey="avg_network_tx_instant_bps" stroke="#34d399" dot={false} name="Upload" />
+        </LineChart>
+      </ResponsiveContainer>
+    ) : <p className="text-center text-slate-500 pt-16">No data available.</p>}
+  </div>
+);
+
+const InfoBlock: React.FC<{ title: string, value: string }> = ({ title, value }) => (
+  <div className="space-y-1">
+    <p className="font-medium text-slate-600 block">{title}</p>
+    <p className="text-slate-800">{value}</p>
+  </div>
+);
 
 export default VpsDetailPage;

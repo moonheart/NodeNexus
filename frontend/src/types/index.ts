@@ -1,5 +1,20 @@
 // This file can be used to store all common TypeScript types for the frontend.
+export type ServerStatus =
+  | 'online'
+  | 'offline'
+  | 'rebooting'
+  | 'provisioning'
+  | 'error'
+  | 'unknown';
+// Add other statuses from your backend if they exist as string literals
 
+// It's also good practice to define constants for these statuses if you need to refer to them programmatically.
+export const STATUS_ONLINE = 'online';
+export const STATUS_OFFLINE = 'offline';
+export const STATUS_REBOOTING = 'rebooting';
+export const STATUS_PROVISIONING = 'provisioning';
+export const STATUS_ERROR = 'error';
+export const STATUS_UNKNOWN = 'unknown';
 /**
  * Represents a Virtual Private Server (VPS) as defined by the backend.
  * This should match the structure of the `Vps` model in `backend/src/db/models.rs`.
@@ -11,7 +26,7 @@ export interface Vps {
   ip_address: string | null;
   os_type: string | null;
   agent_secret: string;
-  status: string;
+  status: ServerStatus;
   metadata: Record<string, unknown> | null; // Can be refined if the structure of metadata is known
   created_at: string; // Represents a `DateTime<Utc>` string, e.g., "2025-06-02T12:34:56.789Z"
   updated_at: string; // Represents a `DateTime<Utc>` string
@@ -85,7 +100,7 @@ export interface VpsListItemResponse {
   ipAddress: string | null; // camelCase
   osType: string | null;    // camelCase
   agentSecret: string; // camelCase
-  status: string;
+  status: ServerStatus;
   metadata: Record<string, unknown> | null;
   createdAt: string; // camelCase
   updatedAt: string; // camelCase
