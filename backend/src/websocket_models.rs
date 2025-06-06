@@ -8,6 +8,9 @@ pub struct ServerBasicInfo {
     pub name: String,
     pub ip_address: Option<String>,
     pub status: String,
+    #[serde(rename = "group")]
+    pub group: Option<String>,
+    pub tags: Option<String>,
     // Add other fields as necessary to match VpsListItemResponse or db model
 }
 

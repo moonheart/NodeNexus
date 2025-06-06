@@ -228,6 +228,8 @@ pub async fn handle_connection(
                                                                    name: db_vps.name,
                                                                    ip_address: db_vps.ip_address,
                                                                    status: db_vps.status,
+                                                                   group: db_vps.group,
+                                                                   tags: db_vps.tags,
                                                                };
                                                                let snapshot_time_for_new_entry = Utc.timestamp_millis_opt(latest_snapshot_proto.timestamp_unix_ms).single().unwrap_or_else(Utc::now);
                                                                let metrics_snapshot = ServerMetricsSnapshot {

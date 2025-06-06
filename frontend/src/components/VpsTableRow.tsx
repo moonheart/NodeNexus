@@ -7,11 +7,13 @@ import {
   XCircleIcon,
   ArrowUpIcon,
   ArrowDownIcon,
+  PencilIcon,
 } from './Icons';
 import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_ERROR, STATUS_UNKNOWN } from '../types';
 
 interface VpsTableRowProps {
   server: VpsListItemResponse;
+  onEdit: (server: VpsListItemResponse) => void;
 }
 
 const getStatusAppearance = (status: ServerStatusType): { badgeClass: string; textClass: string; icon: React.ReactNode } => {
@@ -39,7 +41,7 @@ const formatNetworkSpeed = (bps: number | undefined | null): string => {
   return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
 };
 
-const VpsTableRow: React.FC<VpsTableRowProps> = ({ server }) => {
+const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit }) => {
   const { badgeClass, textClass, icon } = getStatusAppearance(server.status);
   const metrics = server.latestMetrics;
 
@@ -73,13 +75,23 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server }) => {
         <ArrowDownIcon className="w-3.5 h-3.5 mr-1 text-sky-500 inline-block" /> {downSpeed}
       </td>
       <td className="px-4 py-3 text-center">
-        <RouterLink
-          to={`/vps/${server.id}`}
-          className="text-indigo-600 hover:text-indigo-700 font-medium text-xs py-1 px-3 rounded-md hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 transition-colors"
-          aria-label={`View details for ${server.name}`}
-        >
-          详情
-        </RouterLink>
+       <div className="flex items-center justify-center space-x-2">
+         <RouterLink
+           to={`/vps/${server.id}`}
+           className="text-indigo-600 hover:text-indigo-700 font-medium text-xs py-1 px-3 rounded-md hover:bg-indigo-50 transition-colors"
+           aria-label={`View details for ${server.name}`}
+         >
+           详情
+         </RouterLink>
+         <button
+           onClick={() => onEdit(server)}
+           className="text-slate-600 hover:text-slate-800 font-medium text-xs py-1 px-3 rounded-md hover:bg-slate-100 transition-colors flex items-center"
+           aria-label={`Edit ${server.name}`}
+         >
+           <PencilIcon className="w-3.5 h-3.5 mr-1" />
+           编辑
+         </button>
+       </div>
       </td>
     </tr>
   );

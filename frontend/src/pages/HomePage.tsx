@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import EditVpsModal from '../components/EditVpsModal';
 import CreateVpsModal from '../components/CreateVpsModal';
 import type { Vps, VpsListItemResponse, ServerStatus as ServerStatusType } from '../types';
 import { useServerListStore, type ServerListState, type ConnectionStatus } from '../store/serverListStore';
@@ -55,8 +56,11 @@ const statusColorMap: Record<ServerStatusType, string> = {
 
 const HomePage: React.FC = () => {
   const [isCreateVpsModalOpen, setIsCreateVpsModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingVps, setEditingVps] = useState<VpsListItemResponse | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('card');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<ServerStatusType | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<string>('ALL');
   // const [sortConfig, setSortConfig] = useState<SortConfig | null>(null); // For sorting later
 
   const {
@@ -72,6 +76,23 @@ const HomePage: React.FC = () => {
     console.log('VPS Created:', newVps);
     handleCloseCreateVpsModal();
   };
+
+ const handleOpenEditModal = (server: VpsListItemResponse) => {
+   setEditingVps(server);
+   setIsEditModalOpen(true);
+ };
+
+ const handleCloseEditModal = () => {
+   setIsEditModalOpen(false);
+   setEditingVps(null);
+ };
+
+ const handleVpsUpdated = () => {
+   // The websocket connection should update the store automatically.
+   // We can add a manual refetch here if needed as a fallback.
+   console.log('VPS updated, store should refresh via WebSocket.');
+   handleCloseEditModal();
+ };
 
   // Derived data for StatCards and filtering
   const serverStats = useMemo(() => {
@@ -90,10 +111,20 @@ const HomePage: React.FC = () => {
     return stats;
   }, [vpsList]);
 
+  const uniqueGroups = useMemo(() => {
+   const groups = new Set(vpsList.map(s => s.group).filter((g): g is string => !!g));
+   return ['ALL', ...Array.from(groups).sort()];
+  }, [vpsList]);
+
+  const groupFilteredServers = useMemo(() => {
+   if (selectedGroup === 'ALL') return vpsList;
+   return vpsList.filter(s => s.group === selectedGroup);
+  }, [vpsList, selectedGroup]);
+
   const statusFilteredServers = useMemo(() => {
-    if (!selectedStatusFilter) return vpsList;
-    return vpsList.filter(s => s.status === selectedStatusFilter);
-  }, [vpsList, selectedStatusFilter]);
+    if (!selectedStatusFilter) return groupFilteredServers;
+    return groupFilteredServers.filter(s => s.status === selectedStatusFilter);
+  }, [groupFilteredServers, selectedStatusFilter]);
 
   // TODO: Implement sortedServers once sorting UI is added
   const displayedServers = statusFilteredServers; // Placeholder for now
@@ -157,6 +188,13 @@ const HomePage: React.FC = () => {
         onClose={handleCloseCreateVpsModal}
         onVpsCreated={handleVpsCreated}
       />
+     <EditVpsModal
+       isOpen={isEditModalOpen}
+       onClose={handleCloseEditModal}
+       vps={editingVps}
+       allVps={vpsList}
+       onVpsUpdated={handleVpsUpdated}
+     />
 
       {/* Connection Status Message */}
       {statusMessage && (
@@ -208,7 +246,24 @@ const HomePage: React.FC = () => {
       <section>
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
           <h2 className="text-2xl font-semibold text-slate-700">服务器列表</h2>
-          {/* TODO: Add Group Filters if needed */}
+          {vpsList.length > 0 && (
+           <div className="mt-3 md:mt-0 flex flex-wrap gap-2">
+             {uniqueGroups.map(group => (
+               <button
+                 key={group}
+                 onClick={() => setSelectedGroup(group)}
+                 aria-pressed={selectedGroup === group}
+                 className={`px-4 py-1.5 text-xs sm:text-sm font-medium rounded-full transition-all duration-200 ease-in-out
+                   ${selectedGroup === group
+                     ? 'bg-indigo-600 text-white shadow-md scale-105'
+                     : 'bg-slate-200 text-slate-700 hover:bg-slate-300 hover:text-slate-900'
+                   }`}
+               >
+                 {group === 'ALL' ? '全部' : group}
+               </button>
+             ))}
+           </div>
+          )}
         </div>
 
         {displayedServers.length === 0 && !isLoadingServers ? (
@@ -219,7 +274,7 @@ const HomePage: React.FC = () => {
         ) : viewMode === 'card' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {displayedServers.map(server => (
-              <VpsCard key={server.id} server={server} />
+              <VpsCard key={server.id} server={server} onEdit={handleOpenEditModal} />
             ))}
           </div>
         ) : (
@@ -240,7 +295,7 @@ const HomePage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {displayedServers.map(server => (
-                  <VpsTableRow key={server.id} server={server} />
+                  <VpsTableRow key={server.id} server={server} onEdit={handleOpenEditModal} />
                 ))}
               </tbody>
             </table>

@@ -1,7 +1,7 @@
 use axum::{
     extract::{State, Extension, Path}, // Added Path
     http::StatusCode,
-    routing::{get, post},
+    routing::{get, post, put},
     Json, Router,
 };
 use serde::{Deserialize, Serialize}; // Added Serialize
@@ -77,8 +77,41 @@ pub struct VpsListItemResponse {
     pub metadata: Option<serde_json::Value>,
     pub created_at: String,
     pub updated_at: String,
+    pub tags: Option<String>,
+    #[serde(rename = "group")]
+    pub group: Option<String>,
     pub latest_metrics: Option<LatestPerformanceMetricResponse>,
 }
+
+// Conversion from DB models to the WebSocket model
+impl From<(Vps, Option<LatestPerformanceMetricResponse>)> for crate::websocket_models::ServerWithDetails {
+    fn from((vps, latest_metrics): (Vps, Option<LatestPerformanceMetricResponse>)) -> Self {
+        crate::websocket_models::ServerWithDetails {
+            basic_info: crate::websocket_models::ServerBasicInfo {
+                id: vps.id,
+                name: vps.name,
+                ip_address: vps.ip_address,
+                status: vps.status,
+                group: vps.group,
+                tags: vps.tags,
+            },
+            latest_metrics: latest_metrics.map(|m| crate::websocket_models::ServerMetricsSnapshot {
+                time: chrono::DateTime::parse_from_rfc3339(&m.time).unwrap_or_else(|_| chrono::Utc::now().into()).with_timezone(&chrono::Utc),
+                cpu_usage_percent: m.cpu_usage_percent as f32,
+                memory_usage_bytes: m.memory_usage_bytes as u64,
+                memory_total_bytes: m.memory_total_bytes as u64,
+                network_rx_instant_bps: Some(m.network_rx_instant_bps as u64),
+                network_tx_instant_bps: Some(m.network_tx_instant_bps as u64),
+                uptime_seconds: Some(m.uptime_seconds as u64),
+                disk_used_bytes: m.disk_used_bytes.map(|v| v as u64),
+                disk_total_bytes: m.disk_total_bytes.map(|v| v as u64),
+            }),
+            os_type: vps.os_type,
+            created_at: vps.created_at,
+        }
+    }
+}
+
 
 impl From<(Vps, Option<LatestPerformanceMetricResponse>)> for VpsListItemResponse {
     fn from((vps, latest_metrics): (Vps, Option<LatestPerformanceMetricResponse>)) -> Self {
@@ -93,6 +126,8 @@ impl From<(Vps, Option<LatestPerformanceMetricResponse>)> for VpsListItemRespons
             metadata: vps.metadata,
             created_at: vps.created_at.to_rfc3339(),
             updated_at: vps.updated_at.to_rfc3339(),
+            tags: vps.tags,
+            group: vps.group,
             latest_metrics,
         }
     }
@@ -167,10 +202,83 @@ async fn get_vps_detail_handler(
     Ok(Json((vps_db, latest_metrics_response).into()))
 }
 
+#[derive(Deserialize)]
+pub struct UpdateVpsRequest {
+    name: Option<String>,
+    tags: Option<String>,
+    group: Option<String>,
+}
+
+async fn update_vps_handler(
+    Extension(authenticated_user): Extension<AuthenticatedUser>,
+    State(app_state): State<Arc<AppState>>,
+    Path(vps_id): Path<i32>,
+    Json(payload): Json<UpdateVpsRequest>,
+) -> Result<StatusCode, AppError> {
+    let user_id = authenticated_user.id;
+
+    // First, verify the user owns this VPS
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
+
+    if vps.user_id != user_id {
+        return Err(AppError::Unauthorized("Access denied".to_string()));
+    }
+
+    // Proceed with the update
+    let rows_affected = services::update_vps(
+        &app_state.db_pool,
+        vps_id,
+        user_id,
+        payload.name,
+        payload.tags,
+        payload.group,
+    ).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+    if rows_affected > 0 {
+        // After a successful update, we need to update the cache and broadcast the changes.
+        
+        // 1. Fetch the full, updated VPS details from the database.
+        let updated_vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?
+            .ok_or_else(|| AppError::NotFound("Failed to re-fetch VPS after update".to_string()))?;
+
+        // 2. Fetch its latest metrics to construct the full ServerWithDetails object.
+        let latest_metric_db = services::get_latest_performance_metric_for_vps(&app_state.db_pool, vps_id).await.unwrap_or_default();
+        let latest_disk_summary = services::get_latest_disk_usage_summary(&app_state.db_pool, vps_id).await.unwrap_or_default();
+        let latest_metrics_response = latest_metric_db.map(|m| (m, latest_disk_summary).into());
+        
+        // 3. Construct the same object that the websocket system uses.
+        let server_details_for_cache: crate::websocket_models::ServerWithDetails = (updated_vps, latest_metrics_response).into();
+
+        // 4. Update the live cache.
+        {
+            let mut cache_guard = app_state.live_server_data_cache.lock().await;
+            cache_guard.insert(vps_id, server_details_for_cache);
+        }
+
+        // 5. Broadcast the entire updated list to all clients.
+        let servers_list: Vec<crate::websocket_models::ServerWithDetails> = {
+            let cache_guard = app_state.live_server_data_cache.lock().await;
+            cache_guard.values().cloned().collect()
+        };
+        let full_list_push = Arc::new(crate::websocket_models::FullServerListPush { servers: servers_list });
+        
+        // Send the update. Ignore error if no subscribers are present.
+        let _ = app_state.ws_data_broadcaster_tx.send(full_list_push);
+        
+        Ok(StatusCode::OK)
+    } else {
+        Ok(StatusCode::NOT_MODIFIED)
+    }
+}
+
 
 pub fn vps_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", post(create_vps_handler))
         .route("/", get(get_all_vps_handler))
         .route("/{vps_id}", get(get_vps_detail_handler)) // Added detail route
+        .route("/{vps_id}", put(update_vps_handler))
 }

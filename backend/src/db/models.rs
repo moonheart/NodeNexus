@@ -28,6 +28,9 @@ pub struct Vps {
     pub metadata: Option<serde_json::Value>, // For storing additional info like vendor details
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub tags: Option<String>,
+    #[serde(rename = "group")]
+    pub group: Option<String>,
 }
 
 /// Represents a performance metric snapshot for a VPS.

@@ -47,5 +47,23 @@ export const getVpsDetail = async (vpsId: string): Promise<VpsListItemResponse> 
 };
 
 
+export interface UpdateVpsPayload {
+  name?: string;
+  tags?: string;
+  group?: string;
+}
+
+/**
+ * Updates a VPS's details.
+ */
+export const updateVps = async (vpsId: number, payload: UpdateVpsPayload): Promise<void> => {
+  try {
+    await apiClient.put(`/api/vps/${vpsId}`, payload);
+  } catch (error) {
+    console.error(`Error updating VPS with ID ${vpsId}:`, error);
+    throw error;
+  }
+};
+
 // You might want to add other VPS related API calls here in the future,
 // e.g., deleteVps, etc.

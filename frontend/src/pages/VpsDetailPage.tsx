@@ -4,6 +4,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { getVpsMetricsTimeseries } from '../services/metricsService';
 import type { PerformanceMetricPoint, ServerStatus } from '../types';
 import { useServerListStore } from '../store/serverListStore';
+import EditVpsModal from '../components/EditVpsModal';
 import { useShallow } from 'zustand/react/shallow';
 import type { ValueType } from 'recharts/types/component/DefaultTooltipContent';
 import StatCard from '../components/StatCard';
@@ -18,6 +19,7 @@ import {
   HardDiskIcon,
   ArrowUpIcon,
   ArrowDownIcon,
+  PencilIcon,
 } from '../components/Icons';
 import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_ERROR } from '../types';
 
@@ -138,6 +140,13 @@ const VpsDetailPage: React.FC = () => {
   const [loadingChartMetrics, setLoadingChartMetrics] = useState(true);
   const [chartError, setChartError] = useState<string | null>(null);
   const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('1h');
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  const handleVpsUpdated = () => {
+   // The websocket connection should update the store automatically.
+   console.log('VPS updated, store should refresh via WebSocket.');
+   setIsEditModalOpen(false);
+  };
 
   const isLoadingPage = isServerListLoading && !vpsDetail;
   const pageError = connectionStatus === 'error' || connectionStatus === 'permanently_failed'
@@ -262,14 +271,28 @@ const VpsDetailPage: React.FC = () => {
               {getStatusIcon(vpsDetail.status)}
               {vpsDetail.status.toUpperCase()}
             </div>
-            <div>
-              <Link to="/" className="inline-flex items-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3.5 rounded-lg transition-colors text-sm">
-                <ArrowLeftIcon className="w-4 h-4 mr-1.5" /> Dashboard
-              </Link>
-            </div>
+           <div className="flex items-center space-x-2">
+               <button
+                   onClick={() => setIsEditModalOpen(true)}
+                   className="inline-flex items-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3.5 rounded-lg transition-colors text-sm"
+                   aria-label={`Edit ${vpsDetail.name}`}
+               >
+                   <PencilIcon className="w-4 h-4 mr-1.5" /> 编辑
+               </button>
+               <Link to="/" className="inline-flex items-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3.5 rounded-lg transition-colors text-sm">
+                   <ArrowLeftIcon className="w-4 h-4 mr-1.5" /> Dashboard
+               </Link>
+           </div>
           </div>
         </div>
       </section>
+     <EditVpsModal
+       isOpen={isEditModalOpen}
+       onClose={() => setIsEditModalOpen(false)}
+       vps={vpsDetail}
+       allVps={servers}
+       onVpsUpdated={handleVpsUpdated}
+     />
 
       {/* Quick Stats Section */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">

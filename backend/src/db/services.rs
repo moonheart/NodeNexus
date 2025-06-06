@@ -63,13 +63,15 @@ pub async fn create_vps(
     let initial_ip_address: Option<String> = None;
     let initial_os_type: Option<String> = None;
     let initial_metadata: Option<serde_json::Value> = None;
+    let initial_tags: Option<String> = None;
+    let initial_group: Option<String> = None;
 
     let vps = sqlx::query_as!(
         Vps,
         r#"
-        INSERT INTO vps (user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        RETURNING id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at
+        INSERT INTO vps (user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, tags, "group")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, tags, "group"
         "#,
         user_id,
         name,
@@ -79,7 +81,9 @@ pub async fn create_vps(
         initial_status,     // Use generated/default value
         initial_metadata,   // Use generated/default value
         now,
-        now
+        now,
+        initial_tags,
+        initial_group
     )
     .fetch_one(pool)
     .await?;
@@ -88,14 +92,14 @@ pub async fn create_vps(
 
 /// Retrieves a VPS by its ID.
 pub async fn get_vps_by_id(pool: &PgPool, vps_id: i32) -> Result<Option<Vps>> {
-    sqlx::query_as!(Vps, "SELECT * FROM vps WHERE id = $1", vps_id)
+    sqlx::query_as!(Vps, r#"SELECT id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, tags, "group" FROM vps WHERE id = $1"#, vps_id)
         .fetch_optional(pool)
         .await
 }
 
 /// Retrieves all VPS entries for a given user.
 pub async fn get_vps_by_user_id(pool: &PgPool, user_id: i32) -> Result<Vec<Vps>> {
-    sqlx::query_as!(Vps, "SELECT * FROM vps WHERE user_id = $1 ORDER BY created_at DESC", user_id)
+    sqlx::query_as!(Vps, r#"SELECT id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, tags, "group" FROM vps WHERE user_id = $1 ORDER BY created_at DESC"#, user_id)
         .fetch_all(pool)
         .await
 }
@@ -104,6 +108,40 @@ pub async fn get_vps_by_user_id(pool: &PgPool, user_id: i32) -> Result<Vec<Vps>>
 /// This is an alias for get_vps_by_user_id, but could be different in the future if needed.
 pub async fn get_all_vps_for_user(pool: &PgPool, user_id: i32) -> Result<Vec<Vps>> {
     get_vps_by_user_id(pool, user_id).await
+}
+
+/// Updates a VPS's editable fields.
+pub async fn update_vps(
+    pool: &PgPool,
+    vps_id: i32,
+    user_id: i32, // To ensure ownership
+    name: Option<String>,
+    tags: Option<String>,
+    group: Option<String>,
+) -> Result<u64> {
+    let now = Utc::now();
+    let rows_affected = sqlx::query!(
+        r#"
+        UPDATE vps
+        SET
+            name = COALESCE($1, name),
+            tags = COALESCE($2, tags),
+            "group" = COALESCE($3, "group"),
+            updated_at = $4
+        WHERE id = $5 AND user_id = $6
+        "#,
+        name,
+        tags,
+        group,
+        now,
+        vps_id,
+        user_id
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+
+    Ok(rows_affected)
 }
 
 /// Updates the status of a VPS.
@@ -497,6 +535,8 @@ struct VpsDetailQueryResult {
     vps_ip_address: Option<String>,
     vps_status: String,
     vps_os_type: Option<String>,
+    vps_group: Option<String>,
+    vps_tags: Option<String>,
     vps_created_at: chrono::DateTime<Utc>,
     // Metrics fields (all optional because of LEFT JOIN)
     cpu_usage_percent: Option<f64>,
@@ -538,6 +578,8 @@ pub async fn get_all_vps_with_details_for_cache(pool: &PgPool) -> Result<Vec<Ser
             v.ip_address as vps_ip_address,
             v.status as vps_status,
             v.os_type as vps_os_type,
+            v."group" as vps_group,
+            v.tags as vps_tags,
             v.created_at as vps_created_at,
             lvm.cpu_usage_percent,
             lvm.memory_usage_bytes,
@@ -564,6 +606,8 @@ pub async fn get_all_vps_with_details_for_cache(pool: &PgPool) -> Result<Vec<Ser
             name: row.vps_name,
             ip_address: row.vps_ip_address,
             status: row.vps_status,
+            group: row.vps_group,
+            tags: row.vps_tags,
         };
 
         let latest_metrics = if row.cpu_usage_percent.is_some() && row.metric_time.is_some() { // Ensure metric_time is also present

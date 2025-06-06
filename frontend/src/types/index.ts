@@ -30,6 +30,8 @@ export interface Vps {
   metadata: Record<string, unknown> | null; // Can be refined if the structure of metadata is known
   created_at: string; // Represents a `DateTime<Utc>` string, e.g., "2025-06-02T12:34:56.789Z"
   updated_at: string; // Represents a `DateTime<Utc>` string
+  tags?: string | null;
+  group?: string | null;
   latest_metrics?: LatestPerformanceMetric | null; // Added for real-time display
 }
 
@@ -104,6 +106,8 @@ export interface VpsListItemResponse {
   metadata: Record<string, unknown> | null;
   createdAt: string; // camelCase
   updatedAt: string; // camelCase
+  tags?: string | null;
+  group?: string | null;
   latestMetrics?: LatestPerformanceMetric | null; // camelCase
 }
 

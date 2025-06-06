@@ -11,11 +11,13 @@ import {
   GlobeAltIcon,
   ArrowUpIcon,
   ArrowDownIcon,
+  PencilIcon,
 } from './Icons'; // Assuming Icons.tsx is in the same directory or adjust path
 import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_ERROR, STATUS_UNKNOWN } from '../types';
 
 interface VpsCardProps {
   server: VpsListItemResponse;
+  onEdit: (server: VpsListItemResponse) => void;
 }
 
 const getStatusAppearance = (status: ServerStatus): { cardBorderClass: string; badgeBgClass: string; textClass: string; icon?: React.ReactNode } => {
@@ -49,7 +51,7 @@ const formatNetworkSpeed = (bps: number | undefined | null): string => {
   return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
 };
 
-const VpsCard: React.FC<VpsCardProps> = ({ server }) => {
+const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit }) => {
   const { cardBorderClass, badgeBgClass, textClass: statusTextClass } = getStatusAppearance(server.status);
   const metrics = server.latestMetrics;
 
@@ -128,13 +130,20 @@ const VpsCard: React.FC<VpsCardProps> = ({ server }) => {
         </div>
       </div>
 
-      <div className="p-3 bg-slate-50 border-t border-slate-200">
-        <RouterLink
-          to={`/vps/${server.id}`}
-          className="block w-full text-center bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-1.5 px-3 rounded-md transition-colors duration-200 text-sm"
-        >
-          查看详情
-        </RouterLink>
+      <div className="p-3 bg-slate-50 border-t border-slate-200 grid grid-cols-2 gap-2">
+       <RouterLink
+         to={`/vps/${server.id}`}
+         className="block w-full text-center bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-1.5 px-3 rounded-md transition-colors duration-200 text-sm"
+       >
+         查看详情
+       </RouterLink>
+       <button
+         onClick={() => onEdit(server)}
+         className="block w-full text-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3 rounded-md transition-colors duration-200 text-sm flex items-center justify-center"
+       >
+         <PencilIcon className="w-4 h-4 mr-1.5" />
+         编辑
+       </button>
       </div>
     </div>
   );
