@@ -29,6 +29,28 @@ const formatDateTick = (tickItem: string) => {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 };
 
+// Helper to format the label in tooltips to local time
+const formatTooltipLabel = (label: string) => {
+  const date = new Date(label);
+  // Using toLocaleString for a more complete date-time representation in the tooltip
+  return date.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+};
+
+// Helper to format percentage for tooltips
+const formatPercentForTooltip = (value: ValueType) => {
+  if (typeof value === 'number') {
+    return `${value.toFixed(2)}%`;
+  }
+  return `${value}`;
+};
+
 // Helper to calculate memory usage percentage
 const calculateMemoryUsagePercent = (dataPoint: PerformanceMetricPoint): number | null => {
   if (dataPoint.memory_usage_bytes != null && dataPoint.memory_total_bytes != null && dataPoint.memory_total_bytes > 0) {
@@ -375,8 +397,8 @@ const ChartComponent: React.FC<{ title: string, data: PerformanceMetricPoint[], 
         <LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
           <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
-          <YAxis domain={yDomain} tick={{ fontSize: 11 }} />
-          <Tooltip contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(2px)', borderRadius: '0.5rem', fontSize: '0.8rem' }} />
+          <YAxis domain={yDomain} tick={{ fontSize: 11 }} tickFormatter={(tick) => `${tick}%`} />
+          <Tooltip formatter={formatPercentForTooltip} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(2px)', borderRadius: '0.5rem', fontSize: '0.8rem' }} />
           <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
           <Line type="monotone" dataKey={dataKey} stroke={stroke} dot={false} name={title.split(' ')[0]} />
         </LineChart>
@@ -394,7 +416,7 @@ const NetworkChartComponent: React.FC<{ data: PerformanceMetricPoint[] }> = ({ d
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
           <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
           <YAxis tickFormatter={formatNetworkSpeed} width={80} tick={{ fontSize: 11 }} />
-          <Tooltip formatter={(value: ValueType) => formatNetworkSpeed(value as number)} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(2px)', borderRadius: '0.5rem', fontSize: '0.8rem' }} />
+          <Tooltip formatter={(value: ValueType) => formatNetworkSpeed(value as number)} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(2px)', borderRadius: '0.5rem', fontSize: '0.8rem' }} />
           <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
           <Line type="monotone" dataKey="avg_network_rx_instant_bps" stroke="#38bdf8" dot={false} name="Download" />
           <Line type="monotone" dataKey="avg_network_tx_instant_bps" stroke="#34d399" dot={false} name="Upload" />
