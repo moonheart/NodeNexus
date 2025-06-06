@@ -87,6 +87,15 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit }) => {
           <GlobeAltIcon className="w-3.5 h-3.5 mr-1.5 text-slate-400 flex-shrink-0" />
           {server.ipAddress || 'N/A'}
         </p>
+        {server.tags && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {server.tags.split(',').map(tag => tag.trim()).filter(tag => tag).map((tag, index) => (
+              <span key={index} className="px-2 py-0.5 text-xs font-medium rounded-full bg-sky-100 text-sky-800">
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
         {/* Optional: Add OS Type or other quick info if available and desired */}
         {/* <p className="text-xs text-slate-500">{server.osType || 'Unknown OS'}</p> */}
       </div>
@@ -145,7 +154,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit }) => {
        </RouterLink>
        <button
          onClick={() => onEdit(server)}
-         className="block w-full text-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3 rounded-md transition-colors duration-200 text-sm flex items-center justify-center"
+         className="w-full text-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3 rounded-md transition-colors duration-200 text-sm flex items-center justify-center"
        >
          <PencilIcon className="w-4 h-4 mr-1.5" />
          编辑

@@ -120,3 +120,4 @@ export interface VpsListItemResponse {
 export interface FullServerListPushType {
   servers: VpsListItemResponse[];
 }
+export type ViewMode = 'card' | 'list';

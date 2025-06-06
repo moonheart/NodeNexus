@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import EditVpsModal from '../components/EditVpsModal';
 import CreateVpsModal from '../components/CreateVpsModal';
-import type { Vps, VpsListItemResponse, ServerStatus as ServerStatusType } from '../types';
+import type { Vps, VpsListItemResponse, ServerStatus as ServerStatusType, ViewMode } from '../types';
 import { useServerListStore, type ServerListState, type ConnectionStatus } from '../store/serverListStore';
 import { useShallow } from 'zustand/react/shallow';
 import StatCard from '../components/StatCard';
@@ -27,6 +27,8 @@ interface HomePageStateSlice {
   isLoading: boolean;
   error: string | null;
   connectionStatus: ConnectionStatus;
+  viewMode: ViewMode;
+  setViewMode: (mode: ViewMode) => void;
 }
 
 // Define the selector function outside the component for stability
@@ -35,9 +37,10 @@ const selectHomePageData = (state: ServerListState): HomePageStateSlice => ({
   isLoading: state.isLoading,
   error: state.error,
   connectionStatus: state.connectionStatus,
+  viewMode: state.viewMode,
+  setViewMode: state.setViewMode,
 });
 
-type ViewMode = 'card' | 'list';
 // type SortDirection = 'ascending' | 'descending'; // For sorting later
 // interface SortConfig {
 //   key: string;
@@ -58,7 +61,6 @@ const HomePage: React.FC = () => {
   const [isCreateVpsModalOpen, setIsCreateVpsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingVps, setEditingVps] = useState<VpsListItemResponse | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('card');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<ServerStatusType | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<string>('ALL');
   // const [sortConfig, setSortConfig] = useState<SortConfig | null>(null); // For sorting later
@@ -67,7 +69,9 @@ const HomePage: React.FC = () => {
     servers: vpsList, // Renamed from allServers for clarity with existing code
     isLoading: isLoadingServers, // Renamed to avoid conflict with potential local loading states
     error: wsError,
-    connectionStatus
+    connectionStatus,
+    viewMode,
+    setViewMode,
   } = useServerListStore(useShallow(selectHomePageData));
 
   const handleOpenCreateVpsModal = () => setIsCreateVpsModalOpen(true);

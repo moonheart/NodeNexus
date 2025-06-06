@@ -1,7 +1,8 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import WebSocketService from '../services/websocketService';
 import { useAuthStore } from './authStore';
-import type { VpsListItemResponse, FullServerListPushType } from '../types';
+import type { VpsListItemResponse, FullServerListPushType, ViewMode } from '../types';
 
 export type ConnectionStatus =
     | 'disconnected'
@@ -17,6 +18,8 @@ export interface ServerListState { // Added export
     isLoading: boolean; // For initial load or when explicitly loading/reconnecting
     error: string | null; // For WebSocket related errors
     websocketService: WebSocketService | null;
+    viewMode: ViewMode;
+    setViewMode: (mode: ViewMode) => void;
     initializeWebSocket: () => void;
     disconnectWebSocket: () => void;
     // Internal actions to be called by WebSocketService callbacks
@@ -27,12 +30,17 @@ export interface ServerListState { // Added export
     _handleWebSocketPermanentFailure: () => void;
 }
 
-export const useServerListStore = create<ServerListState>((set, get) => ({
-    servers: [],
-    connectionStatus: 'disconnected',
+export const useServerListStore = create<ServerListState>()(
+  persist(
+    (set, get) => ({
+      servers: [],
+      connectionStatus: 'disconnected',
     isLoading: true, // Assume loading initially until first connection or message
     error: null,
     websocketService: null,
+    viewMode: 'card', // Default view mode
+
+    setViewMode: (mode) => set({ viewMode: mode }),
 
     initializeWebSocket: () => {
         const { websocketService: currentService, connectionStatus } = get();
@@ -132,7 +140,14 @@ export const useServerListStore = create<ServerListState>((set, get) => ({
             isLoading: false,
         });
     },
-}));
+    }),
+    {
+      name: 'server-list-storage', // unique name
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({ viewMode: state.viewMode }), // Only persist the viewMode
+    }
+  )
+);
 
 // Optional: Expose a way to get the service instance if needed for direct calls, though usually not recommended.
 // export const getWebsocketServiceInstance = () => useServerListStore.getState().websocketService;
