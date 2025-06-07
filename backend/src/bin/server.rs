@@ -17,9 +17,14 @@ use std::collections::HashMap; // For initializing LiveServerDataCache
 use tokio::sync::{broadcast, Mutex}; // Added Mutex for LiveServerDataCache and broadcast
 use tokio::time::{interval, Duration}; // For the periodic push task
 use chrono::Utc;
+use tokio::sync::mpsc;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Added Send + Sync for tokio::spawn
     dotenv().ok(); // Load .env file
+
+    // --- Debounce Update Trigger Channel ---
+    let (update_trigger_tx, mut update_trigger_rx) = mpsc::channel::<()>(100);
+
 
     // --- Database Pool Setup ---
     let database_url = env::var("DATABASE_URL")
@@ -58,6 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         Arc::from(db_pool.clone()),
         live_server_data_cache.clone(), // Pass cache to gRPC service
         ws_data_broadcaster_tx.clone(), // Pass broadcaster to gRPC service
+        update_trigger_tx.clone(),      // Pass update trigger to gRPC service
     );
     
     let grpc_service = AgentCommunicationServiceServer::new(agent_comm_service);
@@ -70,8 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     // --- Agent Heartbeat Check Task ---
     let connected_agents_for_check = connected_agents.clone();
     let pool_for_check = Arc::new(db_pool.clone());
-    let cache_for_check = live_server_data_cache.clone();
-    let broadcaster_for_check = ws_data_broadcaster_tx.clone();
+    let trigger_for_check = update_trigger_tx.clone();
 
     tokio::spawn(async move {
         let mut interval = interval(Duration::from_secs(60)); // Check every 60 seconds
@@ -111,12 +116,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
 
                 if needs_broadcast {
                     println!("Triggering broadcast after updating offline status.");
-                    update_service::broadcast_full_state_update(
-                        &pool_for_check,
-                        &cache_for_check,
-                        &broadcaster_for_check,
-                    )
-                    .await;
+                    if trigger_for_check.send(()).await.is_err() {
+                        eprintln!("Failed to send update trigger from heartbeat check task.");
+                    }
                 }
             }
         }
@@ -130,39 +132,62 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         http_addr,
         live_server_data_cache.clone(), // Pass cache to HTTP service
         ws_data_broadcaster_tx.clone(), // Pass broadcaster to HTTP service (for AppState)
-        connected_agents.clone(), // Pass connected agents state to HTTP service
+        connected_agents.clone(),       // Pass connected agents state to HTTP service
+        update_trigger_tx.clone(),      // Pass update trigger to HTTP service
     );
 
-    // Run all servers and tasks concurrently
-    let grpc_handle = tokio::spawn(async move {
-        if let Err(e) = grpc_server_future.await {
-            eprintln!("gRPC server error: {}", e);
+    // --- Debounced Broadcast Task ---
+    let pool_for_debounce = db_pool.clone();
+    let cache_for_debounce = live_server_data_cache.clone();
+    let broadcaster_for_debounce = ws_data_broadcaster_tx.clone();
+    let debouncer_task = tokio::spawn(async move {
+        use tokio::time::{sleep, Duration};
+        const DEBOUNCE_DURATION: Duration = Duration::from_millis(500);
+
+        loop {
+            // Wait for the first trigger to start a debounce window.
+            if update_trigger_rx.recv().await.is_none() {
+                // Channel has been closed, the task can exit.
+                break;
+            }
+
+            // After receiving the first signal, sleep for the debounce duration.
+            // This creates a "quiet window" where subsequent signals are ignored.
+            sleep(DEBOUNCE_DURATION).await;
+
+            // After the quiet window, drain all other signals that have queued up.
+            while let Ok(_) = update_trigger_rx.try_recv() {
+                // Discard additional signals.
+            }
+
+            // Now that the stream of updates has settled, perform the actual broadcast.
+            println!("Debounce window finished. Triggering broadcast.");
+            update_service::broadcast_full_state_update(
+                &pool_for_debounce,
+                &cache_for_debounce,
+                &broadcaster_for_debounce,
+            )
+            .await;
         }
     });
 
-    let http_handle = tokio::spawn(async move {
-        if let Err(e) = http_server_future.await {
-            eprintln!("HTTP server error: {}", e);
-        }
-    });
-    
-    // Also await the periodic push task if you want the main function to keep it alive explicitly,
-    // or ensure it's handled correctly on shutdown. For now, it runs as a detached task.
-    // If we await it, main will only exit if this task errors or completes.
-    // For a continuously running server, we might not await it directly in try_join unless it's designed to complete.
-    // let (grpc_result, http_result, _push_task_result) = tokio::try_join!(grpc_handle, http_handle, periodic_push_task_future)?;
+    // --- Run all servers and tasks concurrently ---
+    let grpc_handle = tokio::spawn(grpc_server_future);
+    let http_handle = tokio::spawn(http_server_future);
 
+    // Use `try_join!` to await the main server tasks. The debouncer runs in the background.
+    let (grpc_res, http_res) = tokio::try_join!(grpc_handle, http_handle)?;
 
-    let (_grpc_result, _http_result) = tokio::try_join!(grpc_handle, http_handle)?;
-    // The periodic_push_task_future will run in the background.
-    // To ensure it's properly managed, especially on shutdown, more sophisticated handling might be needed,
-    // e.g., using a shutdown signal. For now, it will stop when main exits.
-    // If periodic_push_task_future is awaited, it needs to be fallible or main won't exit cleanly on other errors.
-    // For simplicity, we are not awaiting it in the try_join.
-    // To make it awaitable and handle its potential error:
-    // let periodic_push_handle = tokio::spawn(periodic_push_task_future);
-    // let (grpc_res, http_res, periodic_res) = tokio::try_join!(grpc_handle, http_handle, periodic_push_handle)?;
-    // This would require periodic_push_task_future to return a Result.
+    if let Err(e) = grpc_res {
+        eprintln!("gRPC server error: {}", e);
+    }
+    if let Err(e) = http_res {
+        eprintln!("HTTP server error: {}", e);
+    }
+
+    // The debouncer_task will be aborted when main exits. For a graceful shutdown,
+    // a cancellation token would be needed, but this is sufficient for now.
+    let _ = debouncer_task;
 
     Ok(())
 }

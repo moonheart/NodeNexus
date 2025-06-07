@@ -10,7 +10,7 @@ use axum::{
 use sqlx::PgPool;
 use std::sync::Arc;
  // Added for LiveServerDataCache
-use tokio::sync::{broadcast, Mutex}; // Added Mutex
+use tokio::sync::{broadcast, mpsc, Mutex}; // Added Mutex and mpsc
 use std::net::SocketAddr;
 use thiserror::Error;
 use crate::server::agent_state::{ConnectedAgents, LiveServerDataCache};
@@ -32,6 +32,7 @@ pub struct AppState {
     live_server_data_cache: LiveServerDataCache,
     ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
     connected_agents: Arc<Mutex<ConnectedAgents>>,
+    update_trigger_tx: mpsc::Sender<()>,
 }
 
 async fn register_handler(
@@ -119,12 +120,14 @@ pub async fn run_http_server(
     live_server_data_cache: LiveServerDataCache,
     ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
     connected_agents: Arc<Mutex<ConnectedAgents>>,
+    update_trigger_tx: mpsc::Sender<()>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let app_state = Arc::new(AppState {
         db_pool,
         live_server_data_cache,
         ws_data_broadcaster_tx,
         connected_agents,
+        update_trigger_tx,
     });
 
     // Configure CORS

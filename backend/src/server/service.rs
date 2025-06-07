@@ -1,6 +1,6 @@
 use sqlx::PgPool;
 use tonic::{Request, Response, Status, Streaming};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use std::sync::Arc;
 
@@ -15,6 +15,7 @@ pub struct MyAgentCommService {
     pub db_pool: Arc<PgPool>,
     pub live_server_data_cache: LiveServerDataCache,
     pub ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
+    pub update_trigger_tx: mpsc::Sender<()>,
 }
 
 impl MyAgentCommService {
@@ -23,12 +24,14 @@ impl MyAgentCommService {
         db_pool: Arc<PgPool>,
         live_server_data_cache: LiveServerDataCache,
         ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
+        update_trigger_tx: mpsc::Sender<()>,
     ) -> Self {
         Self {
             connected_agents,
             db_pool,
             live_server_data_cache,
             ws_data_broadcaster_tx,
+            update_trigger_tx,
         }
     }
 }
@@ -47,6 +50,8 @@ impl crate::agent_service::agent_communication_service_server::AgentCommunicatio
             self.db_pool.clone(),
             self.live_server_data_cache.clone(),
             self.ws_data_broadcaster_tx.clone(),
-        ).await
+            self.update_trigger_tx.clone(),
+        )
+        .await
     }
 }

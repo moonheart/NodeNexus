@@ -31,6 +31,7 @@ pub async fn handle_connection(
     pool: Arc<PgPool>,
     live_server_data_cache: LiveServerDataCache,
     ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
+    update_trigger_tx: mpsc::Sender<()>,
 ) -> Result<Response<ReceiverStream<Result<MessageToAgent, Status>>>, Status> {
     let (tx_to_agent, rx_from_server) = mpsc::channel(128);
     let connection_id = Uuid::new_v4().to_string();
@@ -38,8 +39,9 @@ pub async fn handle_connection(
 
     let connected_agents_arc_clone = connected_agents_arc.clone();
     let pool_clone = pool.clone();
-    let cache_clone = live_server_data_cache.clone();
-    let broadcaster_clone = ws_data_broadcaster_tx.clone();
+    let cache_clone = live_server_data_cache.clone(); // Not used directly for broadcast anymore
+    let broadcaster_clone = ws_data_broadcaster_tx.clone(); // Not used directly for broadcast anymore
+    let trigger_clone = update_trigger_tx.clone();
 
     tokio::spawn(async move {
         let mut current_session_agent_id: Option<String> = None; // Server-generated session ID
@@ -115,7 +117,9 @@ pub async fn handle_connection(
                                     if rows_affected > 0 {
                                         println!("[{}] Successfully updated VPS info for VPS ID {}. Triggering broadcast.", connection_id, vps_db_id_from_msg);
                                         // Trigger broadcast after successful handshake update
-                                        update_service::broadcast_full_state_update(&pool_clone, &cache_clone, &broadcaster_clone).await;
+                                        if trigger_clone.send(()).await.is_err() {
+                                            eprintln!("[{}] Failed to send update trigger after handshake.", connection_id);
+                                        }
                                     } else {
                                         eprintln!("[{}] VPS info update on handshake for VPS ID {} affected 0 rows (handler level).", connection_id, vps_db_id_from_msg);
                                     }
@@ -203,7 +207,9 @@ pub async fn handle_connection(
                                             Ok(_) => {
                                                 // After saving metrics, trigger a full broadcast.
                                                 // This replaces the silent cache update with a full, consistent state refresh.
-                                                update_service::broadcast_full_state_update(&pool_clone, &cache_clone, &broadcaster_clone).await;
+                                                if trigger_clone.send(()).await.is_err() {
+                                                    eprintln!("[{}] Failed to send update trigger after metrics batch.", connection_id);
+                                                }
                                             }
                                             Err(e) => {
                                                 eprintln!("[{}] Failed to save performance batch for agent {} (VPS DB ID {}): {}", connection_id, session_id, vps_db_id_from_msg, e);
@@ -225,7 +231,9 @@ pub async fn handle_connection(
                                            Ok(_) => {
                                                println!("[{}] Successfully updated config status for VPS ID {}. Triggering broadcast.", connection_id, vps_db_id_from_msg);
                                                // After updating config status, trigger a full broadcast.
-                                               update_service::broadcast_full_state_update(&pool_clone, &cache_clone, &broadcaster_clone).await;
+                                               if trigger_clone.send(()).await.is_err() {
+                                                   eprintln!("[{}] Failed to send update trigger after config update.", connection_id);
+                                               }
                                            }
                                            Err(e) => eprintln!("[{}] Failed to update config status for VPS ID {}: {}", connection_id, vps_db_id_from_msg, e),
                                        }
@@ -271,7 +279,9 @@ pub async fn handle_connection(
                     Ok(rows_affected) if rows_affected > 0 => {
                         println!("[{}] Successfully set status to 'offline' for VPS ID {}. Triggering broadcast.", connection_id, id);
                         // Trigger a final broadcast to update all clients
-                        update_service::broadcast_full_state_update(&pool_clone, &cache_clone, &broadcaster_clone).await;
+                        if trigger_clone.send(()).await.is_err() {
+                            eprintln!("[{}] Failed to send update trigger on disconnect for VPS ID {}.", connection_id, id);
+                        }
                     }
                     Ok(_) => {
                         eprintln!("[{}] Attempted to set status to 'offline' for VPS ID {}, but no rows were affected.", connection_id, id);
