@@ -1,4 +1,4 @@
-use crate::agent_modules::config::AgentCliConfig;
+use crate::agent_modules::config::{self, AgentCliConfig};
 use crate::agent_modules::utils::collect_public_ip_addresses;
 use crate::agent_service::agent_communication_service_client::AgentCommunicationServiceClient;
 use crate::agent_service::message_to_server::Payload;
@@ -6,41 +6,36 @@ use crate::agent_service::{
     AgentConfig, AgentHandshake, Heartbeat, MessageToAgent, MessageToServer, OsType,
 };
 use std::error::Error;
-use std::sync::atomic::{AtomicU64, Ordering}; // Added AtomicU64 and Ordering
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use sysinfo::System;
-use tokio::sync::mpsc; // Removed Mutex import as it's no longer needed here
+use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use uuid::Uuid;
 
-// This function is now part of ConnectionHandler or its id_provider
-// pub async fn get_next_client_message_id(counter: &Arc<Mutex<u64>>) -> u64 {
-//     let mut num = counter.lock().await;
-//     let id = *num;
-//     *num += 1;
-//     id
-// }
-
 pub async fn heartbeat_loop(
     tx_to_server: mpsc::Sender<MessageToServer>,
-    agent_config: AgentConfig,
+    shared_agent_config: Arc<RwLock<AgentConfig>>,
     agent_id: String,
-    mut id_provider: impl FnMut() -> u64 + Send + 'static, // Closure to provide message IDs
+    mut id_provider: impl FnMut() -> u64 + Send + 'static,
     vps_db_id: i32,
     agent_secret: String,
 ) {
-    let mut interval_duration = agent_config.heartbeat_interval_seconds;
-    if interval_duration == 0 { interval_duration = 30; }
-    let mut interval = tokio::time::interval(Duration::from_secs(interval_duration as u64));
-    println!("[Agent:{}] Heartbeat task started. Interval: {}s", agent_id, interval_duration);
-
     loop {
-        interval.tick().await;
+        let interval_duration = {
+            let config = shared_agent_config.read().unwrap();
+            let seconds = config.heartbeat_interval_seconds;
+            if seconds > 0 { seconds } else { 30 }
+        };
+
+        println!("[Agent:{}] Heartbeat task tick. Next heartbeat in {}s", agent_id, interval_duration);
+        tokio::time::sleep(Duration::from_secs(interval_duration as u64)).await;
+
         let heartbeat_payload = Heartbeat {
             timestamp_unix_ms: chrono::Utc::now().timestamp_millis(),
         };
-        let msg_id = id_provider(); // Use the closure
+        let msg_id = id_provider();
         if let Err(e) = tx_to_server.send(MessageToServer {
             client_message_id: msg_id,
             payload: Some(Payload::Heartbeat(heartbeat_payload)),
@@ -60,6 +55,8 @@ pub async fn server_message_handler_loop(
     mut id_provider: impl FnMut() -> u64 + Send + 'static,
     vps_db_id: i32,
     agent_secret: String,
+    shared_agent_config: Arc<RwLock<AgentConfig>>,
+    config_path: String,
 ) {
     println!("[Agent:{}] Listening for messages from server...", agent_id);
     while let Some(message_result) = in_stream.next().await {
@@ -68,14 +65,33 @@ pub async fn server_message_handler_loop(
                 if let Some(payload) = message_to_agent.payload {
                     match payload {
                         crate::agent_service::message_to_agent::Payload::UpdateConfigRequest(update_req) => {
-                            println!("[Agent:{}] Received new AgentConfig from server: {:?}", agent_id, &update_req.new_config);
-                            // TODO: Implement dynamic config update logic (e.g., via a shared state or channel)
-                            // For now, just acknowledge the update.
-                            let success = true;
+                            println!("[Agent:{}] Received new AgentConfig from server.", agent_id);
+                            let mut success = false;
+                            let mut error_message = String::new();
+
+                            if let Some(new_config) = update_req.new_config {
+                                match config::save_agent_config(&new_config, &config_path) {
+                                    Ok(_) => {
+                                        // Now update the in-memory shared config
+                                        let mut config_w = shared_agent_config.write().unwrap();
+                                        *config_w = new_config;
+                                        success = true;
+                                        println!("[Agent:{}] Successfully updated and saved new config.", agent_id);
+                                    }
+                                    Err(e) => {
+                                        error_message = format!("Failed to save config file: {}", e);
+                                        eprintln!("[Agent:{}] {}", agent_id, error_message);
+                                    }
+                                }
+                            } else {
+                                error_message = "Received UpdateConfigRequest with no config payload.".to_string();
+                                eprintln!("[Agent:{}] {}", agent_id, error_message);
+                            }
+
                             let response = crate::agent_service::UpdateConfigResponse {
                                 config_version_id: update_req.config_version_id,
                                 success,
-                                error_message: if success { String::new() } else { "Failed to apply config".to_string() },
+                                error_message,
                             };
 
                             let msg_id = id_provider();

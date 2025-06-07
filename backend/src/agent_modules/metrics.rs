@@ -2,6 +2,7 @@ use crate::agent_service::{
     AgentConfig, MessageToServer, PerformanceSnapshot, PerformanceSnapshotBatch,
     message_to_server::Payload,
 };
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sysinfo::{Disks, Networks, ProcessRefreshKind, System};
 use netdev;
@@ -167,51 +168,74 @@ fn collect_performance_snapshot(
 
 pub async fn metrics_collection_loop(
     tx_to_server: mpsc::Sender<MessageToServer>,
-    agent_config: AgentConfig,
+    shared_agent_config: Arc<RwLock<AgentConfig>>,
     agent_id: String,
     mut id_provider: impl FnMut() -> u64 + Send + 'static,
     vps_db_id: i32,
     agent_secret: String,
 ) {
     let mut sys = System::new_all();
-    let mut disks = Disks::new_with_refreshed_list(); // Initialize Disks here
+    let mut disks = Disks::new_with_refreshed_list();
     let mut networks = Networks::new_with_refreshed_list();
+    let mut snapshot_batch_vec = Vec::new();
 
-    let mut collect_interval_duration = agent_config.metrics_collect_interval_seconds;
+    // --- Dynamic Configuration Setup ---
+    let (mut collect_interval_duration, mut upload_interval_duration, mut batch_max_size) = {
+        let config = shared_agent_config.read().unwrap();
+        (
+            config.metrics_collect_interval_seconds,
+            config.metrics_upload_interval_seconds,
+            config.metrics_upload_batch_max_size,
+        )
+    };
     if collect_interval_duration == 0 { collect_interval_duration = 60; }
-    let mut collect_interval = tokio::time::interval(Duration::from_secs(collect_interval_duration as u64));
-
-    let mut upload_interval_duration = agent_config.metrics_upload_interval_seconds;
     if upload_interval_duration == 0 { upload_interval_duration = 60; }
-    let mut upload_interval = tokio::time::interval(Duration::from_secs(upload_interval_duration as u64));
-
-    let mut batch_max_size = agent_config.metrics_upload_batch_max_size;
     if batch_max_size == 0 { batch_max_size = 10; }
 
-    let mut snapshot_batch_vec = Vec::new();
+    let mut collect_interval = tokio::time::interval(Duration::from_secs(collect_interval_duration as u64));
+    let mut upload_interval = tokio::time::interval(Duration::from_secs(upload_interval_duration as u64));
+    // --- End Dynamic Configuration Setup ---
 
     println!("[Agent:{}] Metrics collection task started. Collect interval: {}s, Upload interval: {}s, Batch size: {}",
         agent_id, collect_interval_duration, upload_interval_duration, batch_max_size);
 
     // Initial refresh to set the baseline for the *next* delta calculation by sysinfo
-    disks.refresh(true); // Initial refresh for disks
+    disks.refresh(true);
     networks.refresh(true);
     let mut prev_net_state = Some(PreviousNetworkState { time: Instant::now() });
 
-
     loop {
+        // --- Check for configuration changes ---
+        {
+            let config = shared_agent_config.read().unwrap();
+            let new_collect_interval = if config.metrics_collect_interval_seconds > 0 { config.metrics_collect_interval_seconds } else { 60 };
+            let new_upload_interval = if config.metrics_upload_interval_seconds > 0 { config.metrics_upload_interval_seconds } else { 60 };
+            let new_batch_size = if config.metrics_upload_batch_max_size > 0 { config.metrics_upload_batch_max_size } else { 10 };
+
+            if new_collect_interval != collect_interval_duration {
+                println!("[Agent:{}] Updating metrics collect interval to {}s", agent_id, new_collect_interval);
+                collect_interval_duration = new_collect_interval;
+                collect_interval = tokio::time::interval(Duration::from_secs(collect_interval_duration as u64));
+            }
+            if new_upload_interval != upload_interval_duration {
+                println!("[Agent:{}] Updating metrics upload interval to {}s", agent_id, new_upload_interval);
+                upload_interval_duration = new_upload_interval;
+                upload_interval = tokio::time::interval(Duration::from_secs(upload_interval_duration as u64));
+            }
+            if new_batch_size != batch_max_size {
+                println!("[Agent:{}] Updating metrics batch size to {}", agent_id, new_batch_size);
+                batch_max_size = new_batch_size;
+            }
+        }
+        // --- End Check ---
+
         tokio::select! {
             _ = collect_interval.tick() => {
                 let current_time = Instant::now();
-
-                // collect_performance_snapshot internally calls networks.refresh(true) and disks.refresh()
                 let snapshot = collect_performance_snapshot(&mut sys, &mut disks, &mut networks, &prev_net_state, current_time);
                 snapshot_batch_vec.push(snapshot.clone());
-
-                // Update previous state time for the next iteration's calculation
                 prev_net_state = Some(PreviousNetworkState { time: current_time });
 
-                // Batch sending logic (remains the same)
                 if snapshot_batch_vec.len() >= batch_max_size as usize {
                     let batch_to_send_vec = std::mem::take(&mut snapshot_batch_vec);
                     if !batch_to_send_vec.is_empty() {
@@ -232,7 +256,6 @@ pub async fn metrics_collection_loop(
                 }
             }
             _ = upload_interval.tick() => {
-                // Batch sending logic (remains the same)
                 let batch_to_send_vec = std::mem::take(&mut snapshot_batch_vec);
                 if !batch_to_send_vec.is_empty() {
                     let batch_len = batch_to_send_vec.len();
@@ -250,7 +273,6 @@ pub async fn metrics_collection_loop(
                     }
                 }
             }
-            // TODO: Add a way to receive config updates
         }
     }
 }

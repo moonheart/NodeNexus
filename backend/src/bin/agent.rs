@@ -1,36 +1,18 @@
 use std::error::Error;
 use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::task::JoinHandle; // For task handles
-
-// Declare the new module. This should be at the crate root or inside `bin` if it's binary-specific.
-// If agent_modules is in src/agent_modules, and this is src/bin/agent.rs,
-// you might need to adjust path or use `backend::agent_modules`.
-// Assuming `mod agent_modules;` works if `agent_modules` is `src/agent_modules`.
-// If `agent_modules` is intended to be part of the `backend` crate library,
-// then it should be declared in `backend/src/lib.rs` and used as `backend::agent_modules::...`
-// For a `bin` specific module, it's common to put it alongside or inside the bin's source.
-// Let's assume `agent_modules` is correctly placed in `src/` so `backend::agent_modules` is the path.
-// No, if `agent_modules` is in `src/agent_modules`, and this is `src/bin/agent.rs`,
-// then `agent.rs` is a separate crate root from `lib.rs`.
-// We need to reference it as part of the `backend` crate if its modules are public in `lib.rs`.
-// Or, if `agent_modules` is truly private to this binary, it should be `src/bin/agent_modules/`.
-// Given the current structure `src/agent_modules`, it implies these modules are part of the `backend` library crate.
-// So, they should be declared in `backend/src/lib.rs` as `pub mod agent_modules;`
-// and then used here as `use backend::agent_modules::...;`
 
 // Correct approach:
 // 1. In backend/src/lib.rs, add `pub mod agent_modules;`
 // 2. Here, use `use backend::agent_modules::config::{load_cli_config, AgentCliConfig};` etc.
 
-// For this refactoring, I will assume step 1 is done or will be done.
-// If not, the `mod agent_modules;` line would be here, and paths would be `agent_modules::...`
-// but this is less standard for shared library components.
-
 // Let's proceed assuming agent_modules are part of the backend crate library.
 use backend::agent_modules::config::{load_cli_config, AgentCliConfig};
 use backend::agent_modules::communication::{ConnectionHandler, heartbeat_loop, server_message_handler_loop};
 use backend::agent_modules::metrics::metrics_collection_loop;
+use backend::agent_service::AgentConfig;
 
 
 const INITIAL_CLIENT_MESSAGE_ID: AtomicU64 = AtomicU64::new(1);
@@ -41,20 +23,21 @@ const DEFAULT_RECONNECT_DELAY_SECONDS: u64 = 5;
 async fn spawn_and_monitor_core_tasks(
     handler: ConnectionHandler,
     agent_cli_config: &AgentCliConfig,
+    shared_agent_config: Arc<RwLock<AgentConfig>>,
 ) -> Vec<JoinHandle<()>> {
     let (
         in_stream,
         tx_to_server,
         client_message_id_counter, // This is an Arc<Mutex<u64>>
         assigned_agent_id,
-        initial_agent_config,
+        _initial_agent_config, // No longer the source of truth, config is now in shared_agent_config
     ) = handler.split_for_tasks();
 
     let mut tasks = Vec::new();
 
     // Metrics Task
     let metrics_tx = tx_to_server.clone();
-    let metrics_agent_config = initial_agent_config.clone();
+    let metrics_agent_config = Arc::clone(&shared_agent_config);
     let metrics_agent_id = assigned_agent_id.clone();
     let metrics_id_provider_counter = client_message_id_counter.clone();
     let metrics_vps_id = agent_cli_config.vps_id;
@@ -77,7 +60,7 @@ async fn spawn_and_monitor_core_tasks(
 
     // Heartbeat Task
     let heartbeat_tx = tx_to_server.clone(); // tx_to_server is an mpsc::Sender, clone is cheap
-    let heartbeat_agent_config = initial_agent_config.clone();
+    let heartbeat_agent_config = Arc::clone(&shared_agent_config);
     let heartbeat_agent_id = assigned_agent_id.clone();
     let heartbeat_id_provider_counter = client_message_id_counter.clone();
     let heartbeat_vps_id = agent_cli_config.vps_id;
@@ -104,6 +87,8 @@ async fn spawn_and_monitor_core_tasks(
     let listener_vps_id = agent_cli_config.vps_id;
     let listener_agent_secret = agent_cli_config.agent_secret.clone();
     let listener_id_provider = backend::agent_modules::communication::ConnectionHandler::get_id_provider_closure(listener_id_provider_counter);
+    let listener_agent_config = Arc::clone(&shared_agent_config);
+    let listener_config_path = "agent_config.toml".to_string();
 
     // Note: server_message_handler_loop takes ownership of in_stream
     tasks.push(tokio::spawn(async move {
@@ -115,6 +100,8 @@ async fn spawn_and_monitor_core_tasks(
             listener_id_provider,
             listener_vps_id,
             listener_agent_secret,
+            listener_agent_config,
+            listener_config_path,
         ).await;
         println!("[Agent:{}] Server message handler loop ended.", agent_id_for_log);
     }));
@@ -157,7 +144,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 println!("[Agent:{}] Connection and handshake successful. Spawning tasks.", assigned_agent_id_log);
                 reconnect_delay_seconds = DEFAULT_RECONNECT_DELAY_SECONDS; // Reset delay on successful connection
 
-                let task_handles = spawn_and_monitor_core_tasks(handler, &agent_cli_config).await;
+                // Create the shared, mutable configuration state
+                let shared_agent_config = Arc::new(RwLock::new(handler.initial_agent_config.clone()));
+
+                let task_handles = spawn_and_monitor_core_tasks(handler, &agent_cli_config, shared_agent_config).await;
 
                 // Monitor tasks. If any of them exit, it signifies a problem, and we should attempt to reconnect.
                 if !task_handles.is_empty() {

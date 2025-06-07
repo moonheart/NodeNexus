@@ -1,7 +1,8 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{fs, error::Error, path::Path};
+use crate::agent_service::AgentConfig;
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AgentCliConfig {
     pub server_address: String,
     pub vps_id: i32,
@@ -28,4 +29,38 @@ pub fn load_cli_config(config_path_str: &str) -> Result<AgentCliConfig, Box<dyn 
 
     println!("[Agent] Loaded config: {:?}", agent_cli_config);
     Ok(agent_cli_config)
+}
+
+pub fn save_agent_config(config: &AgentConfig, config_path_str: &str) -> Result<(), Box<dyn Error>> {
+    let config_path = Path::new(config_path_str);
+
+    // 1. Read the existing file content. If it doesn't exist or is empty, default to an empty string.
+    let existing_content = fs::read_to_string(config_path).unwrap_or_default();
+    
+    // 2. Parse it into a generic TOML Value. If empty, it will be an empty table.
+    let mut existing_toml: toml::Value = toml::from_str(&existing_content)?;
+
+    // 3. Convert the new protobuf-generated config into a TOML string first.
+    let new_config_str = toml::to_string(config)?;
+    // Then parse that string into a TOML Value.
+    let new_toml: toml::Value = toml::from_str(&new_config_str)?;
+
+    // 4. Merge the new values into the existing TOML structure
+    if let (Some(existing_table), Some(new_table)) = (existing_toml.as_table_mut(), new_toml.as_table()) {
+        for (key, value) in new_table {
+            existing_table.insert(key.clone(), value.clone());
+        }
+    } else {
+        // If the existing file is not a table (e.g., empty or invalid), just use the new config.
+        existing_toml = new_toml;
+    }
+
+    // 5. Serialize the merged TOML value back to a string
+    let updated_content = toml::to_string_pretty(&existing_toml)?;
+
+    // 6. Write the updated content back to the file
+    fs::write(config_path, updated_content)?;
+
+    println!("[Agent] Successfully merged and saved configuration to {:?}", config_path);
+    Ok(())
 }
