@@ -24,7 +24,6 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, allVp
 
   const allTags = useServerListStore((state) => state.allTags);
   const fetchAllTags = useServerListStore((state) => state.fetchAllTags);
-  const servers = useServerListStore((state) => state.servers);
 
   const groupOptions = useMemo(() => {
     const allGroups = new Set(allVps.map(v => v.group).filter((g): g is string => !!g));
@@ -42,22 +41,17 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, allVp
   }, [isOpen, fetchAllTags]);
 
   useEffect(() => {
-    // Always use the latest data from the global store, not the potentially stale prop
-    const currentVpsData = servers.find(s => s.id === vps?.id);
-
-    if (currentVpsData) {
-      setName(currentVpsData.name || '');
-      setGroup(currentVpsData.group ? { value: currentVpsData.group, label: currentVpsData.group } : null);
-      setSelectedTags(currentVpsData.tags ? currentVpsData.tags.map(t => ({ value: t.id, label: t.name })) : []);
-      setError(null);
-      setIsLoading(false);
-    } else if (vps) {
-      // Fallback for safety, though might not be necessary
+    // When the modal is opened or the vps prop changes, initialize the form state.
+    // This prevents live data from websockets (via the `servers` store) from
+    // overwriting what the user is actively editing.
+    if (isOpen && vps) {
       setName(vps.name || '');
       setGroup(vps.group ? { value: vps.group, label: vps.group } : null);
       setSelectedTags(vps.tags ? vps.tags.map(t => ({ value: t.id, label: t.name })) : []);
+      setError(null);
+      setIsLoading(false);
     }
-  }, [vps, servers, isOpen]);
+  }, [vps, isOpen]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
