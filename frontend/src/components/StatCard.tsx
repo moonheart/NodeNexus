@@ -30,7 +30,7 @@ const StatCard: React.FC<StatCardProps> = ({
 
   // Determine icon background color based on text color for better contrast or theming
   // Example: if text is text-green-500, background could be bg-green-100
-  const iconBgClass = icon ? `${colorClass.replace('text-', 'bg-')}` : '';
+  const iconBgClass = icon ? `${colorClass.replace(/-\d+/, '-100').replace('text-', 'bg-')}` : '';
 
   const content = (
     <>

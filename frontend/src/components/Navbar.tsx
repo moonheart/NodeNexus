@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
-import { ServerIcon } from './Icons'; // Assuming you have a relevant icon
+import { ServerIcon } from './Icons';
 
 const Navbar: React.FC = () => {
   const { isAuthenticated, logout } = useAuthStore();

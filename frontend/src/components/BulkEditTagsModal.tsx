@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Select from 'react-select';
 import { useServerListStore } from '../store/serverListStore';
 import * as tagService from '../services/tagService';
+import { X } from 'lucide-react';
 
 interface BulkEditTagsModalProps {
   isOpen: boolean;
@@ -69,7 +70,9 @@ const BulkEditTagsModal: React.FC<BulkEditTagsModalProps> = ({ isOpen, onClose, 
       <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md m-4">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold text-slate-800">Bulk Edit Tags for {vpsIds.length} Servers</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">&times;</button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <X className="w-6 h-6" />
+          </button>
         </div>
 
         <form onSubmit={handleSubmit}>

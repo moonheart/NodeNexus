@@ -12,7 +12,7 @@ import {
   ArrowUpIcon,
   ArrowDownIcon,
   PencilIcon,
-} from './Icons'; // Assuming Icons.tsx is in the same directory or adjust path
+} from './Icons';
 import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_ERROR, STATUS_UNKNOWN } from '../types';
 
 interface VpsCardProps {

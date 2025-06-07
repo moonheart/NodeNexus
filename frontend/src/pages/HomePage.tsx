@@ -15,6 +15,8 @@ import {
   ListBulletIcon,
   Squares2X2Icon,
   PencilSquareIcon,
+  XMarkIcon,
+  CheckIcon,
 } from '../components/Icons';
 import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_ERROR, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_UNKNOWN } from '../types';
 import VpsCard from '../components/VpsCard';
@@ -278,9 +280,7 @@ const HomePage: React.FC = () => {
                                             style={{ color: getContrastingTextColor(tag.color) }}
                                         >
                                             <span className="sr-only">Remove {tag.name}</span>
-                                            <svg className="h-2 w-2" stroke="currentColor" fill="none" viewBox="0 0 8 8">
-                                                <path strokeLinecap="round" strokeWidth="1.5" d="M1 1l6 6m0-6L1 7" />
-                                            </svg>
+                                            <XMarkIcon className="h-2 w-2" />
                                         </button>
                                     </span>
                                 );
@@ -321,9 +321,7 @@ const HomePage: React.FC = () => {
                                                             {tag.name}
                                                         </div>
                                                         {selectedTagIds.has(tag.id) && (
-                                                            <svg className="w-5 h-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                            </svg>
+                                                            <CheckIcon className="w-5 h-5 text-indigo-600" />
                                                         )}
                                                     </a>
                                                 ))

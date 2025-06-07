@@ -5,6 +5,7 @@ import { updateVps } from '../services/vpsService';
 import type { VpsListItemResponse } from '../types';
 import axios from 'axios';
 import { useServerListStore } from '../store/serverListStore';
+import { X } from 'lucide-react';
 
 interface EditVpsModalProps {
   isOpen: boolean;
@@ -98,7 +99,9 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, allVp
       <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md m-4 transform transition-all duration-300">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold text-slate-800">编辑服务器信息</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">&times;</button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+            <X className="w-6 h-6" />
+          </button>
         </div>
 
         <form onSubmit={handleSubmit}>
