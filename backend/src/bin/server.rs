@@ -2,7 +2,8 @@
 use backend::server::agent_state::{ConnectedAgents, LiveServerDataCache}; // Added LiveServerDataCache
 use backend::server::service::MyAgentCommService;
 use backend::websocket_models::{FullServerListPush, ServerWithDetails}; // Added ServerWithDetails
-use backend::db::services as db_services; // Added for cache population
+use backend::db::services as db_services;
+use backend::server::update_service; // Added for cache population
 use tonic::transport::Server as TonicServer;
 use backend::agent_service::agent_communication_service_server::AgentCommunicationServiceServer;
 use backend::http_server;
@@ -15,6 +16,7 @@ use std::sync::Arc;
 use std::collections::HashMap; // For initializing LiveServerDataCache
 use tokio::sync::{broadcast, Mutex}; // Added Mutex for LiveServerDataCache and broadcast
 use tokio::time::{interval, Duration}; // For the periodic push task
+use chrono::Utc;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Added Send + Sync for tokio::spawn
     dotenv().ok(); // Load .env file
@@ -65,41 +67,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
 
     println!("gRPC AgentCommunicationService listening on {}", grpc_addr);
     
-    // --- Periodic WebSocket Push Task Setup ---
-    let cache_for_push_task = live_server_data_cache.clone();
-    let broadcaster_for_push_task = ws_data_broadcaster_tx.clone();
-    let push_interval_seconds = env::var("WS_PUSH_INTERVAL_SECONDS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(2); // Default to 2 seconds
+    // --- Agent Heartbeat Check Task ---
+    let connected_agents_for_check = connected_agents.clone();
+    let pool_for_check = Arc::new(db_pool.clone());
+    let cache_for_check = live_server_data_cache.clone();
+    let broadcaster_for_check = ws_data_broadcaster_tx.clone();
 
-    let _periodic_push_task_future = tokio::spawn(async move {
-        println!("WebSocket periodic push task started with interval: {}s", push_interval_seconds);
-        let mut tick_interval = interval(Duration::from_secs(push_interval_seconds));
+    tokio::spawn(async move {
+        let mut interval = interval(Duration::from_secs(60)); // Check every 60 seconds
+        println!("Agent heartbeat check task started.");
+
         loop {
-            tick_interval.tick().await;
-            if broadcaster_for_push_task.receiver_count() == 0 {
-                // No active WebSocket clients, skip building and sending data
-                continue;
-            }
+            interval.tick().await;
+            let mut disconnected_vps_ids = Vec::new();
+            let mut agents_guard = connected_agents_for_check.lock().await;
 
-            let data_to_push_arc = {
-                let cache_guard = cache_for_push_task.lock().await;
-                let servers_list: Vec<ServerWithDetails> = cache_guard.values().cloned().collect();
-                // println!("Periodic push: Found {} servers in cache.", servers_list.len());
-                Arc::new(FullServerListPush { servers: servers_list })
-            };
+            // Use retain to iterate and remove in-place
+            agents_guard.agents.retain(|_agent_id, state| {
+                let is_alive = (Utc::now().timestamp_millis() - state.last_heartbeat_ms) < 90_000; // 90-second threshold
+                if !is_alive {
+                    println!("Agent for VPS ID {} is considered disconnected.", state.vps_db_id);
+                    disconnected_vps_ids.push(state.vps_db_id);
+                }
+                is_alive
+            });
 
-            if let Err(e) = broadcaster_for_push_task.send(data_to_push_arc) {
-                // This error typically means there are no active subscribers,
-                // though we check receiver_count() above. It could also be other internal errors.
-                eprintln!("Failed to broadcast WebSocket data ({} receivers): {}", broadcaster_for_push_task.receiver_count(), e);
-            } else {
-                // println!("Successfully broadcasted WebSocket data to {} receivers.", broadcaster_for_push_task.receiver_count());
+            drop(agents_guard); // Release the lock before async operations
+
+            if !disconnected_vps_ids.is_empty() {
+                println!("Found {} disconnected agents. Updating status to 'offline'.", disconnected_vps_ids.len());
+                let mut needs_broadcast = false;
+                for vps_id in disconnected_vps_ids {
+                    match db_services::update_vps_status(&pool_for_check, vps_id, "offline").await {
+                        Ok(rows_affected) if rows_affected > 0 => {
+                            needs_broadcast = true;
+                        }
+                        Ok(_) => {} // No rows affected, maybe already offline
+                        Err(e) => {
+                            eprintln!("Failed to update status to 'offline' for VPS ID {}: {}", vps_id, e);
+                        }
+                    }
+                }
+
+                if needs_broadcast {
+                    println!("Triggering broadcast after updating offline status.");
+                    update_service::broadcast_full_state_update(
+                        &pool_for_check,
+                        &cache_for_check,
+                        &broadcaster_for_check,
+                    )
+                    .await;
+                }
             }
         }
     });
-
 
     // --- Axum HTTP Server Setup ---
     let http_addr: SocketAddr = "0.0.0.0:8080".parse()?;

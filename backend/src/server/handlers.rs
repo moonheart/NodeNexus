@@ -18,8 +18,9 @@ use crate::agent_service::{
 use crate::server::agent_state::{AgentState, ConnectedAgents};
 // use crate::db::models::PerformanceMetric; // No longer directly used here
 use crate::db::services; // Will be used later for db operations
+use crate::server::update_service;
  // For fetching VPS details if not in cache
-
+ 
 use crate::http_server::vps_routes::LatestPerformanceMetricResponse;
 use crate::websocket_models::FullServerListPush;
 use tokio::sync::broadcast;
@@ -42,6 +43,7 @@ pub async fn handle_connection(
 
     tokio::spawn(async move {
         let mut current_session_agent_id: Option<String> = None; // Server-generated session ID
+        let mut vps_db_id: Option<i32> = None; // Store the VPS ID for cleanup
         let mut server_message_id_counter: u64 = 1; // Counter for messages sent from server to agent
 
         while let Some(result) = in_stream.next().await {
@@ -49,6 +51,7 @@ pub async fn handle_connection(
                 Ok(msg_to_server) => {
                     // Authenticate each message
                     let vps_db_id_from_msg = msg_to_server.vps_db_id;
+                    vps_db_id = Some(vps_db_id_from_msg); // Store for later use
                     let agent_secret_from_msg = &msg_to_server.agent_secret;
                     let mut auth_successful_for_msg = false;
                     let mut error_message_for_ack = String::new();
@@ -110,7 +113,9 @@ pub async fn handle_connection(
                             ).await {
                                 Ok(rows_affected) => {
                                     if rows_affected > 0 {
-                                        println!("[{}] Successfully updated VPS info for VPS ID {}", connection_id, vps_db_id_from_msg);
+                                        println!("[{}] Successfully updated VPS info for VPS ID {}. Triggering broadcast.", connection_id, vps_db_id_from_msg);
+                                        // Trigger broadcast after successful handshake update
+                                        update_service::broadcast_full_state_update(&pool_clone, &cache_clone, &broadcaster_clone).await;
                                     } else {
                                         eprintln!("[{}] VPS info update on handshake for VPS ID {} affected 0 rows (handler level).", connection_id, vps_db_id_from_msg);
                                     }
@@ -196,65 +201,9 @@ pub async fn handle_connection(
 
                                         match services::save_performance_snapshot_batch(&pool_clone, vps_db_id_from_msg, &batch).await {
                                             Ok(_) => {
-                                                // println!("[{}] Successfully saved performance batch for agent {} (VPS DB ID {})", connection_id, session_id, vps_db_id_from_msg);
-                                                
-                                                // Update the live_server_data_cache with the latest snapshot from the batch
-                                                if let Some(latest_snapshot_proto) = batch.snapshots.last() {
-                                                   let mut cache_guard = cache_clone.lock().await;
-                                                   if let Some(server_details_entry) = cache_guard.get_mut(&vps_db_id_from_msg) {
-                                                       // Map PerformanceSnapshot (proto) to ServerMetricsSnapshot (websocket_models)
-                                                       let snapshot_time = Utc.timestamp_millis_opt(latest_snapshot_proto.timestamp_unix_ms).single().unwrap_or_else(Utc::now);
-                                                       let new_metrics_snapshot = ServerMetricsSnapshot {
-                                                           time: snapshot_time, // Add time from proto
-                                                           cpu_usage_percent: latest_snapshot_proto.cpu_overall_usage_percent,
-                                                           memory_usage_bytes: latest_snapshot_proto.memory_usage_bytes,
-                                                           memory_total_bytes: latest_snapshot_proto.memory_total_bytes,
-                                                           network_rx_instant_bps: Some(latest_snapshot_proto.network_rx_bytes_per_sec),
-                                                           network_tx_instant_bps: Some(latest_snapshot_proto.network_tx_bytes_per_sec),
-                                                           uptime_seconds: Some(latest_snapshot_proto.uptime_seconds),
-                                                           // Assuming disk_used_bytes and disk_total_bytes are summed from latest_snapshot_proto.disk_usages
-                                                           // This might need more complex logic if you want to sum them up.
-                                                           // For simplicity, let's assume they are directly available or can be approximated.
-                                                           // If not directly available, these might need to be fetched or calculated differently.
-                                                           // For now, let's use the first disk if available, or None.
-                                                           disk_used_bytes: latest_snapshot_proto.disk_usages.first().map(|d| d.used_bytes),
-                                                           disk_total_bytes: latest_snapshot_proto.disk_usages.first().map(|d| d.total_bytes),
-                                                       };
-                                                       server_details_entry.latest_metrics = Some(new_metrics_snapshot);
-                                                       // println!("[{}] Updated live cache for VPS ID {}", connection_id, vps_db_id_from_msg);
-                                                   } else {
-                                                       // VPS not in cache, might be a new VPS or cache not yet populated.
-                                                       // For now, log it. Ideally, the cache should be pre-populated.
-                                                       // Or, fetch basic info and insert.
-                                                       eprintln!("[{}] VPS ID {} not found in live_server_data_cache during metrics update. Attempting to fetch and insert.", connection_id, vps_db_id_from_msg);
-                                                       // Attempt to fetch full details (including tags) and create a cache entry.
-                                                       match services::get_vps_with_details_for_cache_by_id(&pool_clone, vps_db_id_from_msg).await {
-                                                           Ok(Some(mut details)) => {
-                                                               // The fetched details might not have metrics, but we have them now.
-                                                               let snapshot_time = Utc.timestamp_millis_opt(latest_snapshot_proto.timestamp_unix_ms).single().unwrap_or_else(Utc::now);
-                                                               details.latest_metrics = Some(ServerMetricsSnapshot {
-                                                                   time: snapshot_time,
-                                                                   cpu_usage_percent: latest_snapshot_proto.cpu_overall_usage_percent,
-                                                                   memory_usage_bytes: latest_snapshot_proto.memory_usage_bytes,
-                                                                   memory_total_bytes: latest_snapshot_proto.memory_total_bytes,
-                                                                   network_rx_instant_bps: Some(latest_snapshot_proto.network_rx_bytes_per_sec),
-                                                                   network_tx_instant_bps: Some(latest_snapshot_proto.network_tx_bytes_per_sec),
-                                                                   uptime_seconds: Some(latest_snapshot_proto.uptime_seconds),
-                                                                   disk_used_bytes: latest_snapshot_proto.disk_usages.first().map(|d| d.used_bytes),
-                                                                   disk_total_bytes: latest_snapshot_proto.disk_usages.first().map(|d| d.total_bytes),
-                                                               });
-                                                               cache_guard.insert(vps_db_id_from_msg, details);
-                                                               println!("[{}] Inserted new entry with full details into live cache for VPS ID {}", connection_id, vps_db_id_from_msg);
-                                                           }
-                                                           Ok(None) => {
-                                                               eprintln!("[{}] VPS ID {} not found in DB. Cannot create cache entry.", connection_id, vps_db_id_from_msg);
-                                                           }
-                                                           Err(e) => {
-                                                               eprintln!("[{}] Error fetching full VPS details for cache insertion (ID {}): {}", connection_id, vps_db_id_from_msg, e);
-                                                           }
-                                                       }
-                                                   }
-                                                }
+                                                // After saving metrics, trigger a full broadcast.
+                                                // This replaces the silent cache update with a full, consistent state refresh.
+                                                update_service::broadcast_full_state_update(&pool_clone, &cache_clone, &broadcaster_clone).await;
                                             }
                                             Err(e) => {
                                                 eprintln!("[{}] Failed to save performance batch for agent {} (VPS DB ID {}): {}", connection_id, session_id, vps_db_id_from_msg, e);
@@ -274,29 +223,9 @@ pub async fn handle_connection(
 
                                        match services::update_vps_config_status(&pool_clone, vps_db_id_from_msg, status, error_msg).await {
                                            Ok(_) => {
-                                               println!("[{}] Successfully updated config status for VPS ID {}. Triggering cache update and broadcast.", connection_id, vps_db_id_from_msg);
-                                               
-                                               // Use the unified function to get the full details and broadcast.
-                                               if let Ok(Some(details)) = services::get_vps_with_details_for_cache_by_id(&pool_clone, vps_db_id_from_msg).await {
-                                                   {
-                                                       let mut cache_guard = cache_clone.lock().await;
-                                                       cache_guard.insert(vps_db_id_from_msg, details);
-                                                   }
-
-                                                   let servers_list: Vec<ServerWithDetails> = {
-                                                       let cache_guard = cache_clone.lock().await;
-                                                       cache_guard.values().cloned().collect()
-                                                   };
-                                                   let full_list_push = Arc::new(FullServerListPush { servers: servers_list });
-                                                   
-                                                   if broadcaster_clone.send(full_list_push).is_err() {
-                                                       println!("[{}] No web clients listening, skipping broadcast.", connection_id);
-                                                   } else {
-                                                       println!("[{}] Broadcasted updated server list after config update.", connection_id);
-                                                   }
-                                               } else {
-                                                   eprintln!("[{}] Failed to re-fetch VPS details after config status update for VPS ID: {}", connection_id, vps_db_id_from_msg);
-                                               }
+                                               println!("[{}] Successfully updated config status for VPS ID {}. Triggering broadcast.", connection_id, vps_db_id_from_msg);
+                                               // After updating config status, trigger a full broadcast.
+                                               update_service::broadcast_full_state_update(&pool_clone, &cache_clone, &broadcaster_clone).await;
                                            }
                                            Err(e) => eprintln!("[{}] Failed to update config status for VPS ID {}: {}", connection_id, vps_db_id_from_msg, e),
                                        }
@@ -323,13 +252,33 @@ pub async fn handle_connection(
             }
         }
 
-        // 清理
+        // Cleanup logic for when the stream ends (client disconnects)
         if let Some(session_id_to_remove) = current_session_agent_id {
             println!("[{}] Stream ended for agent session {}", connection_id, session_id_to_remove);
+            
+            // Remove agent from the connected list
             {
                 let mut agents_guard = connected_agents_arc_clone.lock().await;
                 if agents_guard.agents.remove(&session_id_to_remove).is_some() {
                     println!("[{}] Agent session {} deregistered. Total agents: {}", connection_id, session_id_to_remove, agents_guard.agents.len());
+                }
+            }
+
+            // Update status to "offline" and broadcast the change
+            if let Some(id) = vps_db_id {
+                println!("[{}] Setting status to 'offline' for VPS ID {}", connection_id, id);
+                match services::update_vps_status(&pool_clone, id, "offline").await {
+                    Ok(rows_affected) if rows_affected > 0 => {
+                        println!("[{}] Successfully set status to 'offline' for VPS ID {}. Triggering broadcast.", connection_id, id);
+                        // Trigger a final broadcast to update all clients
+                        update_service::broadcast_full_state_update(&pool_clone, &cache_clone, &broadcaster_clone).await;
+                    }
+                    Ok(_) => {
+                        eprintln!("[{}] Attempted to set status to 'offline' for VPS ID {}, but no rows were affected.", connection_id, id);
+                    }
+                    Err(e) => {
+                        eprintln!("[{}] Failed to set status to 'offline' for VPS ID {}: {}", connection_id, id, e);
+                    }
                 }
             }
         } else {

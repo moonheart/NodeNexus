@@ -9,6 +9,7 @@ use std::sync::Arc;
 use crate::db::{models::{Vps, PerformanceMetric as DbPerformanceMetric, Tag}, services};
 use super::{AppState, AppError, config_routes};
 use crate::http_server::auth_logic::AuthenticatedUser;
+use crate::server::update_service;
 
 // Frontend expects this structure for latest metrics
 #[derive(Serialize, Clone, Debug)]
@@ -196,43 +197,6 @@ pub struct UpdateVpsRequest {
     tag_ids: Option<Vec<i32>>,
 }
 
-/// Helper function to update the cache for a list of VPS and broadcast the full list.
-async fn update_cache_and_broadcast(
-    app_state: &Arc<AppState>,
-    vps_ids: &[i32],
-) -> Result<(), AppError> {
-    // 1. Update the cache for each affected VPS.
-    {
-        let mut cache_guard = app_state.live_server_data_cache.lock().await;
-        for &vps_id in vps_ids {
-            match services::get_vps_with_details_for_cache_by_id(&app_state.db_pool, vps_id).await {
-                Ok(Some(details)) => {
-                    cache_guard.insert(vps_id, details);
-                }
-                Ok(None) => {
-                    // VPS might have been deleted, so we remove it from cache.
-                    cache_guard.remove(&vps_id);
-                }
-                Err(e) => {
-                    // Log the error but don't fail the whole broadcast operation for one failure.
-                    eprintln!("Failed to re-fetch VPS {} for cache update: {}", vps_id, e);
-                }
-            }
-        }
-    }
-
-    // 2. Broadcast the entire updated list to all clients.
-    let servers_list: Vec<crate::websocket_models::ServerWithDetails> = {
-        let cache_guard = app_state.live_server_data_cache.lock().await;
-        cache_guard.values().cloned().collect()
-    };
-    let full_list_push = Arc::new(crate::websocket_models::FullServerListPush { servers: servers_list });
-
-    // Send the update. Ignore error if no subscribers are present.
-    let _ = app_state.ws_data_broadcaster_tx.send(full_list_push);
-
-    Ok(())
-}
 
 async fn update_vps_handler(
     Extension(authenticated_user): Extension<AuthenticatedUser>,
@@ -263,7 +227,12 @@ async fn update_vps_handler(
 
     if change_detected {
         // Call the centralized broadcast function
-        update_cache_and_broadcast(&app_state, &[vps_id]).await?;
+        update_service::broadcast_full_state_update(
+            &app_state.db_pool,
+            &app_state.live_server_data_cache,
+            &app_state.ws_data_broadcaster_tx,
+        )
+        .await;
         Ok(StatusCode::OK)
     } else {
         Ok(StatusCode::NOT_MODIFIED)
@@ -367,7 +336,12 @@ async fn bulk_update_vps_tags_handler(
     {
         Ok(_) => {
             // Call the centralized broadcast function
-            update_cache_and_broadcast(&app_state, &payload.vps_ids).await?;
+            update_service::broadcast_full_state_update(
+                &app_state.db_pool,
+                &app_state.live_server_data_cache,
+                &app_state.ws_data_broadcaster_tx,
+            )
+            .await;
             Ok(StatusCode::OK)
         }
         Err(sqlx::Error::RowNotFound) => {

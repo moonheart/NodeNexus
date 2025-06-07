@@ -19,19 +19,6 @@ export const createVps = async (payload: CreateVpsPayload): Promise<Vps> => {
   }
 };
 
-/**
- * Fetches the list of VPS for the authenticated user.
- * The backend now returns VpsListItemResponse which includes latest_metrics.
- */
-export const getVpsList = async (): Promise<VpsListItemResponse[]> => {
-  try {
-    const response = await apiClient.get<VpsListItemResponse[]>('/api/vps');
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching VPS list:', error);
-    throw error;
-  }
-};
 
 /**
  * Fetches the details for a single VPS.
