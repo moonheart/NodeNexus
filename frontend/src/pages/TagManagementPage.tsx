@@ -1,27 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import { PlusCircle, Tag as TagIcon, Pencil, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { PlusCircle, Search } from 'lucide-react';
+import toast from 'react-hot-toast';
 import * as tagService from '../services/tagService';
-import type { Tag } from '../types';
-import TagEditModal from '../components/TagEditModal';
+import type { Tag, UpdateTagPayload } from '../types';
 import { useServerListStore } from '../store/serverListStore';
+import TagEditModal from '../components/TagEditModal';
+import TagCard from '../components/TagCard';
+import TagSkeletonCard from '../components/TagSkeletonCard';
+import EmptyState from '../components/EmptyState';
 
 const TagManagementPage: React.FC = () => {
   const tags = useServerListStore((state) => state.allTags);
   const fetchAllTags = useServerListStore((state) => state.fetchAllTags);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<Error | null>(null);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     const loadInitialTags = async () => {
       try {
         setIsLoading(true);
         await fetchAllTags();
-        setError(null);
       } catch (err) {
-        setError(err as Error);
+        toast.error('Failed to load tags.');
+        console.error(err);
       } finally {
         setIsLoading(false);
       }
@@ -40,14 +44,47 @@ const TagManagementPage: React.FC = () => {
   };
 
   const handleDeleteClick = async (tagId: number) => {
-    if (window.confirm('Are you sure you want to delete this tag? This action cannot be undone.')) {
-      try {
-        await tagService.deleteTag(tagId);
-        await fetchAllTags(); // Refetch to update the list
-      } catch (err) {
-        setError(err as Error);
-        console.error('Failed to delete tag:', err);
-      }
+    const tagToDelete = tags.find(t => t.id === tagId);
+    const confirmMessage = tagToDelete && (tagToDelete.vpsCount ?? 0) > 0
+      ? `This tag is used by ${tagToDelete.vpsCount} VPS(s). Deleting it will remove it from them. Are you sure?`
+      : 'Are you sure you want to delete this tag?';
+
+    if (window.confirm(confirmMessage)) {
+      toast.promise(
+        tagService.deleteTag(tagId).then(() => fetchAllTags()),
+        {
+          loading: 'Deleting tag...',
+          success: 'Tag deleted successfully!',
+          error: 'Failed to delete tag.',
+        }
+      );
+    }
+  };
+
+  const handleToggleVisibility = async (tagId: number, isVisible: boolean) => {
+    const originalTags = [...tags];
+    const tagToUpdate = originalTags.find(t => t.id === tagId);
+    if (!tagToUpdate) return;
+
+    // Optimistic update
+    const updatedTags = originalTags.map(t => t.id === tagId ? { ...t, isVisible } : t);
+    useServerListStore.setState({ allTags: updatedTags });
+
+    try {
+      const payload: UpdateTagPayload = {
+        name: tagToUpdate.name,
+        color: tagToUpdate.color,
+        icon: tagToUpdate.icon || undefined,
+        url: tagToUpdate.url || undefined,
+        is_visible: isVisible,
+      };
+      await tagService.updateTag(tagId, payload);
+      toast.success(`Tag visibility updated.`);
+      await fetchAllTags(); // re-sync with server
+    } catch (error) {
+      console.error("Failed to update visibility:", error);
+      toast.error('Failed to update visibility.');
+      useServerListStore.setState({ allTags: originalTags }); // Revert on error
     }
   };
 
@@ -57,63 +94,81 @@ const TagManagementPage: React.FC = () => {
   };
 
   const handleTagSaved = () => {
-    fetchAllTags(); // Refetch tags after saving
+    fetchAllTags();
   };
 
-  if (isLoading) {
-    return <div>Loading tags...</div>;
-  }
+  const filteredTags = useMemo(() => {
+    if (!tags) return [];
+    return tags.filter(tag =>
+      tag.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [tags, searchQuery]);
+
+  const renderContent = () => {
+    if (isLoading) {
+      return (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {Array.from({ length: 8 }).map((_, i) => <TagSkeletonCard key={i} />)}
+        </div>
+      );
+    }
+
+    if (!tags || tags.length === 0) {
+      return (
+        <EmptyState
+          title="No Tags Found"
+          message="Get started by creating your first tag."
+          buttonText="Create Tag"
+          onButtonClick={handleCreateClick}
+        />
+      );
+    }
+
+    if (filteredTags.length === 0) {
+        return <div className="text-center py-10">No tags match your search.</div>;
+    }
+
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {filteredTags.map((tag) => (
+          <TagCard
+            key={tag.id}
+            tag={tag}
+            onEdit={handleEditClick}
+            onDelete={handleDeleteClick}
+            onToggleVisibility={handleToggleVisibility}
+          />
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="container mx-auto p-4">
-      {error && <div className="alert alert-error shadow-lg mb-4"><div><span>Error: {error.message}</span></div></div>}
-      
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">Tag Management</h1>
-        <button className="btn btn-primary" onClick={handleCreateClick}>
-          <PlusCircle className="w-4 h-4 mr-2" />
-          Create Tag
-        </button>
+      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+        <h1 className="text-3xl font-bold text-slate-800">Tag Management</h1>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <input
+                    type="text"
+                    placeholder="Search tags..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10 pr-4 py-2 w-full border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+            </div>
+            <button
+                onClick={handleCreateClick}
+                className="flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition-colors duration-150"
+            >
+                <PlusCircle className="w-5 h-5 mr-2" />
+                <span>Create Tag</span>
+            </button>
+        </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="table w-full">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Color</th>
-              <th>Icon</th>
-              <th>URL</th>
-              <th>Visible</th>
-              <th>Usage Count</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tags?.map((tag: Tag) => (
-              <tr key={tag.id}>
-                <td><span className="font-bold">{tag.name}</span></td>
-                <td>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded-full border" style={{ backgroundColor: tag.color }} />
-                    <span>{tag.color}</span>
-                  </div>
-                </td>
-                <td>{tag.icon ? <TagIcon className="w-5 h-5" /> : 'None'}</td>
-                <td>{tag.url ? <a href={tag.url} target="_blank" rel="noopener noreferrer" className="link link-primary">Link</a> : 'None'}</td>
-                <td>{tag.isVisible ? 'Yes' : 'No'}</td>
-                <td>{tag.vpsCount}</td>
-                <td>
-                  <div className="flex gap-2">
-                    <button className="btn btn-ghost btn-sm" onClick={() => handleEditClick(tag)}><Pencil className="w-4 h-4" /></button>
-                    <button className="btn btn-ghost btn-sm text-red-500" onClick={() => handleDeleteClick(tag.id)}><Trash2 className="w-4 h-4" /></button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {renderContent()}
 
       <TagEditModal
         isOpen={isModalOpen}
