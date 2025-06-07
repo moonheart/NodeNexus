@@ -28,7 +28,6 @@ pub struct Vps {
     pub metadata: Option<serde_json::Value>, // For storing additional info like vendor details
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub tags: Option<String>,
     #[serde(rename = "group")]
     pub group: Option<String>,
     // New fields for config management
@@ -209,4 +208,27 @@ pub struct Setting {
     pub key: String,
     pub value: serde_json::Value,
     pub updated_at: DateTime<Utc>,
+}
+
+/// Represents a tag that can be associated with a VPS.
+/// Corresponds to the `tags` table.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Tag {
+    pub id: i32,
+    pub user_id: i32,
+    pub name: String,
+    pub color: String,
+    pub icon: Option<String>,
+    pub url: Option<String>,
+    pub is_visible: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Represents the association between a VPS and a Tag.
+/// Corresponds to the `vps_tags` table.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct VpsTag {
+    pub vps_id: i32,
+    pub tag_id: i32,
 }

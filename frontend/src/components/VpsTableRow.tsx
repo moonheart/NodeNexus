@@ -14,6 +14,8 @@ import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_REBOOTING, STATUS_PROVISIONING, S
 interface VpsTableRowProps {
   server: VpsListItemResponse;
   onEdit: (server: VpsListItemResponse) => void;
+  isSelected: boolean;
+  onSelectionChange: (vpsId: number, isSelected: boolean) => void;
 }
 
 const getStatusAppearance = (status: ServerStatusType): { badgeClass: string; textClass: string; icon: React.ReactNode } => {
@@ -41,7 +43,18 @@ const formatNetworkSpeed = (bps: number | undefined | null): string => {
   return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
 };
 
-const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit }) => {
+const getContrastingTextColor = (hexColor: string): string => {
+  if (!hexColor) return '#000000';
+  const hex = hexColor.replace('#', '');
+  if (hex.length !== 6) return '#000000';
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+  return (yiq >= 128) ? '#000000' : '#ffffff';
+};
+
+const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, onSelectionChange }) => {
   const { badgeClass, textClass, icon } = getStatusAppearance(server.status);
   const metrics = server.latestMetrics;
 
@@ -54,10 +67,47 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit }) => {
 
   return (
     <tr className="bg-white hover:bg-slate-50 transition-colors duration-150 border-b border-slate-200 last:border-b-0">
-      <td className="px-4 py-3 text-sm font-medium text-slate-800 truncate" title={server.name}>
-        <RouterLink to={`/vps/${server.id}`} className="text-indigo-600 hover:text-indigo-700 hover:underline">
-          {server.name}
-        </RouterLink>
+      <td className="px-4 py-3 text-sm font-medium text-slate-800">
+        <div className="flex items-center">
+          <input
+            type="checkbox"
+            className="checkbox checkbox-primary checkbox-sm mr-4"
+            checked={isSelected}
+            onChange={(e) => onSelectionChange(server.id, e.target.checked)}
+            aria-label={`Select ${server.name}`}
+          />
+          <div className="truncate" title={server.name}>
+            <RouterLink to={`/vps/${server.id}`} className="text-indigo-600 hover:text-indigo-700 hover:underline">
+              {server.name}
+            </RouterLink>
+            {server.tags && server.tags.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {server.tags.filter(tag => tag.isVisible).map(tag => {
+                  const tagComponent = (
+                    <span
+                      className="px-2 py-0.5 text-xs font-medium rounded-full"
+                      style={{
+                        backgroundColor: tag.color,
+                        color: getContrastingTextColor(tag.color),
+                      }}
+                    >
+                      {tag.name}
+                    </span>
+                  );
+
+                  if (tag.url) {
+                    return (
+                      <a href={tag.url} target="_blank" rel="noopener noreferrer" key={tag.id}>
+                        {tagComponent}
+                      </a>
+                    );
+                  }
+                  return <div key={tag.id}>{tagComponent}</div>;
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </td>
       <td className="px-4 py-3 text-sm">
         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${badgeClass} ${textClass}`}>

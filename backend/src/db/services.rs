@@ -1,7 +1,7 @@
 use chrono::Utc;
 use sqlx::{PgPool, Result};
 use uuid::Uuid; // Added for generating agent_secret
-use super::models::{User, Vps, AggregatedPerformanceMetric};
+use super::models::{User, Vps, AggregatedPerformanceMetric, Tag, VpsTag};
 use crate::websocket_models::{ServerBasicInfo, ServerMetricsSnapshot, ServerWithDetails}; // Added for cache population
 use sqlx::FromRow; // Added for deriving FromRow for helper struct
 use sqlx::postgres::types::PgInterval; // For mapping in handlers, keep imports tidy
@@ -63,19 +63,18 @@ pub async fn create_vps(
     let initial_ip_address: Option<String> = None;
     let initial_os_type: Option<String> = None;
     let initial_metadata: Option<serde_json::Value> = None;
-    let initial_tags: Option<String> = None;
     let initial_group: Option<String> = None;
 
     let vps = sqlx::query_as!(
         Vps,
         r#"
         INSERT INTO vps (
-            user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, tags, "group",
+            user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, "group",
             agent_config_override, config_status, last_config_update_at, last_config_error
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         RETURNING
-            id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, tags, "group",
+            id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, "group",
             agent_config_override, config_status, last_config_update_at, last_config_error
         "#,
         user_id,
@@ -87,7 +86,6 @@ pub async fn create_vps(
         initial_metadata,
         now,
         now,
-        initial_tags,
         initial_group,
         None::<serde_json::Value>, // agent_config_override
         "unknown",                 // config_status
@@ -101,14 +99,14 @@ pub async fn create_vps(
 
 /// Retrieves a VPS by its ID.
 pub async fn get_vps_by_id(pool: &PgPool, vps_id: i32) -> Result<Option<Vps>> {
-    sqlx::query_as!(Vps, r#"SELECT id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, tags, "group", agent_config_override, config_status, last_config_update_at, last_config_error FROM vps WHERE id = $1"#, vps_id)
+    sqlx::query_as!(Vps, r#"SELECT id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, "group", agent_config_override, config_status, last_config_update_at, last_config_error FROM vps WHERE id = $1"#, vps_id)
         .fetch_optional(pool)
         .await
 }
 
 /// Retrieves all VPS entries for a given user.
 pub async fn get_vps_by_user_id(pool: &PgPool, user_id: i32) -> Result<Vec<Vps>> {
-    sqlx::query_as!(Vps, r#"SELECT id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, tags, "group", agent_config_override, config_status, last_config_update_at, last_config_error FROM vps WHERE user_id = $1 ORDER BY created_at DESC"#, user_id)
+    sqlx::query_as!(Vps, r#"SELECT id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, "group", agent_config_override, config_status, last_config_update_at, last_config_error FROM vps WHERE user_id = $1 ORDER BY created_at DESC"#, user_id)
         .fetch_all(pool)
         .await
 }
@@ -125,32 +123,64 @@ pub async fn update_vps(
     vps_id: i32,
     user_id: i32, // To ensure ownership
     name: Option<String>,
-    tags: Option<String>,
     group: Option<String>,
-) -> Result<u64> {
+    tag_ids: Option<Vec<i32>>,
+) -> Result<bool> { // Return bool indicating if a change was made
+    let mut tx = pool.begin().await?;
     let now = Utc::now();
+
+    // 1. Update the main VPS table
     let rows_affected = sqlx::query!(
         r#"
         UPDATE vps
         SET
             name = COALESCE($1, name),
-            tags = COALESCE($2, tags),
-            "group" = COALESCE($3, "group"),
-            updated_at = $4
-        WHERE id = $5 AND user_id = $6
+            "group" = $2,
+            updated_at = $3
+        WHERE id = $4 AND user_id = $5
         "#,
         name,
-        tags,
         group,
         now,
         vps_id,
         user_id
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?
     .rows_affected();
 
-    Ok(rows_affected)
+    // 2. If tag_ids is provided, update the associations.
+    let mut tags_changed = false;
+    if let Some(ids) = tag_ids {
+        tags_changed = true; // The presence of the key indicates an intent to update.
+        // 2a. Delete all existing tags for this VPS
+        sqlx::query!(
+            "DELETE FROM vps_tags WHERE vps_id = $1",
+            vps_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        // 2b. Insert the new tags if the list is not empty
+        if !ids.is_empty() {
+            sqlx::query!(
+                r#"
+                INSERT INTO vps_tags (vps_id, tag_id)
+                SELECT $1, tag_id
+                FROM UNNEST($2::int[]) as tag_id
+                ON CONFLICT (vps_id, tag_id) DO NOTHING
+                "#,
+                vps_id,
+                &ids
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
+
+    tx.commit().await?;
+
+    Ok(rows_affected > 0 || tags_changed)
 }
 
 /// Updates the status of a VPS.
@@ -574,12 +604,13 @@ struct DiskUsageSummary {
 #[derive(FromRow, Debug)]
 struct VpsDetailQueryResult {
     vps_id: i32,
+    vps_user_id: i32,
     vps_name: String,
     vps_ip_address: Option<String>,
     vps_status: String,
     vps_os_type: Option<String>,
     vps_group: Option<String>,
-    vps_tags: Option<String>,
+    vps_tags_json: Option<serde_json::Value>,
     vps_created_at: chrono::DateTime<Utc>,
     // New config fields
     vps_config_status: String,
@@ -602,9 +633,7 @@ pub async fn get_all_vps_with_details_for_cache(pool: &PgPool) -> Result<Vec<Ser
     let query_results = sqlx::query_as::<_, VpsDetailQueryResult>(
         r#"
         WITH RankedMetrics AS (
-            SELECT
-                *,
-                ROW_NUMBER() OVER (PARTITION BY vps_id ORDER BY time DESC) as rn
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY vps_id ORDER BY time DESC) as rn
             FROM performance_metrics
         ),
         LatestVpsMetrics AS (
@@ -613,20 +642,36 @@ pub async fn get_all_vps_with_details_for_cache(pool: &PgPool) -> Result<Vec<Ser
         LatestVpsDiskUsage AS (
             SELECT
                 lvm.vps_id,
-                SUM(pdu.used_bytes) as total_disk_used_bytes,
-                SUM(pdu.total_bytes) as total_disk_total_bytes
+                SUM(pdu.used_bytes)::BIGINT as total_disk_used_bytes,
+                SUM(pdu.total_bytes)::BIGINT as total_disk_total_bytes
             FROM performance_disk_usages pdu
             JOIN LatestVpsMetrics lvm ON pdu.performance_metric_id = lvm.id
             GROUP BY lvm.vps_id
+        ),
+        VpsTagsAggregated AS (
+            SELECT
+                vt.vps_id,
+                json_agg(json_build_object(
+                    'id', t.id,
+                    'name', t.name,
+                    'color', t.color,
+                    'icon', t.icon,
+                    'url', t.url,
+                    'isVisible', t.is_visible
+                )) as tags_json
+            FROM vps_tags vt
+            JOIN tags t ON vt.tag_id = t.id
+            GROUP BY vt.vps_id
         )
         SELECT
             v.id as vps_id,
+            v.user_id as vps_user_id,
             v.name as vps_name,
             v.ip_address as vps_ip_address,
             v.status as vps_status,
             v.os_type as vps_os_type,
             v."group" as vps_group,
-            v.tags as vps_tags,
+            vta.tags_json as vps_tags_json,
             v.created_at as vps_created_at,
             v.config_status as vps_config_status,
             v.last_config_update_at as vps_last_config_update_at,
@@ -639,10 +684,11 @@ pub async fn get_all_vps_with_details_for_cache(pool: &PgPool) -> Result<Vec<Ser
             lvm.uptime_seconds,
             lvdu.total_disk_used_bytes,
             lvdu.total_disk_total_bytes,
-            lvm.time as metric_time -- Select the metric time
+            lvm.time as metric_time
         FROM vps v
         LEFT JOIN LatestVpsMetrics lvm ON v.id = lvm.vps_id
         LEFT JOIN LatestVpsDiskUsage lvdu ON v.id = lvdu.vps_id
+        LEFT JOIN VpsTagsAggregated vta ON v.id = vta.vps_id
         ORDER BY v.id;
         "#,
     )
@@ -651,21 +697,26 @@ pub async fn get_all_vps_with_details_for_cache(pool: &PgPool) -> Result<Vec<Ser
 
     let mut servers_with_details = Vec::new();
     for row in query_results {
+        let tags: Option<Vec<crate::websocket_models::Tag>> = row.vps_tags_json.and_then(|json_value| {
+            serde_json::from_value(json_value).ok()
+        });
+
         let basic_info = ServerBasicInfo {
             id: row.vps_id,
+            user_id: row.vps_user_id,
             name: row.vps_name,
             ip_address: row.vps_ip_address,
             status: row.vps_status,
             group: row.vps_group,
-            tags: row.vps_tags,
+            tags,
             config_status: row.vps_config_status,
             last_config_update_at: row.vps_last_config_update_at,
             last_config_error: row.vps_last_config_error,
         };
 
-        let latest_metrics = if row.cpu_usage_percent.is_some() && row.metric_time.is_some() { // Ensure metric_time is also present
+        let latest_metrics = if row.cpu_usage_percent.is_some() && row.metric_time.is_some() {
             Some(ServerMetricsSnapshot {
-                time: row.metric_time.unwrap(), // Use the metric_time
+                time: row.metric_time.unwrap(),
                 cpu_usage_percent: row.cpu_usage_percent.unwrap_or(0.0) as f32,
                 memory_usage_bytes: row.memory_usage_bytes.unwrap_or(0) as u64,
                 memory_total_bytes: row.memory_total_bytes.unwrap_or(0) as u64,
@@ -693,6 +744,122 @@ pub async fn get_all_vps_with_details_for_cache(pool: &PgPool) -> Result<Vec<Ser
 // --- Settings Service Functions ---
 
 use super::models::Setting;
+/// Retrieves all VPS for a specific user along with their latest metrics and disk usage.
+pub async fn get_all_vps_with_details_for_user(pool: &PgPool, user_id: i32) -> Result<Vec<ServerWithDetails>> {
+    let query_results = sqlx::query_as::<_, VpsDetailQueryResult>(
+        r#"
+        WITH RankedMetrics AS (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY vps_id ORDER BY time DESC) as rn
+            FROM performance_metrics
+            WHERE vps_id IN (SELECT id FROM vps WHERE user_id = $1) -- Pre-filter metrics for performance
+        ),
+        LatestVpsMetrics AS (
+            SELECT * FROM RankedMetrics WHERE rn = 1
+        ),
+        LatestVpsDiskUsage AS (
+            SELECT
+                lvm.vps_id,
+                SUM(pdu.used_bytes)::BIGINT as total_disk_used_bytes,
+                SUM(pdu.total_bytes)::BIGINT as total_disk_total_bytes
+            FROM performance_disk_usages pdu
+            JOIN LatestVpsMetrics lvm ON pdu.performance_metric_id = lvm.id
+            GROUP BY lvm.vps_id
+        ),
+        VpsTagsAggregated AS (
+            SELECT
+                vt.vps_id,
+                json_agg(json_build_object(
+                    'id', t.id,
+                    'name', t.name,
+                    'color', t.color,
+                    'icon', t.icon,
+                    'url', t.url,
+                    'isVisible', t.is_visible
+                )) as tags_json
+            FROM vps_tags vt
+            JOIN tags t ON vt.tag_id = t.id
+            WHERE vt.vps_id IN (SELECT id FROM vps WHERE user_id = $1) -- Pre-filter tags for performance
+            GROUP BY vt.vps_id
+        )
+        SELECT
+            v.id as vps_id,
+            v.user_id as vps_user_id,
+            v.name as vps_name,
+            v.ip_address as vps_ip_address,
+            v.status as vps_status,
+            v.os_type as vps_os_type,
+            v."group" as vps_group,
+            vta.tags_json as vps_tags_json,
+            v.created_at as vps_created_at,
+            v.config_status as vps_config_status,
+            v.last_config_update_at as vps_last_config_update_at,
+            v.last_config_error as vps_last_config_error,
+            lvm.cpu_usage_percent,
+            lvm.memory_usage_bytes,
+            lvm.memory_total_bytes,
+            lvm.network_rx_instant_bps,
+            lvm.network_tx_instant_bps,
+            lvm.uptime_seconds,
+            lvdu.total_disk_used_bytes,
+            lvdu.total_disk_total_bytes,
+            lvm.time as metric_time
+        FROM vps v
+        LEFT JOIN LatestVpsMetrics lvm ON v.id = lvm.vps_id
+        LEFT JOIN LatestVpsDiskUsage lvdu ON v.id = lvdu.vps_id
+        LEFT JOIN VpsTagsAggregated vta ON v.id = vta.vps_id
+        WHERE v.user_id = $1 -- Filter for the specific user
+        ORDER BY v.id;
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    let mut servers_with_details = Vec::new();
+    for row in query_results {
+        let tags: Option<Vec<crate::websocket_models::Tag>> = row.vps_tags_json.and_then(|json_value| {
+            serde_json::from_value(json_value).ok()
+        });
+
+        let basic_info = ServerBasicInfo {
+            id: row.vps_id,
+            user_id: row.vps_user_id,
+            name: row.vps_name,
+            ip_address: row.vps_ip_address,
+            status: row.vps_status,
+            group: row.vps_group,
+            tags,
+            config_status: row.vps_config_status,
+            last_config_update_at: row.vps_last_config_update_at,
+            last_config_error: row.vps_last_config_error,
+        };
+
+        let latest_metrics = if row.cpu_usage_percent.is_some() && row.metric_time.is_some() {
+            Some(ServerMetricsSnapshot {
+                time: row.metric_time.unwrap(),
+                cpu_usage_percent: row.cpu_usage_percent.unwrap_or(0.0) as f32,
+                memory_usage_bytes: row.memory_usage_bytes.unwrap_or(0) as u64,
+                memory_total_bytes: row.memory_total_bytes.unwrap_or(0) as u64,
+                network_rx_instant_bps: row.network_rx_instant_bps.map(|val| val as u64),
+                network_tx_instant_bps: row.network_tx_instant_bps.map(|val| val as u64),
+                uptime_seconds: row.uptime_seconds.map(|val| val as u64),
+                disk_used_bytes: row.total_disk_used_bytes.map(|val| val as u64),
+                disk_total_bytes: row.total_disk_total_bytes.map(|val| val as u64),
+            })
+        } else {
+            None
+        };
+
+        servers_with_details.push(ServerWithDetails {
+            basic_info,
+            latest_metrics,
+            os_type: row.vps_os_type,
+            created_at: row.vps_created_at,
+        });
+    }
+
+    Ok(servers_with_details)
+}
 
 /// Retrieves a setting by its key.
 pub async fn get_setting(pool: &PgPool, key: &str) -> Result<Option<Setting>> {
@@ -785,4 +952,333 @@ pub async fn update_vps_config_status(
     .await?
     .rows_affected();
     Ok(rows_affected)
+}
+
+
+// --- Tag Service Functions ---
+
+/// A struct that includes a Tag and its usage count.
+#[derive(FromRow, serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct TagWithCount {
+    pub id: i32,
+    pub user_id: i32,
+    pub name: String,
+    pub color: String,
+    pub icon: Option<String>,
+    pub url: Option<String>,
+    pub is_visible: bool,
+    pub created_at: chrono::DateTime<Utc>,
+    pub updated_at: chrono::DateTime<Utc>,
+    pub vps_count: i64,
+}
+
+
+/// Creates a new tag for a user.
+pub async fn create_tag(
+    pool: &PgPool,
+    user_id: i32,
+    name: &str,
+    color: &str,
+    icon: Option<&str>,
+    url: Option<&str>,
+    is_visible: bool,
+) -> Result<Tag> {
+    let now = Utc::now();
+    sqlx::query_as!(
+        Tag,
+        r#"
+        INSERT INTO tags (user_id, name, color, icon, url, is_visible, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id, user_id, name, color, icon, url, is_visible, created_at, updated_at
+        "#,
+        user_id,
+        name,
+        color,
+        icon,
+        url,
+        is_visible,
+        now,
+        now
+    )
+    .fetch_one(pool)
+    .await
+}
+
+/// Retrieves all tags for a user, including a count of how many VPS use each tag.
+pub async fn get_tags_by_user_id_with_count(pool: &PgPool, user_id: i32) -> Result<Vec<TagWithCount>> {
+    sqlx::query_as!(
+        TagWithCount,
+        r#"
+        SELECT
+            t.id, t.user_id, t.name, t.color, t.icon, t.url, t.is_visible, t.created_at, t.updated_at,
+            COALESCE(COUNT(vt.vps_id), 0) as "vps_count!"
+        FROM tags t
+        LEFT JOIN vps_tags vt ON t.id = vt.tag_id
+        WHERE t.user_id = $1
+        GROUP BY t.id
+        ORDER BY t.name
+        "#,
+        user_id
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// Updates an existing tag.
+pub async fn update_tag(
+    pool: &PgPool,
+    tag_id: i32,
+    user_id: i32, // for authorization
+    name: &str,
+    color: &str,
+    icon: Option<&str>,
+    url: Option<&str>,
+    is_visible: bool,
+) -> Result<u64> {
+    let now = Utc::now();
+    let rows_affected = sqlx::query!(
+        r#"
+        UPDATE tags
+        SET name = $1, color = $2, icon = $3, url = $4, is_visible = $5, updated_at = $6
+        WHERE id = $7 AND user_id = $8
+        "#,
+        name, color, icon, url, is_visible, now, tag_id, user_id
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(rows_affected)
+}
+
+/// Deletes a tag. The ON DELETE CASCADE in the DB will handle vps_tags entries.
+pub async fn delete_tag(pool: &PgPool, tag_id: i32, user_id: i32) -> Result<u64> {
+    let rows_affected = sqlx::query!(
+        "DELETE FROM tags WHERE id = $1 AND user_id = $2",
+        tag_id, user_id
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(rows_affected)
+}
+
+/// Associates a tag with a VPS. Ignores conflicts if the association already exists.
+pub async fn add_tag_to_vps(pool: &PgPool, vps_id: i32, tag_id: i32) -> Result<u64> {
+    let rows_affected = sqlx::query!(
+        "INSERT INTO vps_tags (vps_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        vps_id,
+        tag_id
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(rows_affected)
+}
+
+/// Removes a tag from a VPS.
+pub async fn remove_tag_from_vps(pool: &PgPool, vps_id: i32, tag_id: i32) -> Result<u64> {
+    let rows_affected = sqlx::query!(
+        "DELETE FROM vps_tags WHERE vps_id = $1 AND tag_id = $2",
+        vps_id,
+        tag_id
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(rows_affected)
+}
+
+/// Retrieves all tags for a specific VPS.
+pub async fn get_tags_for_vps(pool: &PgPool, vps_id: i32) -> Result<Vec<Tag>> {
+    sqlx::query_as!(
+        Tag,
+        r#"
+        SELECT t.id, t.user_id, t.name, t.color, t.icon, t.url, t.is_visible, t.created_at, t.updated_at
+        FROM tags t
+        INNER JOIN vps_tags vt ON t.id = vt.tag_id
+        WHERE vt.vps_id = $1
+        ORDER BY t.name
+        "#,
+        vps_id
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// Bulk adds/removes tags for a list of VPS.
+/// This function performs operations in a single transaction.
+pub async fn bulk_update_vps_tags(
+    pool: &PgPool,
+    user_id: i32, // For authorization
+    vps_ids: &[i32],
+    add_tag_ids: &[i32],
+    remove_tag_ids: &[i32],
+) -> Result<(), sqlx::Error> {
+    if vps_ids.is_empty() {
+        return Ok(()); // Nothing to do
+    }
+
+    let mut tx = pool.begin().await?;
+
+    // Authorize: Ensure the user owns all the VPS they are trying to modify.
+    let owned_vps_count = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM vps WHERE id = ANY($1) AND user_id = $2",
+        vps_ids,
+        user_id
+    )
+    .fetch_one(&mut *tx)
+    .await?
+    .unwrap_or(0);
+
+    if owned_vps_count != vps_ids.len() as i64 {
+        // Use RowNotFound to signal an authorization failure to the handler.
+        return Err(sqlx::Error::RowNotFound);
+    }
+
+    // Bulk add tags
+    if !add_tag_ids.is_empty() {
+        sqlx::query!(
+            r#"
+            INSERT INTO vps_tags (vps_id, tag_id)
+            SELECT vps_id, tag_id
+            FROM UNNEST($1::int[]) as vps_id, UNNEST($2::int[]) as tag_id
+            ON CONFLICT (vps_id, tag_id) DO NOTHING
+            "#,
+            vps_ids,
+            add_tag_ids
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    // Bulk remove tags
+    if !remove_tag_ids.is_empty() {
+        sqlx::query!(
+            r#"
+            DELETE FROM vps_tags
+            WHERE vps_id = ANY($1) AND tag_id = ANY($2)
+            "#,
+            vps_ids,
+            remove_tag_ids
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+
+    Ok(())
+}
+/// Retrieves a single VPS with its full details for cache updates.
+pub async fn get_vps_with_details_for_cache_by_id(pool: &PgPool, vps_id: i32) -> Result<Option<ServerWithDetails>> {
+    let query_result = sqlx::query_as::<_, VpsDetailQueryResult>(
+        r#"
+        WITH RankedMetrics AS (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY vps_id ORDER BY time DESC) as rn
+            FROM performance_metrics
+        ),
+        LatestVpsMetrics AS (
+            SELECT * FROM RankedMetrics WHERE rn = 1
+        ),
+        LatestVpsDiskUsage AS (
+            SELECT
+                lvm.vps_id,
+                SUM(pdu.used_bytes)::BIGINT as total_disk_used_bytes,
+                SUM(pdu.total_bytes)::BIGINT as total_disk_total_bytes
+            FROM performance_disk_usages pdu
+            JOIN LatestVpsMetrics lvm ON pdu.performance_metric_id = lvm.id
+            GROUP BY lvm.vps_id
+        ),
+        VpsTagsAggregated AS (
+            SELECT
+                vt.vps_id,
+                json_agg(json_build_object(
+                    'id', t.id,
+                    'name', t.name,
+                    'color', t.color,
+                    'icon', t.icon,
+                    'url', t.url,
+                    'isVisible', t.is_visible
+                )) as tags_json
+            FROM vps_tags vt
+            JOIN tags t ON vt.tag_id = t.id
+            GROUP BY vt.vps_id
+        )
+        SELECT
+            v.id as vps_id,
+            v.user_id as vps_user_id,
+            v.name as vps_name,
+            v.ip_address as vps_ip_address,
+            v.status as vps_status,
+            v.os_type as vps_os_type,
+            v."group" as vps_group,
+            vta.tags_json as vps_tags_json,
+            v.created_at as vps_created_at,
+            v.config_status as vps_config_status,
+            v.last_config_update_at as vps_last_config_update_at,
+            v.last_config_error as vps_last_config_error,
+            lvm.cpu_usage_percent,
+            lvm.memory_usage_bytes,
+            lvm.memory_total_bytes,
+            lvm.network_rx_instant_bps,
+            lvm.network_tx_instant_bps,
+            lvm.uptime_seconds,
+            lvdu.total_disk_used_bytes,
+            lvdu.total_disk_total_bytes,
+            lvm.time as metric_time
+        FROM vps v
+        LEFT JOIN LatestVpsMetrics lvm ON v.id = lvm.vps_id
+        LEFT JOIN LatestVpsDiskUsage lvdu ON v.id = lvdu.vps_id
+        LEFT JOIN VpsTagsAggregated vta ON v.id = vta.vps_id
+        WHERE v.id = $1
+        "#,
+    )
+    .bind(vps_id)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(row) = query_result {
+        let tags: Option<Vec<crate::websocket_models::Tag>> = row.vps_tags_json.and_then(|json_value| {
+            serde_json::from_value(json_value).ok()
+        });
+
+        let basic_info = ServerBasicInfo {
+            id: row.vps_id,
+            user_id: row.vps_user_id,
+            name: row.vps_name,
+            ip_address: row.vps_ip_address,
+            status: row.vps_status,
+            group: row.vps_group,
+            tags,
+            config_status: row.vps_config_status,
+            last_config_update_at: row.vps_last_config_update_at,
+            last_config_error: row.vps_last_config_error,
+        };
+
+        let latest_metrics = if row.cpu_usage_percent.is_some() && row.metric_time.is_some() {
+            Some(ServerMetricsSnapshot {
+                time: row.metric_time.unwrap(),
+                cpu_usage_percent: row.cpu_usage_percent.unwrap_or(0.0) as f32,
+                memory_usage_bytes: row.memory_usage_bytes.unwrap_or(0) as u64,
+                memory_total_bytes: row.memory_total_bytes.unwrap_or(0) as u64,
+                network_rx_instant_bps: row.network_rx_instant_bps.map(|val| val as u64),
+                network_tx_instant_bps: row.network_tx_instant_bps.map(|val| val as u64),
+                uptime_seconds: row.uptime_seconds.map(|val| val as u64),
+                disk_used_bytes: row.total_disk_used_bytes.map(|val| val as u64),
+                disk_total_bytes: row.total_disk_total_bytes.map(|val| val as u64),
+            })
+        } else {
+            None
+        };
+
+        Ok(Some(ServerWithDetails {
+            basic_info,
+            latest_metrics,
+            os_type: row.vps_os_type,
+            created_at: row.vps_created_at,
+        }))
+    } else {
+        Ok(None)
+    }
 }

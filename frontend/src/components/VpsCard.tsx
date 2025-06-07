@@ -18,6 +18,8 @@ import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_REBOOTING, STATUS_PROVISIONING, S
 interface VpsCardProps {
   server: VpsListItemResponse;
   onEdit: (server: VpsListItemResponse) => void;
+  isSelected: boolean;
+  onSelectionChange: (vpsId: number, isSelected: boolean) => void;
 }
 
 const getStatusAppearance = (status: ServerStatus): { cardBorderClass: string; badgeBgClass: string; textClass: string; icon?: React.ReactNode } => {
@@ -57,7 +59,18 @@ const formatNetworkSpeed = (bps: number | undefined | null): string => {
   return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
 };
 
-const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit }) => {
+const getContrastingTextColor = (hexColor: string): string => {
+  if (!hexColor) return '#000000';
+  const hex = hexColor.replace('#', '');
+  if (hex.length !== 6) return '#000000';
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+  return (yiq >= 128) ? '#000000' : '#ffffff';
+};
+
+const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelectionChange }) => {
   const { cardBorderClass, badgeBgClass, textClass: statusTextClass } = getStatusAppearance(server.status);
   const metrics = server.latestMetrics;
 
@@ -71,7 +84,16 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit }) => {
   const diskUsagePercent = diskTotalBytes && diskUsedBytes !== null ? (diskUsedBytes / diskTotalBytes) * 100 : null;
 
   return (
-    <div className={`bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300 overflow-hidden flex flex-col border-l-4 ${cardBorderClass}`}>
+    <div className={`relative bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300 overflow-hidden flex flex-col border-l-4 ${cardBorderClass}`}>
+      <div className="absolute top-2 right-2 z-10">
+        <input
+          type="checkbox"
+          className="checkbox checkbox-primary"
+          checked={isSelected}
+          onChange={(e) => onSelectionChange(server.id, e.target.checked)}
+          aria-label={`Select ${server.name}`}
+        />
+      </div>
       <div className="p-4">
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-base font-semibold text-slate-800 truncate" title={server.name}>
@@ -87,13 +109,30 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit }) => {
           <GlobeAltIcon className="w-3.5 h-3.5 mr-1.5 text-slate-400 flex-shrink-0" />
           {server.ipAddress || 'N/A'}
         </p>
-        {server.tags && (
+        {server.tags && server.tags.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
-            {server.tags.split(',').map(tag => tag.trim()).filter(tag => tag).map((tag, index) => (
-              <span key={index} className="px-2 py-0.5 text-xs font-medium rounded-full bg-sky-100 text-sky-800">
-                {tag}
-              </span>
-            ))}
+            {server.tags.filter(tag => tag.isVisible).map(tag => {
+              const tagComponent = (
+                <span
+                  className="px-2 py-0.5 text-xs font-medium rounded-full"
+                  style={{
+                    backgroundColor: tag.color,
+                    color: getContrastingTextColor(tag.color),
+                  }}
+                >
+                  {tag.name}
+                </span>
+              );
+
+              if (tag.url) {
+                return (
+                  <a href={tag.url} target="_blank" rel="noopener noreferrer" key={tag.id}>
+                    {tagComponent}
+                  </a>
+                );
+              }
+              return <div key={tag.id}>{tagComponent}</div>;
+            })}
           </div>
         )}
         {/* Optional: Add OS Type or other quick info if available and desired */}

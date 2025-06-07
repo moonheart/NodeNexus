@@ -1,16 +1,31 @@
 use serde::Serialize;
 use chrono::{DateTime, Utc};
 
+/// Represents a tag as it will be sent to the frontend via WebSocket.
+use serde::Deserialize;
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Tag {
+    pub id: i32,
+    pub name: String,
+    pub color: String,
+    pub icon: Option<String>,
+    pub url: Option<String>,
+    pub is_visible: bool,
+}
+
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerBasicInfo {
     pub id: i32,
+    pub user_id: i32,
     pub name: String,
     pub ip_address: Option<String>,
     pub status: String,
     #[serde(rename = "group")]
     pub group: Option<String>,
-    pub tags: Option<String>,
+    pub tags: Option<Vec<Tag>>, // Changed from Option<String>
     // Config status fields
     pub config_status: String,
     pub last_config_update_at: Option<DateTime<Utc>>,

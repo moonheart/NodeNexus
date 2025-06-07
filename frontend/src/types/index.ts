@@ -30,7 +30,7 @@ export interface Vps {
   metadata: Record<string, unknown> | null; // Can be refined if the structure of metadata is known
   created_at: string; // Represents a `DateTime<Utc>` string, e.g., "2025-06-02T12:34:56.789Z"
   updated_at: string; // Represents a `DateTime<Utc>` string
-  tags?: string | null;
+  tags?: Tag[];
   group?: string | null;
   latest_metrics?: LatestPerformanceMetric | null; // Added for real-time display
 }
@@ -108,7 +108,7 @@ export interface VpsListItemResponse {
   metadata: Record<string, unknown> | null;
   createdAt: string; // camelCase
   updatedAt: string; // camelCase
-  tags?: string | null;
+  tags?: Tag[];
   group?: string | null;
   latestMetrics?: LatestPerformanceMetric | null; // camelCase
   configStatus: string;
@@ -140,4 +140,79 @@ export interface AgentConfig {
   feature_flags: Record<string, string>;
   log_level: string;
   heartbeat_interval_seconds: number;
+}
+
+/**
+ * Represents a Tag that can be associated with a VPS.
+ * This should match the `Tag` and `TagWithCount` structs from the backend.
+ */
+export interface Tag {
+  id: number;
+  userId: number;
+  name: string;
+  color: string;
+  icon?: string | null;
+  url?: string | null;
+  isVisible: boolean;
+  createdAt: string;
+  updatedAt: string;
+  vpsCount?: number; // From TagWithCount
+}
+
+/**
+ * Type for creating a new tag, matches backend CreateTagRequest
+ */
+export interface CreateTagPayload {
+  name: string;
+  color: string;
+  icon?: string;
+  url?: string;
+  is_visible?: boolean;
+}
+
+/**
+ * Type for updating a tag, matches backend UpdateTagRequest
+ */
+export interface UpdateTagPayload {
+  name: string;
+  color: string;
+  icon?: string;
+  url?: string;
+  is_visible: boolean;
+}
+
+// Type for creating a new tag, matches backend CreateTagRequest
+export interface CreateTagPayload {
+  name: string;
+  color: string;
+  icon?: string;
+  url?: string;
+  is_visible?: boolean;
+}
+
+// Type for updating a tag, matches backend UpdateTagRequest
+export interface UpdateTagPayload {
+  name: string;
+  color: string;
+  icon?: string;
+  url?: string;
+  is_visible: boolean;
+}
+
+// Type for creating a new tag, matches backend CreateTagRequest
+export interface CreateTagPayload {
+  name: string;
+  color: string;
+  icon?: string;
+  url?: string;
+  is_visible?: boolean;
+}
+
+// Type for updating a tag, matches backend UpdateTagRequest
+export interface UpdateTagPayload {
+  name: string;
+  color: string;
+  icon?: string;
+  url?: string;
+  is_visible: boolean;
 }

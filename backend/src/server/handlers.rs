@@ -227,23 +227,13 @@ pub async fn handle_connection(
                                                        // For now, log it. Ideally, the cache should be pre-populated.
                                                        // Or, fetch basic info and insert.
                                                        eprintln!("[{}] VPS ID {} not found in live_server_data_cache during metrics update. Attempting to fetch and insert.", connection_id, vps_db_id_from_msg);
-                                                       // Attempt to fetch basic info and create an entry
-                                                       match services::get_vps_by_id(&pool_clone, vps_db_id_from_msg).await {
-                                                           Ok(Some(db_vps)) => {
-                                                               let basic_info = ServerBasicInfo {
-                                                                   id: db_vps.id,
-                                                                   name: db_vps.name,
-                                                                   ip_address: db_vps.ip_address,
-                                                                   status: db_vps.status,
-                                                                   group: db_vps.group,
-                                                                   tags: db_vps.tags,
-                                                                   config_status: db_vps.config_status,
-                                                                   last_config_update_at: db_vps.last_config_update_at,
-                                                                   last_config_error: db_vps.last_config_error,
-                                                               };
-                                                               let snapshot_time_for_new_entry = Utc.timestamp_millis_opt(latest_snapshot_proto.timestamp_unix_ms).single().unwrap_or_else(Utc::now);
-                                                               let metrics_snapshot = ServerMetricsSnapshot {
-                                                                   time: snapshot_time_for_new_entry, // Add time from proto
+                                                       // Attempt to fetch full details (including tags) and create a cache entry.
+                                                       match services::get_vps_with_details_for_cache_by_id(&pool_clone, vps_db_id_from_msg).await {
+                                                           Ok(Some(mut details)) => {
+                                                               // The fetched details might not have metrics, but we have them now.
+                                                               let snapshot_time = Utc.timestamp_millis_opt(latest_snapshot_proto.timestamp_unix_ms).single().unwrap_or_else(Utc::now);
+                                                               details.latest_metrics = Some(ServerMetricsSnapshot {
+                                                                   time: snapshot_time,
                                                                    cpu_usage_percent: latest_snapshot_proto.cpu_overall_usage_percent,
                                                                    memory_usage_bytes: latest_snapshot_proto.memory_usage_bytes,
                                                                    memory_total_bytes: latest_snapshot_proto.memory_total_bytes,
@@ -252,21 +242,15 @@ pub async fn handle_connection(
                                                                    uptime_seconds: Some(latest_snapshot_proto.uptime_seconds),
                                                                    disk_used_bytes: latest_snapshot_proto.disk_usages.first().map(|d| d.used_bytes),
                                                                    disk_total_bytes: latest_snapshot_proto.disk_usages.first().map(|d| d.total_bytes),
-                                                               };
-                                                               let new_server_details = ServerWithDetails {
-                                                                   basic_info,
-                                                                   latest_metrics: Some(metrics_snapshot),
-                                                                   os_type: db_vps.os_type,
-                                                                   created_at: db_vps.created_at,
-                                                               };
-                                                               cache_guard.insert(vps_db_id_from_msg, new_server_details);
-                                                               println!("[{}] Inserted new entry into live cache for VPS ID {}", connection_id, vps_db_id_from_msg);
+                                                               });
+                                                               cache_guard.insert(vps_db_id_from_msg, details);
+                                                               println!("[{}] Inserted new entry with full details into live cache for VPS ID {}", connection_id, vps_db_id_from_msg);
                                                            }
                                                            Ok(None) => {
-                                                               eprintln!("[{}] VPS ID {} not found in DB either. Cannot update cache.", connection_id, vps_db_id_from_msg);
+                                                               eprintln!("[{}] VPS ID {} not found in DB. Cannot create cache entry.", connection_id, vps_db_id_from_msg);
                                                            }
                                                            Err(e) => {
-                                                               eprintln!("[{}] Error fetching VPS ID {} from DB for cache update: {}", connection_id, vps_db_id_from_msg, e);
+                                                               eprintln!("[{}] Error fetching full VPS details for cache insertion (ID {}): {}", connection_id, vps_db_id_from_msg, e);
                                                            }
                                                        }
                                                    }
@@ -292,18 +276,11 @@ pub async fn handle_connection(
                                            Ok(_) => {
                                                println!("[{}] Successfully updated config status for VPS ID {}. Triggering cache update and broadcast.", connection_id, vps_db_id_from_msg);
                                                
-                                               // Correctly update cache and broadcast
-                                               let updated_vps_result = services::get_vps_by_id(&pool_clone, vps_db_id_from_msg).await;
-                                               if let Ok(Some(updated_vps)) = updated_vps_result {
-                                                   let latest_metric_db = services::get_latest_performance_metric_for_vps(&pool_clone, vps_db_id_from_msg).await.unwrap_or_default();
-                                                   let latest_disk_summary = services::get_latest_disk_usage_summary(&pool_clone, vps_db_id_from_msg).await.unwrap_or_default();
-                                                   let latest_metrics_response: Option<LatestPerformanceMetricResponse> = latest_metric_db.map(|m| (m, latest_disk_summary).into());
-                                                   
-                                                   let server_details_for_cache: ServerWithDetails = (updated_vps, latest_metrics_response).into();
-
+                                               // Use the unified function to get the full details and broadcast.
+                                               if let Ok(Some(details)) = services::get_vps_with_details_for_cache_by_id(&pool_clone, vps_db_id_from_msg).await {
                                                    {
                                                        let mut cache_guard = cache_clone.lock().await;
-                                                       cache_guard.insert(vps_db_id_from_msg, server_details_for_cache);
+                                                       cache_guard.insert(vps_db_id_from_msg, details);
                                                    }
 
                                                    let servers_list: Vec<ServerWithDetails> = {
@@ -315,10 +292,10 @@ pub async fn handle_connection(
                                                    if broadcaster_clone.send(full_list_push).is_err() {
                                                        println!("[{}] No web clients listening, skipping broadcast.", connection_id);
                                                    } else {
-                                                       println!("[{}] Broadcasted updated server list.", connection_id);
+                                                       println!("[{}] Broadcasted updated server list after config update.", connection_id);
                                                    }
                                                } else {
-                                                   eprintln!("[{}] Failed to re-fetch VPS after config status update for VPS ID: {}", connection_id, vps_db_id_from_msg);
+                                                   eprintln!("[{}] Failed to re-fetch VPS details after config status update for VPS ID: {}", connection_id, vps_db_id_from_msg);
                                                }
                                            }
                                            Err(e) => eprintln!("[{}] Failed to update config status for VPS ID {}: {}", connection_id, vps_db_id_from_msg, e),

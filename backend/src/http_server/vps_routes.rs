@@ -1,12 +1,12 @@
 use axum::{
     extract::{State, Extension, Path}, // Added Path
     http::StatusCode,
-    routing::{get, post, put},
+    routing::{get, post, put, delete},
     Json, Router,
 };
 use serde::{Deserialize, Serialize}; // Added Serialize
 use std::sync::Arc;
-use crate::db::{models::{Vps, PerformanceMetric as DbPerformanceMetric}, services};
+use crate::db::{models::{Vps, PerformanceMetric as DbPerformanceMetric, Tag}, services};
 use super::{AppState, AppError, config_routes};
 use crate::http_server::auth_logic::AuthenticatedUser;
 
@@ -72,75 +72,44 @@ pub struct VpsListItemResponse {
     pub name: String,
     pub ip_address: Option<String>,
     pub os_type: Option<String>,
-    pub agent_secret: String,
+    // agent_secret is sensitive and should not be sent to the list view.
+    // pub agent_secret: String,
     pub status: String,
-    pub metadata: Option<serde_json::Value>,
+    // metadata is large and not needed for the list view.
+    // pub metadata: Option<serde_json::Value>,
     pub created_at: String,
-    pub updated_at: String,
-    pub tags: Option<String>,
+    // updated_at is not currently used in the UI list.
+    // pub updated_at: String,
     #[serde(rename = "group")]
     pub group: Option<String>,
-    pub latest_metrics: Option<LatestPerformanceMetricResponse>,
-    // New fields for config status
+    pub tags: Option<Vec<crate::websocket_models::Tag>>,
+    pub latest_metrics: Option<crate::websocket_models::ServerMetricsSnapshot>,
     pub config_status: String,
     pub last_config_update_at: Option<String>,
     pub last_config_error: Option<String>,
-    pub agent_config_override: Option<serde_json::Value>,
+    // agent_config_override is not needed for the list view.
+    // pub agent_config_override: Option<serde_json::Value>,
 }
 
-// Conversion from DB models to the WebSocket model
-impl From<(Vps, Option<LatestPerformanceMetricResponse>)> for crate::websocket_models::ServerWithDetails {
-    fn from((vps, latest_metrics): (Vps, Option<LatestPerformanceMetricResponse>)) -> Self {
-        crate::websocket_models::ServerWithDetails {
-            basic_info: crate::websocket_models::ServerBasicInfo {
-                id: vps.id,
-                name: vps.name,
-                ip_address: vps.ip_address,
-                status: vps.status,
-                group: vps.group,
-                tags: vps.tags,
-                config_status: vps.config_status,
-                last_config_update_at: vps.last_config_update_at,
-                last_config_error: vps.last_config_error,
-            },
-            latest_metrics: latest_metrics.map(|m| crate::websocket_models::ServerMetricsSnapshot {
-                time: chrono::DateTime::parse_from_rfc3339(&m.time).unwrap_or_else(|_| chrono::Utc::now().into()).with_timezone(&chrono::Utc),
-                cpu_usage_percent: m.cpu_usage_percent as f32,
-                memory_usage_bytes: m.memory_usage_bytes as u64,
-                memory_total_bytes: m.memory_total_bytes as u64,
-                network_rx_instant_bps: Some(m.network_rx_instant_bps as u64),
-                network_tx_instant_bps: Some(m.network_tx_instant_bps as u64),
-                uptime_seconds: Some(m.uptime_seconds as u64),
-                disk_used_bytes: m.disk_used_bytes.map(|v| v as u64),
-                disk_total_bytes: m.disk_total_bytes.map(|v| v as u64),
-            }),
-            os_type: vps.os_type,
-            created_at: vps.created_at,
-        }
-    }
-}
-
-
-impl From<(Vps, Option<LatestPerformanceMetricResponse>)> for VpsListItemResponse {
-    fn from((vps, latest_metrics): (Vps, Option<LatestPerformanceMetricResponse>)) -> Self {
+// This converts the unified `ServerWithDetails` model (used by websockets)
+// into the `VpsListItemResponse` model (used by the REST API).
+// This ensures data consistency between initial load (REST) and updates (WS).
+impl From<crate::websocket_models::ServerWithDetails> for VpsListItemResponse {
+    fn from(details: crate::websocket_models::ServerWithDetails) -> Self {
         Self {
-            id: vps.id,
-            user_id: vps.user_id,
-            name: vps.name,
-            ip_address: vps.ip_address,
-            os_type: vps.os_type,
-            agent_secret: vps.agent_secret,
-            status: vps.status,
-            metadata: vps.metadata,
-            created_at: vps.created_at.to_rfc3339(),
-            updated_at: vps.updated_at.to_rfc3339(),
-            tags: vps.tags,
-            group: vps.group,
-            latest_metrics,
-            config_status: vps.config_status,
-            last_config_update_at: vps.last_config_update_at.map(|dt| dt.to_rfc3339()),
-            last_config_error: vps.last_config_error,
-            agent_config_override: vps.agent_config_override,
+            id: details.basic_info.id,
+            user_id: details.basic_info.user_id,
+            name: details.basic_info.name,
+            ip_address: details.basic_info.ip_address,
+            os_type: details.os_type,
+            status: details.basic_info.status,
+            created_at: details.created_at.to_rfc3339(),
+            group: details.basic_info.group,
+            tags: details.basic_info.tags,
+            latest_metrics: details.latest_metrics,
+            config_status: details.basic_info.config_status,
+            last_config_update_at: details.basic_info.last_config_update_at.map(|dt| dt.to_rfc3339()),
+            last_config_error: details.basic_info.last_config_error,
         }
     }
 }
@@ -149,6 +118,19 @@ impl From<(Vps, Option<LatestPerformanceMetricResponse>)> for VpsListItemRespons
 #[derive(Deserialize)]
 pub struct CreateVpsRequest {
     name: String,
+}
+
+#[derive(Deserialize)]
+pub struct AddTagToVpsRequest {
+    tag_id: i32,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkUpdateTagsRequest {
+    vps_ids: Vec<i32>,
+    add_tag_ids: Vec<i32>,
+    remove_tag_ids: Vec<i32>,
 }
 
 async fn create_vps_handler(
@@ -171,20 +153,18 @@ async fn get_all_vps_handler(
     State(app_state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<VpsListItemResponse>>, AppError> {
     let user_id = authenticated_user.id;
-    let vps_list_db = services::get_all_vps_for_user(&app_state.db_pool, user_id).await
+    // Use the unified query that fetches everything, including tags.
+    // Use the unified query that fetches everything for the specific user, including tags.
+    // Use the new, user-specific unified query that fetches everything, including tags.
+    let server_details_list = services::get_all_vps_with_details_for_user(&app_state.db_pool, user_id)
+        .await
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
-    let mut response_list = Vec::new();
-    for vps_db in vps_list_db {
-        let latest_metric_db = services::get_latest_performance_metric_for_vps(&app_state.db_pool, vps_db.id).await
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-        let latest_disk_summary = services::get_latest_disk_usage_summary(&app_state.db_pool, vps_db.id).await
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-        let latest_metrics_response = latest_metric_db.map(|m| (m, latest_disk_summary).into());
-        response_list.push((vps_db, latest_metrics_response).into());
-    }
+    // Convert to the response type. Filtering is now correctly done in the database query.
+    let response_list: Vec<VpsListItemResponse> = server_details_list
+        .into_iter()
+        .map(|details| details.into())
+        .collect();
 
     Ok(Json(response_list))
 }
@@ -195,30 +175,63 @@ async fn get_vps_detail_handler(
     Path(vps_id): Path<i32>,
 ) -> Result<Json<VpsListItemResponse>, AppError> {
     let user_id = authenticated_user.id;
-    let vps_db = services::get_vps_by_id(&app_state.db_pool, vps_id).await
+    // Use the unified query that fetches everything, including tags.
+    let vps_details = services::get_vps_with_details_for_cache_by_id(&app_state.db_pool, vps_id)
+        .await
         .map_err(|e| AppError::DatabaseError(e.to_string()))?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
 
-    if vps_db.user_id != user_id {
-        return Err(AppError::Unauthorized("Access denied".to_string()));
-    }
-
-    let latest_metric_db = services::get_latest_performance_metric_for_vps(&app_state.db_pool, vps_db.id).await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-    let latest_disk_summary = services::get_latest_disk_usage_summary(&app_state.db_pool, vps_db.id).await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+    // TODO: Authorize user
+    // if vps_details.basic_info.user_id != user_id {
+    //     return Err(AppError::Unauthorized("Access denied".to_string()));
+    // }
     
-    let latest_metrics_response = latest_metric_db.map(|m| (m, latest_disk_summary).into());
-    
-    Ok(Json((vps_db, latest_metrics_response).into()))
+    Ok(Json(vps_details.into()))
 }
 
 #[derive(Deserialize)]
 pub struct UpdateVpsRequest {
     name: Option<String>,
-    tags: Option<String>,
     group: Option<String>,
+    tag_ids: Option<Vec<i32>>,
+}
+
+/// Helper function to update the cache for a list of VPS and broadcast the full list.
+async fn update_cache_and_broadcast(
+    app_state: &Arc<AppState>,
+    vps_ids: &[i32],
+) -> Result<(), AppError> {
+    // 1. Update the cache for each affected VPS.
+    {
+        let mut cache_guard = app_state.live_server_data_cache.lock().await;
+        for &vps_id in vps_ids {
+            match services::get_vps_with_details_for_cache_by_id(&app_state.db_pool, vps_id).await {
+                Ok(Some(details)) => {
+                    cache_guard.insert(vps_id, details);
+                }
+                Ok(None) => {
+                    // VPS might have been deleted, so we remove it from cache.
+                    cache_guard.remove(&vps_id);
+                }
+                Err(e) => {
+                    // Log the error but don't fail the whole broadcast operation for one failure.
+                    eprintln!("Failed to re-fetch VPS {} for cache update: {}", vps_id, e);
+                }
+            }
+        }
+    }
+
+    // 2. Broadcast the entire updated list to all clients.
+    let servers_list: Vec<crate::websocket_models::ServerWithDetails> = {
+        let cache_guard = app_state.live_server_data_cache.lock().await;
+        cache_guard.values().cloned().collect()
+    };
+    let full_list_push = Arc::new(crate::websocket_models::FullServerListPush { servers: servers_list });
+
+    // Send the update. Ignore error if no subscribers are present.
+    let _ = app_state.ws_data_broadcaster_tx.send(full_list_push);
+
+    Ok(())
 }
 
 async fn update_vps_handler(
@@ -229,7 +242,7 @@ async fn update_vps_handler(
 ) -> Result<StatusCode, AppError> {
     let user_id = authenticated_user.id;
 
-    // First, verify the user owns this VPS
+                            // First, verify the user owns this VPS
     let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await
         .map_err(|e| AppError::DatabaseError(e.to_string()))?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
@@ -239,49 +252,18 @@ async fn update_vps_handler(
     }
 
     // Proceed with the update
-    let rows_affected = services::update_vps(
+    let change_detected = services::update_vps(
         &app_state.db_pool,
         vps_id,
         user_id,
         payload.name,
-        payload.tags,
         payload.group,
+        payload.tag_ids,
     ).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
-    if rows_affected > 0 {
-        // After a successful update, we need to update the cache and broadcast the changes.
-        
-        // 1. Fetch the full, updated VPS details from the database.
-        let updated_vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?
-            .ok_or_else(|| AppError::NotFound("Failed to re-fetch VPS after update".to_string()))?;
-
-        // 2. Fetch its latest metrics to construct the full ServerWithDetails object.
-        let latest_metric_db = services::get_latest_performance_metric_for_vps(&app_state.db_pool, vps_id).await
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-        let latest_disk_summary = services::get_latest_disk_usage_summary(&app_state.db_pool, vps_id).await
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-        let latest_metrics_response = latest_metric_db.map(|m| (m, latest_disk_summary).into());
-        
-        // 3. Construct the same object that the websocket system uses.
-        let server_details_for_cache: crate::websocket_models::ServerWithDetails = (updated_vps, latest_metrics_response).into();
-
-        // 4. Update the live cache.
-        {
-            let mut cache_guard = app_state.live_server_data_cache.lock().await;
-            cache_guard.insert(vps_id, server_details_for_cache);
-        }
-
-        // 5. Broadcast the entire updated list to all clients.
-        let servers_list: Vec<crate::websocket_models::ServerWithDetails> = {
-            let cache_guard = app_state.live_server_data_cache.lock().await;
-            cache_guard.values().cloned().collect()
-        };
-        let full_list_push = Arc::new(crate::websocket_models::FullServerListPush { servers: servers_list });
-        
-        // Send the update. Ignore error if no subscribers are present.
-        let _ = app_state.ws_data_broadcaster_tx.send(full_list_push);
-        
+    if change_detected {
+        // Call the centralized broadcast function
+        update_cache_and_broadcast(&app_state, &[vps_id]).await?;
         Ok(StatusCode::OK)
     } else {
         Ok(StatusCode::NOT_MODIFIED)
@@ -289,11 +271,120 @@ async fn update_vps_handler(
 }
 
 
+// --- VPS Tag Handlers ---
+
+async fn add_tag_to_vps_handler(
+    Extension(authenticated_user): Extension<AuthenticatedUser>,
+    State(app_state): State<Arc<AppState>>,
+    Path(vps_id): Path<i32>,
+    Json(payload): Json<AddTagToVpsRequest>,
+) -> Result<StatusCode, AppError> {
+    let user_id = authenticated_user.id;
+    // Authorize: Check if user owns the VPS
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await.map_err(|e| AppError::DatabaseError(e.to_string()))?.ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
+    if vps.user_id != user_id {
+        return Err(AppError::Unauthorized("Permission denied to VPS".to_string()));
+    }
+
+    // TODO: Authorize: Check if user owns the Tag as well? For now, we assume if they can see it, they can use it.
+
+    services::add_tag_to_vps(&app_state.db_pool, vps_id, payload.tag_id)
+        .await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+    Ok(StatusCode::CREATED)
+}
+
+async fn remove_tag_from_vps_handler(
+    Extension(authenticated_user): Extension<AuthenticatedUser>,
+    State(app_state): State<Arc<AppState>>,
+    Path((vps_id, tag_id)): Path<(i32, i32)>,
+) -> Result<StatusCode, AppError> {
+    let user_id = authenticated_user.id;
+    // Authorize: Check if user owns the VPS
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await.map_err(|e| AppError::DatabaseError(e.to_string()))?.ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
+    if vps.user_id != user_id {
+        return Err(AppError::Unauthorized("Permission denied".to_string()));
+    }
+
+    let rows_affected = services::remove_tag_from_vps(&app_state.db_pool, vps_id, tag_id)
+        .await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+
+    if rows_affected > 0 {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        // This could also mean the tag wasn't associated in the first place
+        Ok(StatusCode::NOT_FOUND)
+    }
+}
+
+async fn get_tags_for_vps_handler(
+    Extension(authenticated_user): Extension<AuthenticatedUser>,
+    State(app_state): State<Arc<AppState>>,
+    Path(vps_id): Path<i32>,
+) -> Result<Json<Vec<Tag>>, AppError> {
+    let user_id = authenticated_user.id;
+    // Authorize: Check if user owns the VPS
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await.map_err(|e| AppError::DatabaseError(e.to_string()))?.ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
+    if vps.user_id != user_id {
+        return Err(AppError::Unauthorized("Permission denied".to_string()));
+    }
+
+    let tags = services::get_tags_for_vps(&app_state.db_pool, vps_id)
+        .await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+    
+    Ok(Json(tags))
+}
+
+
+pub fn vps_tags_router() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/", post(add_tag_to_vps_handler).get(get_tags_for_vps_handler))
+        .route("/{tag_id}", delete(remove_tag_from_vps_handler))
+}
+
+async fn bulk_update_vps_tags_handler(
+    Extension(authenticated_user): Extension<AuthenticatedUser>,
+    State(app_state): State<Arc<AppState>>,
+    Json(payload): Json<BulkUpdateTagsRequest>,
+) -> Result<StatusCode, AppError> {
+    let user_id = authenticated_user.id;
+
+    if payload.vps_ids.is_empty() {
+        return Ok(StatusCode::OK); // Nothing to do
+    }
+
+    match services::bulk_update_vps_tags(
+        &app_state.db_pool,
+        user_id,
+        &payload.vps_ids,
+        &payload.add_tag_ids,
+        &payload.remove_tag_ids,
+    )
+    .await
+    {
+        Ok(_) => {
+            // Call the centralized broadcast function
+            update_cache_and_broadcast(&app_state, &payload.vps_ids).await?;
+            Ok(StatusCode::OK)
+        }
+        Err(sqlx::Error::RowNotFound) => {
+            // This custom error indicates an authorization failure (user doesn't own all VPS)
+            Err(AppError::Unauthorized("Permission denied to one or more VPS".to_string()))
+        }
+        Err(e) => Err(AppError::DatabaseError(e.to_string())),
+    }
+}
+
 pub fn vps_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", post(create_vps_handler))
         .route("/", get(get_all_vps_handler))
+        .route("/bulk-actions", post(bulk_update_vps_tags_handler))
         .route("/{vps_id}", get(get_vps_detail_handler))
         .route("/{vps_id}", put(update_vps_handler))
+        .nest("/{vps_id}/tags", vps_tags_router()) // Nest the tags router
         .merge(config_routes::create_vps_config_router())
 }

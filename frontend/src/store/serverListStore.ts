@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import WebSocketService from '../services/websocketService';
 import { useAuthStore } from './authStore';
-import type { VpsListItemResponse, FullServerListPushType, ViewMode } from '../types';
+import type { VpsListItemResponse, FullServerListPushType, ViewMode, Tag } from '../types';
+import * as tagService from '../services/tagService';
 
 export type ConnectionStatus =
     | 'disconnected'
@@ -19,6 +20,8 @@ export interface ServerListState { // Added export
     error: string | null; // For WebSocket related errors
     websocketService: WebSocketService | null;
     viewMode: ViewMode;
+    allTags: Tag[]; // To store all available tags globally
+    fetchAllTags: () => Promise<void>; // Action to fetch all tags
     setViewMode: (mode: ViewMode) => void;
     initializeWebSocket: () => void;
     disconnectWebSocket: () => void;
@@ -39,6 +42,17 @@ export const useServerListStore = create<ServerListState>()(
     error: null,
     websocketService: null,
     viewMode: 'card', // Default view mode
+    allTags: [],
+
+    fetchAllTags: async () => {
+        try {
+            const tags = await tagService.getTags();
+            set({ allTags: tags });
+        } catch (error) {
+            console.error('Failed to fetch all tags:', error);
+            // Optionally handle the error in the UI
+        }
+    },
 
     setViewMode: (mode) => set({ viewMode: mode }),
 

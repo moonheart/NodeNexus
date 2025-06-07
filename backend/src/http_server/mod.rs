@@ -23,6 +23,7 @@ pub mod metrics_routes;
 pub mod vps_routes; // Added VPS routes module
 pub mod websocket_handler; // Added WebSocket handler module
 pub mod config_routes;
+pub mod tag_routes;
 
 // Application state to share PgPool
 #[derive(Clone)]
@@ -78,6 +79,8 @@ pub enum AppError {
     NotFound(String),
     #[error("Unauthorized: {0}")] // Added Unauthorized
     Unauthorized(String),
+    #[error("Conflict: {0}")]
+    Conflict(String),
 }
 
 impl IntoResponse for AppError {
@@ -94,6 +97,7 @@ impl IntoResponse for AppError {
             AppError::ServerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg), // Or StatusCode::FORBIDDEN depending on context
+           AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
         };
         (status, Json(serde_json::json!({ "error": error_message }))).into_response()
     }
@@ -146,6 +150,10 @@ pub async fn run_http_server(
             "/api/settings",
             config_routes::create_settings_router().route_layer(middleware::from_fn(auth_logic::auth)),
         )
+       .nest(
+           "/api/tags",
+           tag_routes::create_tags_router().route_layer(middleware::from_fn(auth_logic::auth)),
+       )
         .with_state(app_state.clone())
         .layer(cors);
 

@@ -1,44 +1,62 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import Select from 'react-select';
 import CreatableSelect from 'react-select/creatable';
-import { useMemo } from 'react';
-import { updateVps, type UpdateVpsPayload } from '../services/vpsService';
+import { updateVps } from '../services/vpsService';
 import type { VpsListItemResponse } from '../types';
 import axios from 'axios';
+import { useServerListStore } from '../store/serverListStore';
 
 interface EditVpsModalProps {
   isOpen: boolean;
   onClose: () => void;
   vps: VpsListItemResponse | null;
-  allVps: VpsListItemResponse[]; // For suggestions
+  allVps: VpsListItemResponse[]; // Keep for group options for now
   onVpsUpdated: () => void; // Callback to trigger data refresh
 }
 
 const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, allVps, onVpsUpdated }) => {
   const [name, setName] = useState('');
   const [group, setGroup] = useState<{ value: string; label: string } | null>(null);
-  const [tags, setTags] = useState<{ value: string; label: string }[]>([]);
+  const [selectedTags, setSelectedTags] = useState<{ value: number; label: string }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { groupOptions, tagOptions } = useMemo(() => {
-    const allGroups = new Set(allVps.map(v => v.group).filter((g): g is string => !!g));
-    const allTags = new Set(allVps.flatMap(v => v.tags?.split(',') || []).filter(Boolean));
+  const allTags = useServerListStore((state) => state.allTags);
+  const fetchAllTags = useServerListStore((state) => state.fetchAllTags);
+  const servers = useServerListStore((state) => state.servers);
 
-    return {
-      groupOptions: [...allGroups].map(g => ({ value: g, label: g })),
-      tagOptions: [...allTags].map(t => ({ value: t, label: t })),
-    };
+  const groupOptions = useMemo(() => {
+    const allGroups = new Set(allVps.map(v => v.group).filter((g): g is string => !!g));
+    return [...allGroups].map(g => ({ value: g, label: g }));
   }, [allVps]);
 
+  const tagOptions = useMemo(() => {
+    return allTags.map(tag => ({ value: tag.id, label: tag.name }));
+  }, [allTags]);
+
   useEffect(() => {
-    if (vps) {
-      setName(vps.name || '');
-      setGroup(vps.group ? { value: vps.group, label: vps.group } : null);
-      setTags(vps.tags ? vps.tags.split(',').map(t => ({ value: t, label: t })) : []);
+    if (isOpen && fetchAllTags) {
+      fetchAllTags();
+    }
+  }, [isOpen, fetchAllTags]);
+
+  useEffect(() => {
+    // Always use the latest data from the global store, not the potentially stale prop
+    const currentVpsData = servers.find(s => s.id === vps?.id);
+
+    if (currentVpsData) {
+      setName(currentVpsData.name || '');
+      setGroup(currentVpsData.group ? { value: currentVpsData.group, label: currentVpsData.group } : null);
+      setSelectedTags(currentVpsData.tags ? currentVpsData.tags.map(t => ({ value: t.id, label: t.name })) : []);
       setError(null);
       setIsLoading(false);
+    } else if (vps) {
+      // Fallback for safety, though might not be necessary
+      setName(vps.name || '');
+      setGroup(vps.group ? { value: vps.group, label: vps.group } : null);
+      setSelectedTags(vps.tags ? vps.tags.map(t => ({ value: t.id, label: t.name })) : []);
     }
-  }, [vps, isOpen]);
+  }, [vps, servers, isOpen]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -47,10 +65,10 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, allVp
     setIsLoading(true);
     setError(null);
 
-    const payload: UpdateVpsPayload = {
+    const payload = {
       name: name.trim(),
-      group: group?.value || '',
-      tags: tags.map(t => t.value).join(','),
+      group: group?.value, // Use undefined when group is null, not null
+      tag_ids: selectedTags.map(t => t.value),
     };
 
     try {
@@ -108,12 +126,13 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, allVp
             </div>
             <div>
               <label htmlFor="vpsTags" className="block text-sm font-medium text-slate-700 mb-1">标签</label>
-              <CreatableSelect
+              <Select
                 isMulti
                 options={tagOptions}
-                value={tags}
-                onChange={(newValue) => setTags(Array.from(newValue))}
-                placeholder="选择或创建标签..."
+                value={selectedTags}
+                onChange={(newValue) => setSelectedTags(Array.from(newValue))}
+                placeholder="选择标签..."
+                closeMenuOnSelect={false}
               />
             </div>
           </div>

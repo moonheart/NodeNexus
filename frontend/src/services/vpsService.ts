@@ -49,8 +49,8 @@ export const getVpsDetail = async (vpsId: string): Promise<VpsListItemResponse> 
 
 export interface UpdateVpsPayload {
   name?: string;
-  tags?: string;
   group?: string;
+  tag_ids?: number[];
 }
 
 /**
