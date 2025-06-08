@@ -110,8 +110,8 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
           {server.ipAddress || 'N/A'}
         </p>
         {server.metadata?.os_name && (
-          <p className="text-xs text-slate-500 mb-1 truncate" title={`OS: ${server.metadata.os_name} ${server.metadata.kernel_version ? `(${server.metadata.kernel_version})` : ''}`}>
-            OS: {server.metadata.os_name} {server.metadata.kernel_version ? `(${server.metadata.kernel_version})` : ''}
+          <p className="text-xs text-slate-500 mb-1 truncate" title={`OS: ${server.metadata.long_os_version} ${server.metadata.kernel_version ? `(${server.metadata.kernel_version})` : ''}`}>
+            OS: {server.metadata.long_os_version} {server.metadata.kernel_version ? `(${server.metadata.kernel_version})` : ''}
           </p>
         )}
         {server.metadata?.cpu_static_info && server.metadata.cpu_static_info.brand && (
