@@ -116,6 +116,9 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, o
         </span>
       </td>
       <td className="px-4 py-3 text-sm text-slate-600">{server.ipAddress || 'N/A'}</td>
+      <td className="px-4 py-3 text-sm text-slate-600 truncate" title={server.metadata?.os_name ? String(server.metadata.os_name) : 'N/A'}>
+        {server.metadata?.os_name ? String(server.metadata.os_name) : 'N/A'}
+      </td>
       <td className="px-4 py-3 text-sm text-slate-600">{cpuUsage}</td>
       <td className="px-4 py-3 text-sm text-slate-600">{memUsage}</td>
       <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">

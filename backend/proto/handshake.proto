@@ -7,11 +7,27 @@ import "config.proto";
 message AgentHandshake {
   string agent_id_hint = 1;
   string agent_version = 2;
-  OsType os_type = 3;
-  string os_name = 4;
-  string arch = 5;
-  string hostname = 6;
+  OsType os_type = 3; // Current OS type enum
+  string os_name = 4; // e.g., From sysinfo::System::name() -> "Ubuntu", "Windows"
+  string arch = 5;    // From sysinfo::System::cpu_arch()
+  string hostname = 6; // From sysinfo::System::host_name()
   repeated string public_ip_addresses = 7;
+  // New static info fields
+  string kernel_version = 8;    // From sysinfo::System::kernel_version()
+  string os_version_detail = 9; // From sysinfo::System::os_version() - Renamed to avoid conflict if 'os_version' is used elsewhere
+  string long_os_version = 10;  // From sysinfo::System::long_os_version()
+  string distribution_id = 11;  // From sysinfo::System::distribution_id()
+  optional uint32 physical_core_count = 12; // From sysinfo::System::physical_core_count()
+  optional uint64 total_memory_bytes = 13;  // From sysinfo::System::total_memory()
+  optional uint64 total_swap_bytes = 14;    // From sysinfo::System::total_swap()
+  optional CpuStaticInfo cpu_static_info = 15; // Static info for the global CPU
+}
+
+message CpuStaticInfo {
+  string name = 1;        // From sysinfo::Cpu::name()
+  uint64 frequency = 2;   // From sysinfo::Cpu::frequency()
+  string vendor_id = 3;   // From sysinfo::Cpu::vendor_id()
+  string brand = 4;       // From sysinfo::Cpu::brand()
 }
 
 message ServerHandshakeAck {

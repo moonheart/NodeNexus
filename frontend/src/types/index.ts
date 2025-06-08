@@ -27,7 +27,7 @@ export interface Vps {
   os_type: string | null;
   agent_secret: string;
   status: ServerStatus;
-  metadata: Record<string, unknown> | null; // Can be refined if the structure of metadata is known
+  metadata: VpsMetadata | null; // Refined metadata type
   created_at: string; // Represents a `DateTime<Utc>` string, e.g., "2025-06-02T12:34:56.789Z"
   updated_at: string; // Represents a `DateTime<Utc>` string
   tags?: Tag[];
@@ -105,7 +105,7 @@ export interface VpsListItemResponse {
   osType: string | null;    // camelCase
   agentSecret: string; // camelCase
   status: ServerStatus;
-  metadata: Record<string, unknown> | null;
+  metadata: VpsMetadata | null; // Refined metadata type
   createdAt: string; // camelCase
   updatedAt: string; // camelCase
   tags?: Tag[];
@@ -264,3 +264,29 @@ export interface CreateAlertRulePayload {
 }
 
 export type UpdateAlertRulePayload = Partial<CreateAlertRulePayload>;
+
+// --- VPS Metadata Types ---
+export interface CpuStaticInfo {
+  name: string;
+  frequency: number; // Assuming uint64 from backend can be represented as number
+  vendorId: string;
+  brand: string;
+}
+
+export interface VpsMetadata {
+  os_name?: string;
+  arch?: string;
+  hostname?: string;
+  public_ip_addresses?: string[];
+  kernel_version?: string;
+  os_version_detail?: string;
+  long_os_version?: string;
+  distribution_id?: string;
+  physical_core_count?: number;
+  total_memory_bytes?: number; // uint64 in backend
+  total_swap_bytes?: number;   // uint64 in backend
+  cpu_static_info?: CpuStaticInfo;
+  // Add any other known metadata fields that might be present
+  // Ensure keys match exactly what's sent from the backend (e.g., snake_case or camelCase)
+  // Based on backend vps_service.rs, keys are snake_case
+}

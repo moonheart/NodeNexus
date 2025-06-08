@@ -57,8 +57,7 @@ pub struct ServerWithDetails {
     pub latest_metrics: Option<ServerMetricsSnapshot>,
     pub os_type: Option<String>,
     pub created_at: DateTime<Utc>, // Assuming this comes from the database Vps model
-    // Add other metadata fields if needed, e.g., from Vps->metadata JSON blob
-    // pub metadata: Option<serde_json::Value>, // Example if you have a generic metadata field
+    pub metadata: Option<serde_json::Value>, // Added to include VPS metadata
 }
 
 #[derive(Serialize, Clone, Debug)]

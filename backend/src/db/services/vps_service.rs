@@ -155,16 +155,12 @@ pub async fn update_vps_status(pool: &PgPool, vps_id: i32, status: &str) -> Resu
 pub async fn update_vps_info_on_handshake(
     pool: &PgPool,
     vps_id: i32,
-    os_type_str: &str,
-    os_name: &str,
-    arch: &str,
-    hostname: &str,
-    public_ip_list: &[String], // Changed from CSV to slice of Strings
+    handshake_info: &crate::agent_service::AgentHandshake, // Pass the full handshake message
 ) -> Result<u64> {
     let now = Utc::now();
 
     // Find the first IPv4 address from the list
-    let first_ipv4 = public_ip_list.iter().find_map(|ip_str| {
+    let first_ipv4 = handshake_info.public_ip_addresses.iter().find_map(|ip_str| {
         ip_str
             .parse::<std::net::IpAddr>()
             .ok()
@@ -177,13 +173,40 @@ pub async fn update_vps_info_on_handshake(
             })
     });
 
+    let os_type_str = crate::agent_service::OsType::try_from(handshake_info.os_type)
+        .map(|os_enum| format!("{:?}", os_enum))
+        .unwrap_or_else(|_| "Unknown".to_string());
+
     // Construct the metadata JSON to be updated
-    let agent_info_metadata = json!({
-        "os_name": os_name,
-        "arch": arch,
-        "hostname": hostname,
-        "public_ip_addresses": public_ip_list // Store the full list here
-    });
+    let mut agent_info_metadata_map = serde_json::Map::new();
+    agent_info_metadata_map.insert("os_name".to_string(), json!(handshake_info.os_name));
+    agent_info_metadata_map.insert("arch".to_string(), json!(handshake_info.arch));
+    agent_info_metadata_map.insert("hostname".to_string(), json!(handshake_info.hostname));
+    agent_info_metadata_map.insert("public_ip_addresses".to_string(), json!(handshake_info.public_ip_addresses));
+    agent_info_metadata_map.insert("kernel_version".to_string(), json!(handshake_info.kernel_version));
+    agent_info_metadata_map.insert("os_version_detail".to_string(), json!(handshake_info.os_version_detail));
+    agent_info_metadata_map.insert("long_os_version".to_string(), json!(handshake_info.long_os_version));
+    agent_info_metadata_map.insert("distribution_id".to_string(), json!(handshake_info.distribution_id));
+    if let Some(p_cores) = handshake_info.physical_core_count {
+        agent_info_metadata_map.insert("physical_core_count".to_string(), json!(p_cores));
+    }
+    if let Some(total_mem) = handshake_info.total_memory_bytes {
+        agent_info_metadata_map.insert("total_memory_bytes".to_string(), json!(total_mem));
+    }
+    if let Some(total_swap) = handshake_info.total_swap_bytes {
+        agent_info_metadata_map.insert("total_swap_bytes".to_string(), json!(total_swap));
+    }
+
+    if let Some(cpu_info) = &handshake_info.cpu_static_info {
+        agent_info_metadata_map.insert("cpu_static_info".to_string(), json!({
+            "name": cpu_info.name,
+            "frequency": cpu_info.frequency,
+            "vendor_id": cpu_info.vendor_id,
+            "brand": cpu_info.brand,
+        }));
+    }
+    
+    let agent_info_metadata = serde_json::Value::Object(agent_info_metadata_map);
 
     let rows_affected = sqlx::query!(
         r#"
@@ -196,8 +219,8 @@ pub async fn update_vps_info_on_handshake(
         WHERE id = $6
         "#,
         os_type_str,
-        first_ipv4, // This will be Option<String>, SQL NULL if None. Max length 45 for ip_address column.
-        agent_info_metadata, // Pass the serde_json::Value directly
+        first_ipv4,
+        agent_info_metadata,
         "online",   // Set status to online on successful handshake
         now,
         vps_id
@@ -224,6 +247,7 @@ struct VpsDetailQueryResult {
     vps_group: Option<String>,
     vps_tags_json: Option<serde_json::Value>,
     vps_created_at: chrono::DateTime<Utc>,
+    vps_metadata: Option<serde_json::Value>, // Added for VPS metadata
     // New config fields
     vps_config_status: String,
     vps_last_config_update_at: Option<chrono::DateTime<Utc>>,
@@ -287,6 +311,7 @@ pub async fn get_all_vps_with_details_for_cache(
             v."group" as vps_group,
             vta.tags_json as vps_tags_json,
             v.created_at as vps_created_at,
+            v.metadata as vps_metadata, -- Added
             v.config_status as vps_config_status,
             v.last_config_update_at as vps_last_config_update_at,
             v.last_config_error as vps_last_config_error,
@@ -349,6 +374,7 @@ pub async fn get_all_vps_with_details_for_cache(
             latest_metrics,
             os_type: row.vps_os_type,
             created_at: row.vps_created_at,
+            metadata: row.vps_metadata, // Added
         });
     }
 
@@ -405,6 +431,7 @@ pub async fn get_all_vps_with_details_for_user(
             v."group" as vps_group,
             vta.tags_json as vps_tags_json,
             v.created_at as vps_created_at,
+            v.metadata as vps_metadata, -- Added
             v.config_status as vps_config_status,
             v.last_config_update_at as vps_last_config_update_at,
             v.last_config_error as vps_last_config_error,
@@ -469,6 +496,7 @@ pub async fn get_all_vps_with_details_for_user(
             latest_metrics,
             os_type: row.vps_os_type,
             created_at: row.vps_created_at,
+            metadata: row.vps_metadata, // Added
         });
     }
 
@@ -523,6 +551,7 @@ pub async fn get_vps_with_details_for_cache_by_id(
             v."group" as vps_group,
             vta.tags_json as vps_tags_json,
             v.created_at as vps_created_at,
+            v.metadata as vps_metadata, -- Added
             v.config_status as vps_config_status,
             v.last_config_update_at as vps_last_config_update_at,
             v.last_config_error as vps_last_config_error,
@@ -585,6 +614,7 @@ pub async fn get_vps_with_details_for_cache_by_id(
             latest_metrics,
             os_type: row.vps_os_type,
             created_at: row.vps_created_at,
+            metadata: row.vps_metadata, // Added
         }))
     } else {
         Ok(None)

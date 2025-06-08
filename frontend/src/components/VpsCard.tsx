@@ -109,6 +109,16 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
           <GlobeAltIcon className="w-3.5 h-3.5 mr-1.5 text-slate-400 flex-shrink-0" />
           {server.ipAddress || 'N/A'}
         </p>
+        {server.metadata?.os_name && (
+          <p className="text-xs text-slate-500 mb-1 truncate" title={`OS: ${server.metadata.os_name} ${server.metadata.kernel_version ? `(${server.metadata.kernel_version})` : ''}`}>
+            OS: {server.metadata.os_name} {server.metadata.kernel_version ? `(${server.metadata.kernel_version})` : ''}
+          </p>
+        )}
+        {server.metadata?.cpu_static_info && server.metadata.cpu_static_info.brand && (
+          <p className="text-xs text-slate-500 mb-1 truncate" title={`CPU: ${server.metadata.cpu_static_info.brand}`}>
+            CPU: {server.metadata.cpu_static_info.brand}
+          </p>
+        )}
         {server.tags && server.tags.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
             {server.tags.filter(tag => tag.isVisible).map(tag => {

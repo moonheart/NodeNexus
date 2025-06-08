@@ -336,7 +336,7 @@ const VpsDetailPage: React.FC = () => {
 
       {/* Quick Stats Section */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
-        <StatCard title="CPU Usage" value={metrics?.cpuUsagePercent?.toFixed(1) ?? 'N/A'} unit="%" icon={<CpuChipIcon />} colorClass="text-blue-500" description={vpsDetail.status === 'offline' ? "Offline" : `${(metadata?.cpu_model as string) || ''}`} />
+        <StatCard title="CPU Usage" value={metrics?.cpuUsagePercent?.toFixed(1) ?? 'N/A'} unit="%" icon={<CpuChipIcon />} colorClass="text-blue-500" description={vpsDetail.status === 'offline' ? "Offline" : `${metadata?.cpu_static_info?.brand || ''}`} />
         <StatCard title="RAM Usage" value={memTotal > 0 ? ((memUsed / memTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<MemoryStickIcon />} colorClass="text-purple-500" description={vpsDetail.status === 'offline' ? "Offline" : `${formatBytes(memUsed)} / ${formatBytes(memTotal)}`} />
         <StatCard title="Disk Usage" value={diskTotal > 0 ? ((diskUsed / diskTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<HardDiskIcon />} colorClass="text-orange-500" description={vpsDetail.status === 'offline' ? "Offline" : `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`} />
         <StatCard title="Upload" value={formatNetworkSpeed(metrics?.networkTxInstantBps)} icon={<ArrowUpIcon />} colorClass="text-green-500" description="Current outgoing" />
@@ -377,12 +377,19 @@ const VpsDetailPage: React.FC = () => {
       <section className="bg-white p-6 rounded-xl shadow-md">
         <h2 className="text-xl font-semibold text-slate-700 mb-6">System Information</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6 text-sm">
-          <InfoBlock title="Operating System" value={`${metadata?.os_family || vpsDetail.osType || metadata?.os_name || 'N/A'} (${metadata?.os_version || 'N/A'})`} />
+          <InfoBlock title="Hostname" value={`${metadata?.hostname || 'N/A'}`} />
+          <InfoBlock title="Operating System" value={`${metadata?.os_name || 'N/A'} (${metadata?.long_os_version || metadata?.os_version_detail || 'N/A'})`} />
+          <InfoBlock title="Distribution ID" value={`${metadata?.distribution_id || 'N/A'}`} />
           <InfoBlock title="Kernel Version" value={`${metadata?.kernel_version || 'N/A'}`} />
-          <InfoBlock title="Architecture" value={`${metadata?.architecture || metadata?.arch || 'N/A'}`} />
-          <InfoBlock title="CPU Model" value={`${metadata?.cpu_model || 'N/A'}`} />
-          <InfoBlock title="Total RAM" value={formatBytes(metrics?.memoryTotalBytes)} />
-          <InfoBlock title="Total Disk" value={formatBytes(metrics?.diskTotalBytes)} />
+          <InfoBlock title="Architecture" value={`${metadata?.arch || 'N/A'}`} />
+          <InfoBlock title="CPU Brand" value={`${metadata?.cpu_static_info?.brand || 'N/A'}`} />
+          <InfoBlock title="CPU Name" value={`${metadata?.cpu_static_info?.name || 'N/A'}`} />
+          <InfoBlock title="CPU Frequency" value={metadata?.cpu_static_info?.frequency ? `${metadata.cpu_static_info.frequency} MHz` : 'N/A'} />
+          <InfoBlock title="CPU Vendor ID" value={`${metadata?.cpu_static_info?.vendorId || 'N/A'}`} />
+          <InfoBlock title="Physical Cores" value={`${metadata?.physical_core_count ?? 'N/A'}`} />
+          <InfoBlock title="Total RAM" value={formatBytes(metadata?.total_memory_bytes ?? metrics?.memoryTotalBytes)} />
+          <InfoBlock title="Total Swap" value={formatBytes(metadata?.total_swap_bytes)} />
+          <InfoBlock title="Total Disk" value={formatBytes(metrics?.diskTotalBytes)} /> {/* Disk info usually comes from metrics */}
         </div>
       </section>
     </div>

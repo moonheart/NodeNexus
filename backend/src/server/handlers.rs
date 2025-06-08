@@ -98,20 +98,17 @@ pub async fn handle_connection(
                             };
                             
                             // Convert OsType from i32 to String
-                            let os_type_str = ProtoOsType::try_from(handshake.os_type)
-                                .map(|os_enum| format!("{:?}", os_enum)) // Converts enum variant to string, e.g., "Linux"
-                                .unwrap_or_else(|_| "Unknown".to_string());
+                            // This is now handled within update_vps_info_on_handshake
+                            // let os_type_str = ProtoOsType::try_from(handshake.os_type)
+                            //     .map(|os_enum| format!("{:?}", os_enum))
+                            //     .unwrap_or_else(|_| "Unknown".to_string());
                             
                             // Update VPS info in the database
-                            // Pass the public_ip_addresses Vec as a slice
+                            // Pass the entire handshake object
                             match services::update_vps_info_on_handshake(
                                 &pool_clone,
                                 vps_db_id_from_msg,
-                                &os_type_str,
-                                &handshake.os_name,
-                                &handshake.arch,
-                                &handshake.hostname,
-                                &handshake.public_ip_addresses, // Pass as slice
+                                handshake, // Pass the handshake object itself
                             ).await {
                                 Ok(rows_affected) => {
                                     if rows_affected > 0 {
