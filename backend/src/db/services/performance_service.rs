@@ -4,6 +4,7 @@ use sqlx::{FromRow, PgPool, Result};
 
 use crate::agent_service::PerformanceSnapshotBatch;
 use crate::db::models::{AggregatedPerformanceMetric, PerformanceMetric};
+use crate::db::services::vps_service; // Added for traffic stats update
 
 // --- PerformanceMetric Service Functions ---
 
@@ -221,6 +222,25 @@ pub async fn save_performance_snapshot_batch(
             )
             .execute(&mut *tx)
             .await?;
+        }
+
+        // After saving the metric and its related disk usages, update VPS traffic stats
+        if let Err(e) = vps_service::update_vps_traffic_stats_after_metric(
+            &mut tx, // Pass the transaction
+            vps_id,
+            snapshot.network_rx_bytes_cumulative as i64,
+            snapshot.network_tx_bytes_cumulative as i64,
+        )
+        .await
+        {
+            // If updating traffic stats fails, we might want to rollback the whole transaction
+            // or log the error and continue. For now, let's propagate the error,
+            // which will cause the transaction to rollback if not handled.
+            eprintln!(
+                "Failed to update VPS traffic stats for vps_id {}: {}. Rolling back metric save.",
+                vps_id, e
+            );
+            return Err(e); // This will cause tx.commit() to not be reached and tx will be rolled back on drop.
         }
     }
 

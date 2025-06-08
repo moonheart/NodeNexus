@@ -33,6 +33,15 @@ export interface Vps {
   tags?: Tag[];
   group?: string | null;
   latest_metrics?: LatestPerformanceMetric | null; // Added for real-time display
+  // Traffic Monitoring Fields
+  traffic_limit_bytes?: number | null;
+  traffic_billing_rule?: string | null;
+  traffic_current_cycle_rx_bytes?: number | null;
+  traffic_current_cycle_tx_bytes?: number | null;
+  traffic_last_reset_at?: string | null; // DateTime<Utc> as string
+  traffic_reset_config_type?: string | null;
+  traffic_reset_config_value?: string | null;
+  next_traffic_reset_at?: string | null; // DateTime<Utc> as string
 }
 
 /**
@@ -115,6 +124,15 @@ export interface VpsListItemResponse {
   lastConfigUpdateAt?: string | null;
   lastConfigError?: string | null;
   agentConfigOverride?: Record<string, unknown> | null;
+  // Traffic Monitoring Fields from Vps (matching ServerBasicInfo in backend)
+  trafficLimitBytes?: number | null;
+  trafficBillingRule?: string | null;
+  trafficCurrentCycleRxBytes?: number | null;
+  trafficCurrentCycleTxBytes?: number | null;
+  trafficLastResetAt?: string | null;
+  trafficResetConfigType?: string | null;
+  trafficResetConfigValue?: string | null;
+  nextTrafficResetAt?: string | null;
 }
 
 /**

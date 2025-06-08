@@ -35,6 +35,18 @@ pub struct Vps {
     pub config_status: String,
     pub last_config_update_at: Option<DateTime<Utc>>,
     pub last_config_error: Option<String>,
+
+    // Traffic Monitoring Fields
+    pub traffic_limit_bytes: Option<i64>,
+    pub traffic_billing_rule: Option<String>, // e.g., "sum_in_out", "out_only", "max_in_out"
+    pub traffic_current_cycle_rx_bytes: Option<i64>, // Default 0 in DB
+    pub traffic_current_cycle_tx_bytes: Option<i64>, // Default 0 in DB
+    pub last_processed_cumulative_rx: Option<i64>, // Default 0 in DB
+    pub last_processed_cumulative_tx: Option<i64>, // Default 0 in DB
+    pub traffic_last_reset_at: Option<DateTime<Utc>>,
+    pub traffic_reset_config_type: Option<String>, // e.g., "monthly_day_of_month", "fixed_days"
+    pub traffic_reset_config_value: Option<String>, // e.g., "day:15,time_offset_seconds:28800" or "30"
+    pub next_traffic_reset_at: Option<DateTime<Utc>>,
 }
 
 /// Represents a performance metric snapshot for a VPS.

@@ -4,6 +4,12 @@ import type { Vps, VpsListItemResponse } from '../types';
 
 export interface CreateVpsPayload {
   name: string;
+  // Optional traffic monitoring config fields
+  traffic_limit_bytes?: number | null;
+  traffic_billing_rule?: string | null;
+  traffic_reset_config_type?: string | null;
+  traffic_reset_config_value?: string | null;
+  next_traffic_reset_at?: string | null; // ISO string for DateTime<Utc>
 }
 
 // The backend is expected to return the full Vps object upon creation,
@@ -38,6 +44,12 @@ export interface UpdateVpsPayload {
   name?: string;
   group?: string;
   tag_ids?: number[];
+  // Traffic monitoring config fields
+  traffic_limit_bytes?: number | null;
+  traffic_billing_rule?: string | null;
+  traffic_reset_config_type?: string | null;
+  traffic_reset_config_value?: string | null;
+  next_traffic_reset_at?: string | null; // ISO string for DateTime<Utc>
 }
 
 /**

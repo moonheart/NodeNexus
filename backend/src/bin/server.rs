@@ -196,6 +196,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         alert_evaluation_service.start_periodic_evaluation(60).await;
     });
 
+    // --- Traffic Reset Check Task ---
+    let pool_for_traffic_reset = db_pool.clone();
+    let trigger_for_traffic_reset = update_trigger_tx.clone();
+    let traffic_reset_task = tokio::spawn(async move {
+        // Check every 5 minutes, for example. This can be configurable.
+        let mut interval = interval(Duration::from_secs(5 * 60));
+        println!("Traffic reset check task started. Interval: 5 minutes.");
+
+        loop {
+            interval.tick().await;
+            println!("Performing scheduled VPS traffic reset check...");
+            match db_services::get_vps_due_for_traffic_reset(&pool_for_traffic_reset).await {
+                Ok(vps_ids) => {
+                    if vps_ids.is_empty() {
+                        // println!("No VPS due for traffic reset at this time.");
+                        continue;
+                    }
+                    println!("Found {} VPS(s) due for traffic reset: {:?}", vps_ids.len(), vps_ids);
+                    let mut reset_performed_for_any_vps = false;
+                    for vps_id in vps_ids {
+                        match db_services::process_vps_traffic_reset(&pool_for_traffic_reset, vps_id).await {
+                            Ok(reset_performed) => {
+                                if reset_performed {
+                                    println!("Traffic reset successfully processed for VPS ID: {}", vps_id);
+                                    reset_performed_for_any_vps = true;
+                                } else {
+                                    // println!("Traffic reset not performed for VPS ID: {} (either not due or already handled).", vps_id);
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Error processing traffic reset for VPS ID {}: {}", vps_id, e);
+                            }
+                        }
+                    }
+                    if reset_performed_for_any_vps {
+                        println!("Traffic reset performed for one or more VPS. Triggering state update broadcast.");
+                        if trigger_for_traffic_reset.send(()).await.is_err() {
+                            eprintln!("Failed to send update trigger from traffic reset task.");
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error fetching VPS due for traffic reset: {}", e);
+                }
+            }
+        }
+    });
+
     // --- Run all servers and tasks concurrently ---
     let grpc_handle = tokio::spawn(grpc_server_future);
     let http_handle = tokio::spawn(http_server_future);
@@ -214,6 +262,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     // a cancellation token would be needed, but this is sufficient for now.
     let _ = debouncer_task;
     let _ = evaluation_task; // Keep the evaluation task handle
+    let _ = traffic_reset_task; // Keep the traffic reset task handle
 
     Ok(())
 }

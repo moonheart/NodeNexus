@@ -11,8 +11,26 @@ import {
   ArrowUpIcon,
   ArrowDownIcon,
   PencilIcon,
+  SignalIcon, // Assuming a generic icon for traffic
 } from './Icons';
 import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_ERROR, STATUS_UNKNOWN } from '../types';
+
+
+// Helper function to format bytes into a readable string (e.g., "10.5 GB")
+const formatBytesForDisplay = (bytes: number | null | undefined, decimals = 1): string => {
+  if (bytes === null || typeof bytes === 'undefined' || bytes === 0) return '0 B';
+  if (bytes < 0) return 'N/A'; // Or handle negative values if they are possible
+
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+  if (i >= sizes.length) return parseFloat((bytes / Math.pow(k, sizes.length -1)).toFixed(dm)) + ' ' + sizes[sizes.length -1];
+
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+};
+
 
 interface VpsCardProps {
   server: VpsListItemResponse;
@@ -81,6 +99,30 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
   const diskUsedBytes = metrics?.diskUsedBytes ?? null;
   const diskTotalBytes = metrics?.diskTotalBytes ?? null;
   const diskUsagePercent = diskTotalBytes && diskUsedBytes !== null ? (diskUsedBytes / diskTotalBytes) * 100 : null;
+
+  // Traffic usage calculation
+  let usedTrafficBytes: number | null = null;
+  if (server.trafficBillingRule && server.trafficLimitBytes && server.trafficLimitBytes > 0) {
+    const rxBytes = server.trafficCurrentCycleRxBytes ?? 0;
+    const txBytes = server.trafficCurrentCycleTxBytes ?? 0;
+    switch (server.trafficBillingRule) {
+      case 'sum_in_out':
+        usedTrafficBytes = rxBytes + txBytes;
+        break;
+      case 'out_only':
+        usedTrafficBytes = txBytes;
+        break;
+      case 'max_in_out':
+        usedTrafficBytes = Math.max(rxBytes, txBytes);
+        break;
+      default:
+        usedTrafficBytes = null; // Or handle as an error/unknown state
+    }
+  }
+
+  const trafficUsagePercent = (server.trafficLimitBytes && usedTrafficBytes !== null && server.trafficLimitBytes > 0)
+    ? (usedTrafficBytes / server.trafficLimitBytes) * 100
+    : null;
 
   return (
     <div className={`relative bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300 overflow-hidden flex flex-col border-l-4 ${cardBorderClass}`}>
@@ -166,7 +208,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
             <div className="flex items-center mb-0.5">
               <MemoryStickIcon className="w-4 h-4 mr-1.5 text-purple-500 flex-shrink-0" />
               <span>RAM: <span className={`font-semibold ${statusTextClass}`}>{memoryUsagePercent.toFixed(1)}%</span>
-                <span className="text-slate-500 text-xxs"> ({ (memoryUsageBytes / (1024*1024)).toFixed(0) }MB / { (memoryTotalBytes / (1024*1024)).toFixed(0) }MB)</span>
+                <span className="text-slate-500 text-xxs"> ({formatBytesForDisplay(memoryUsageBytes, 1)} / {formatBytesForDisplay(memoryTotalBytes, 1)})</span>
               </span>
             </div>
             <ProgressBar value={memoryUsagePercent} colorClass={getUsageColorClass(memoryUsagePercent)} />
@@ -182,6 +224,22 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
               </span>
             </div>
             <ProgressBar value={diskUsagePercent} colorClass={getUsageColorClass(diskUsagePercent)} />
+          </div>
+        )}
+
+        {/* Traffic Usage Progress Bar */}
+        {server.trafficLimitBytes && server.trafficLimitBytes > 0 && trafficUsagePercent !== null && usedTrafficBytes !== null && (
+          <div className="text-xs text-slate-600">
+            <div className="flex items-center justify-between mb-0.5">
+              <div className="flex items-center">
+                <SignalIcon className="w-4 h-4 mr-1.5 text-cyan-500 flex-shrink-0" />
+                <span>流量: <span className={`font-semibold ${statusTextClass}`}>{trafficUsagePercent.toFixed(1)}%</span></span>
+              </div>
+              <span className="text-slate-500 text-xxs">
+                {formatBytesForDisplay(usedTrafficBytes)} / {formatBytesForDisplay(server.trafficLimitBytes)}
+              </span>
+            </div>
+            <ProgressBar value={trafficUsagePercent} colorClass={getUsageColorClass(trafficUsagePercent)} />
           </div>
         )}
 

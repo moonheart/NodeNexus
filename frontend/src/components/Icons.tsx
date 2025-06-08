@@ -19,6 +19,7 @@ import {
   FilePenLine,
   X,
   Check,
+  Signal, // Added
   type LucideProps,
 } from 'lucide-react';
 
@@ -42,5 +43,6 @@ export const PencilIcon = Pencil;
 export const PencilSquareIcon = FilePenLine;
 export const XMarkIcon = X;
 export const CheckIcon = Check;
+export const SignalIcon = Signal; // Added
 
 export type { LucideProps as SVGProps };

@@ -6,6 +6,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize}; // Added Serialize
 use std::sync::Arc;
+use chrono::{DateTime, Utc}; // Added for DateTime<Utc>
 use crate::db::{models::{Vps, PerformanceMetric as DbPerformanceMetric, Tag}, services};
 use super::{AppState, AppError, config_routes};
 use crate::http_server::auth_logic::AuthenticatedUser;
@@ -90,6 +91,16 @@ pub struct VpsListItemResponse {
     pub last_config_error: Option<String>,
     // agent_config_override is not needed for the list view.
     // pub agent_config_override: Option<serde_json::Value>,
+
+    // Traffic monitoring fields
+    pub traffic_limit_bytes: Option<i64>,
+    pub traffic_billing_rule: Option<String>,
+    pub traffic_current_cycle_rx_bytes: Option<i64>,
+    pub traffic_current_cycle_tx_bytes: Option<i64>,
+    pub traffic_last_reset_at: Option<String>, // DateTime<Utc> to String
+    pub traffic_reset_config_type: Option<String>,
+    pub traffic_reset_config_value: Option<String>,
+    pub next_traffic_reset_at: Option<String>, // DateTime<Utc> to String
 }
 
 // This converts the unified `ServerWithDetails` model (used by websockets)
@@ -111,6 +122,15 @@ impl From<crate::websocket_models::ServerWithDetails> for VpsListItemResponse {
             config_status: details.basic_info.config_status,
             last_config_update_at: details.basic_info.last_config_update_at.map(|dt| dt.to_rfc3339()),
             last_config_error: details.basic_info.last_config_error,
+            // Map new traffic fields
+            traffic_limit_bytes: details.basic_info.traffic_limit_bytes,
+            traffic_billing_rule: details.basic_info.traffic_billing_rule,
+            traffic_current_cycle_rx_bytes: details.basic_info.traffic_current_cycle_rx_bytes,
+            traffic_current_cycle_tx_bytes: details.basic_info.traffic_current_cycle_tx_bytes,
+            traffic_last_reset_at: details.basic_info.traffic_last_reset_at.map(|dt| dt.to_rfc3339()),
+            traffic_reset_config_type: details.basic_info.traffic_reset_config_type,
+            traffic_reset_config_value: details.basic_info.traffic_reset_config_value,
+            next_traffic_reset_at: details.basic_info.next_traffic_reset_at.map(|dt| dt.to_rfc3339()),
         }
     }
 }
@@ -195,6 +215,17 @@ pub struct UpdateVpsRequest {
     name: Option<String>,
     group: Option<String>,
     tag_ids: Option<Vec<i32>>,
+    // Traffic monitoring config fields
+    #[serde(default)] // Allows field to be omitted in JSON, defaulting to None
+    traffic_limit_bytes: Option<i64>,
+    #[serde(default)]
+    traffic_billing_rule: Option<String>,
+    #[serde(default)]
+    traffic_reset_config_type: Option<String>,
+    #[serde(default)]
+    traffic_reset_config_value: Option<String>,
+    #[serde(default)]
+    next_traffic_reset_at: Option<DateTime<Utc>>, // Assuming frontend sends RFC3339 string
 }
 
 
@@ -223,9 +254,15 @@ async fn update_vps_handler(
         payload.name,
         payload.group,
         payload.tag_ids,
-    ).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+        // Pass new traffic fields
+        payload.traffic_limit_bytes,
+        payload.traffic_billing_rule,
+        payload.traffic_reset_config_type,
+        payload.traffic_reset_config_value,
+        payload.next_traffic_reset_at,
+).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
-    if change_detected {
+if change_detected {
         // Call the centralized broadcast function
         update_service::broadcast_full_state_update(
             &app_state.db_pool,

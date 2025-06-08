@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { createVps } from '../services/vpsService';
 import type { Vps } from '../types';
 import axios from 'axios';
-
 interface CreateVpsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -41,7 +40,11 @@ const CreateVpsModal: React.FC<CreateVpsModalProps> = ({ isOpen, onClose, onVpsC
     }
 
     try {
-      const newVps: Vps = await createVps({ name: vpsName });
+      const payload: import('../services/vpsService').CreateVpsPayload = {
+        name: vpsName.trim(),
+      };
+
+      const newVps: Vps = await createVps(payload);
       setSuccessMessage(`VPS "${newVps.name}" 创建成功！ID: ${newVps.id}`);
       
       const configContent = `# Agent Configuration for VPS: ${newVps.name} (ID: ${newVps.id})
@@ -123,6 +126,7 @@ agent_secret = "${newVps.agent_secret}"
                 style={{ width: '100%', padding: '10px', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ccc' }}
               />
             </div>
+
             {error && <p style={{ color: 'red', marginTop: '0', marginBottom: '10px' }}>错误: {error}</p>}
             <button type="submit" disabled={isLoading} style={{ padding: '10px 15px', cursor: 'pointer', width: '100%', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px' }}>
               {isLoading ? '创建中...' : '创建VPS'}

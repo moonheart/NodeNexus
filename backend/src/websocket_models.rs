@@ -30,6 +30,15 @@ pub struct ServerBasicInfo {
     pub config_status: String,
     pub last_config_update_at: Option<DateTime<Utc>>,
     pub last_config_error: Option<String>,
+    // Traffic monitoring fields
+    pub traffic_limit_bytes: Option<i64>,
+    pub traffic_billing_rule: Option<String>,
+    pub traffic_current_cycle_rx_bytes: Option<i64>,
+    pub traffic_current_cycle_tx_bytes: Option<i64>,
+    pub traffic_last_reset_at: Option<DateTime<Utc>>,
+    pub traffic_reset_config_type: Option<String>,
+    pub traffic_reset_config_value: Option<String>,
+    pub next_traffic_reset_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize, Clone, Debug)]

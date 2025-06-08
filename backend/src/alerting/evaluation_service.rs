@@ -3,7 +3,7 @@ use sqlx::PgPool;
 use tokio::time::{interval, Duration as TokioDuration}; // Renamed to avoid conflict
 use chrono::{Utc, Duration as ChronoDuration}; // Added ChronoDuration
 use crate::{
-    db::{models::{AlertRuleFromDb, PerformanceMetric, Vps}, services::AlertService}, // Added PerformanceMetric, Vps
+    db::{models::{AlertRuleFromDb, PerformanceMetric, Vps}, services::{AlertService, vps_service}}, // Added PerformanceMetric, Vps, vps_service
     notifications::service::NotificationService,
 };
 
@@ -196,29 +196,112 @@ impl EvaluationService {
                     }
                     current_value = (metric_point.memory_usage_bytes as f64 / metric_point.memory_total_bytes as f64) * 100.0;
                 }
-                _ => return Ok(None), // Unsupported metric type
+                "traffic_usage_percent" => {
+                    // For traffic, we need the current cycle usage from the VPS record, not the metric point.
+                    // We should fetch the VPS data once per rule evaluation for a specific VPS, not per metric point.
+                    // This logic needs to be outside the metric iteration loop.
+                    // For now, we'll break and handle this metric type separately or adjust the loop structure.
+                    // Let's adjust the structure to handle traffic separately as it doesn't rely on a series of metric points.
+                    all_match = false; // Indicate that this metric type is handled outside this loop
+                    break;
+                }
+                _ => {
+                    all_match = false; // Unsupported metric type, stop evaluation for this rule/vps
+                    break;
+                }
             }
-            last_metric_value_str = format!("{:.2}", current_value);
-
-            let condition_met = match rule.comparison_operator.as_str() {
-                ">" => current_value > rule.threshold,
-                "<" => current_value < rule.threshold,
-                ">=" => current_value >= rule.threshold,
-                "<=" => current_value <= rule.threshold,
-                "=" | "==" => (current_value - rule.threshold).abs() < f64::EPSILON,
-                "!=" => (current_value - rule.threshold).abs() > f64::EPSILON,
-                _ => return Ok(None), // Unsupported operator
-            };
-
-            if !condition_met {
-                all_match = false;
-                break;
+            if !rule.metric_type.eq("traffic_usage_percent") {
+                 last_metric_value_str = format!("{:.2}", current_value);
             }
+
+
+            // Comparison logic remains the same for metric points
+            if !rule.metric_type.eq("traffic_usage_percent") {
+                let condition_met = match rule.comparison_operator.as_str() {
+                    ">" => current_value > rule.threshold,
+                    "<" => current_value < rule.threshold,
+                    ">=" => current_value >= rule.threshold,
+                    "<=" => current_value <= rule.threshold,
+                    "=" | "==" => (current_value - rule.threshold).abs() < f64::EPSILON,
+                    "!=" => (current_value - rule.threshold).abs() > f64::EPSILON,
+                    _ => {
+                         all_match = false; // Unsupported operator
+                         break;
+                    },
+                };
+
+                if !condition_met {
+                    all_match = false;
+                    break;
+                }
+            }
+        } // End of metric iteration loop
+
+        // Handle traffic_usage_percent separately as it uses current cycle data, not historical points
+        if rule.metric_type.eq("traffic_usage_percent") {
+             let vps_data = vps_service::get_vps_by_id(&*self.pool, vps_id).await?;
+             if let Some(vps) = vps_data {
+                 if let Some(limit_bytes) = vps.traffic_limit_bytes {
+                     if limit_bytes > 0 {
+                         let current_rx = vps.traffic_current_cycle_rx_bytes.unwrap_or(0);
+                         let current_tx = vps.traffic_current_cycle_tx_bytes.unwrap_or(0);
+                         let total_used = match vps.traffic_billing_rule.as_deref() {
+                             Some("sum_in_out") => current_rx + current_tx,
+                             Some("out_only") => current_tx,
+                             Some("max_in_out") => std::cmp::max(current_rx, current_tx),
+                             _ => {
+                                 eprintln!("Unsupported or missing traffic_billing_rule for VPS ID {}", vps_id);
+                                 return Ok(None); // Cannot evaluate without a valid rule
+                             }
+                         };
+
+                         let usage_percent = (total_used as f64 / limit_bytes as f64) * 100.0;
+                         last_metric_value_str = format!("{:.2}", usage_percent); // Update for message
+
+                         let condition_met = match rule.comparison_operator.as_str() {
+                             ">" => usage_percent > rule.threshold,
+                             "<" => usage_percent < rule.threshold,
+                             ">=" => usage_percent >= rule.threshold,
+                             "<=" => usage_percent <= rule.threshold,
+                             "=" | "==" => (usage_percent - rule.threshold).abs() < f64::EPSILON,
+                             "!=" => (usage_percent - rule.threshold).abs() > f64::EPSILON,
+                             _ => {
+                                 eprintln!("Unsupported comparison_operator for traffic_usage_percent rule ID {}", rule.id);
+                                 return Ok(None); // Unsupported operator
+                             }
+                         };
+
+                         if condition_met {
+                             all_match = true; // Condition met for traffic
+                         } else {
+                             all_match = false; // Condition not met for traffic
+                         }
+
+                     } else {
+                         // Limit is 0 or not set, cannot calculate percentage meaningfully for threshold rules
+                         println!("Traffic limit is 0 or not set for VPS ID {}. Cannot evaluate traffic_usage_percent rule ID {}", vps_id, rule.id);
+                         return Ok(None);
+                     }
+                 } else {
+                     // Limit is not set, cannot calculate percentage
+                     println!("Traffic limit is not configured for VPS ID {}. Cannot evaluate traffic_usage_percent rule ID {}", vps_id, rule.id);
+                     return Ok(None);
+                 }
+             } else {
+                 eprintln!("VPS with ID {} not found during traffic alert evaluation.", vps_id);
+                 return Err(EvaluationError::VpsNameNotFound(vps_id)); // VPS not found
+             }
         }
 
+
         if all_match {
+            let duration_suffix = if rule.metric_type.eq("traffic_usage_percent") {
+                String::new()
+            } else {
+                format!(" for {} seconds", rule.duration_seconds)
+            };
             let message = format!(
-                "ALERT! Rule '{}' triggered for VPS '{}' (ID: {}): Metric {} {} {} (current: {}) for {} seconds.",
+                "ALERT! Rule '{}' triggered for VPS '{}' (ID: {}): Metric {} {} {} (current: {}){}.",
                 rule.name,
                 vps_name,
                 vps_id, // Added vps_id to message for clarity with global rules
@@ -226,7 +309,7 @@ impl EvaluationService {
                 rule.comparison_operator,
                 rule.threshold,
                 last_metric_value_str,
-                rule.duration_seconds
+                duration_suffix
             );
             return Ok(Some(message));
         }

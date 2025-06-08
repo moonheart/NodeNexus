@@ -111,6 +111,27 @@ return uptimeString.trim();
 
 
 
+const formatTrafficBillingRule = (rule: string | null | undefined): string => {
+  if (!rule) return '未设置';
+  switch (rule) {
+    case 'sum_in_out': return '双向流量 (IN + OUT)';
+    case 'out_only': return '出站流量 (OUT Only)';
+    case 'max_in_out': return '单向最大值 (Max(IN, OUT))';
+    default: return rule;
+  }
+};
+
+const formatTrafficDate = (dateString: string | null | undefined): string => {
+  if (!dateString) return 'N/A';
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch (e) {
+    console.error("Error formatting traffic date:", dateString, e);
+    return 'Invalid Date';
+  }
+};
+
 const getStatusBadgeClasses = (status: ServerStatus): string => {
   switch (status) {
     case STATUS_ONLINE: return "bg-green-100 text-green-800";
@@ -294,6 +315,27 @@ const VpsDetailPage: React.FC = () => {
   const diskUsed = metrics?.diskUsedBytes ?? 0;
   const diskTotal = metrics?.diskTotalBytes ?? 0;
 
+  // Traffic data calculation
+  const trafficLimit = vpsDetail.trafficLimitBytes ?? null;
+  const currentRx = vpsDetail.trafficCurrentCycleRxBytes ?? 0;
+  const currentTx = vpsDetail.trafficCurrentCycleTxBytes ?? 0;
+  const billingRule = vpsDetail.trafficBillingRule;
+
+  let totalUsedTraffic = 0;
+  if (billingRule === 'sum_in_out') {
+    totalUsedTraffic = currentRx + currentTx;
+  } else if (billingRule === 'out_only') {
+    totalUsedTraffic = currentTx;
+  } else if (billingRule === 'max_in_out') {
+    totalUsedTraffic = Math.max(currentRx, currentTx);
+  } else if (billingRule) { // If rule is set but unknown, sum by default or show error? For now, sum.
+    totalUsedTraffic = currentRx + currentTx;
+  }
+
+
+  const trafficRemaining = trafficLimit != null ? trafficLimit - totalUsedTraffic : null;
+  const trafficUsagePercent = trafficLimit != null && trafficLimit > 0 ? (totalUsedTraffic / trafficLimit) * 100 : null;
+
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-8 bg-slate-50 min-h-screen">
       {/* Header Section */}
@@ -343,6 +385,35 @@ const VpsDetailPage: React.FC = () => {
         <StatCard title="Download" value={formatNetworkSpeed(metrics?.networkRxInstantBps)} icon={<ArrowDownIcon />} colorClass="text-sky-500" description="Current incoming" />
         <StatCard title="Uptime" value={formatUptime(metrics?.uptimeSeconds)} icon={<ExclamationTriangleIcon />} colorClass="text-teal-500" description="Current session" />
       </section>
+
+      {/* Traffic Information Section */}
+      { (trafficLimit != null || billingRule) && (
+        <section className="bg-white p-6 rounded-xl shadow-md">
+          <h2 className="text-xl font-semibold text-slate-700 mb-6">流量信息</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6 text-sm">
+            <InfoBlock title="流量限额" value={trafficLimit != null ? formatBytes(trafficLimit) : '未设置'} />
+            <InfoBlock title="计费规则" value={formatTrafficBillingRule(billingRule)} />
+            <InfoBlock title="下次重置时间" value={formatTrafficDate(vpsDetail.nextTrafficResetAt)} />
+            
+            <InfoBlock title="本周期已用 (总计)" value={formatBytes(totalUsedTraffic)} />
+            {trafficLimit != null && (
+              <InfoBlock
+                title="本周期剩余"
+                value={trafficRemaining != null ? formatBytes(trafficRemaining) : 'N/A'}
+              />
+            )}
+            {trafficUsagePercent != null && (
+              <InfoBlock
+                title="使用率"
+                value={`${trafficUsagePercent.toFixed(2)}%`}
+              />
+            )}
+            <InfoBlock title="本周期 RX (入站)" value={formatBytes(currentRx)} />
+            <InfoBlock title="本周期 TX (出站)" value={formatBytes(currentTx)} />
+            <InfoBlock title="上次重置时间" value={formatTrafficDate(vpsDetail.trafficLastResetAt)} />
+          </div>
+        </section>
+      )}
 
       {/* Charts Section */}
       <section className="bg-white p-4 rounded-xl shadow-md">

@@ -11,6 +11,33 @@ import {
 } from './Icons';
 import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_ERROR, STATUS_UNKNOWN } from '../types';
 
+// Helper function to format bytes into a readable string (e.g., "10.5 GB")
+const formatBytesForDisplay = (bytes: number | null | undefined, decimals = 1): string => {
+  if (bytes === null || typeof bytes === 'undefined' || bytes === 0) return '0 B';
+  if (bytes < 0) return 'N/A';
+
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  
+  if (i >= sizes.length) return parseFloat((bytes / Math.pow(k, sizes.length -1)).toFixed(dm)) + ' ' + sizes[sizes.length -1];
+
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+};
+
+const getUsageColorClass = (value: number): string => {
+  if (value > 90) return 'bg-red-500';
+  if (value > 70) return 'bg-yellow-500';
+  return 'bg-green-500';
+};
+
+const ProgressBar: React.FC<{ value: number; colorClass: string }> = ({ value, colorClass }) => (
+  <div className="w-full bg-slate-200 rounded-full h-1.5 dark:bg-slate-700">
+    <div className={`${colorClass} h-1.5 rounded-full`} style={{ width: `${Math.max(0, Math.min(value, 100))}%` }}></div>
+  </div>
+);
+
 interface VpsTableRowProps {
   server: VpsListItemResponse;
   onEdit: (server: VpsListItemResponse) => void;
@@ -60,11 +87,35 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, o
 
   const cpuUsage = metrics ? `${metrics.cpuUsagePercent.toFixed(1)}%` : 'N/A';
   const memUsage = metrics && metrics.memoryTotalBytes > 0
-    ? `${(metrics.memoryUsageBytes / (1024 * 1024)).toFixed(0)}MB / ${(metrics.memoryTotalBytes / (1024 * 1024)).toFixed(0)}MB`
+    ? `${formatBytesForDisplay(metrics.memoryUsageBytes, 1)} / ${formatBytesForDisplay(metrics.memoryTotalBytes, 1)}`
     : 'N/A';
   const upSpeed = metrics ? formatNetworkSpeed(metrics.networkTxInstantBps) : 'N/A';
   const downSpeed = metrics ? formatNetworkSpeed(metrics.networkRxInstantBps) : 'N/A';
 
+  // Traffic usage calculation
+  let usedTrafficBytes: number | null = null;
+  if (server.trafficBillingRule && server.trafficLimitBytes && server.trafficLimitBytes > 0) {
+    const rxBytes = server.trafficCurrentCycleRxBytes ?? 0;
+    const txBytes = server.trafficCurrentCycleTxBytes ?? 0;
+    switch (server.trafficBillingRule) {
+      case 'sum_in_out':
+        usedTrafficBytes = rxBytes + txBytes;
+        break;
+      case 'out_only':
+        usedTrafficBytes = txBytes;
+        break;
+      case 'max_in_out':
+        usedTrafficBytes = Math.max(rxBytes, txBytes);
+        break;
+      default:
+        usedTrafficBytes = null;
+    }
+  }
+
+  const trafficUsagePercent = (server.trafficLimitBytes && usedTrafficBytes !== null && server.trafficLimitBytes > 0)
+    ? (usedTrafficBytes / server.trafficLimitBytes) * 100
+    : null;
+  
   return (
     <tr className="bg-white hover:bg-slate-50 transition-colors duration-150 border-b border-slate-200 last:border-b-0">
       <td className="px-4 py-3 text-sm font-medium text-slate-800">
@@ -128,6 +179,24 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, o
       </td>
       <td className="px-4 py-3 text-sm text-slate-600">{cpuUsage}</td>
       <td className="px-4 py-3 text-sm text-slate-600">{memUsage}</td>
+      {/* Traffic Usage Column */}
+      <td className="px-4 py-3 text-sm text-slate-600">
+        {server.trafficLimitBytes && server.trafficLimitBytes > 0 && trafficUsagePercent !== null && usedTrafficBytes !== null ? (
+          <div className="w-28"> {/* Fixed width for the progress bar and text container */}
+            <div className="flex items-center justify-between text-xs mb-0.5">
+              <span className={`font-semibold ${textClass}`}>{trafficUsagePercent.toFixed(1)}%</span>
+              <span className="text-slate-500 text-xxs">
+                {formatBytesForDisplay(usedTrafficBytes, 0)}/{formatBytesForDisplay(server.trafficLimitBytes, 0)}
+              </span>
+            </div>
+            <ProgressBar value={trafficUsagePercent} colorClass={getUsageColorClass(trafficUsagePercent)} />
+          </div>
+        ) : server.trafficLimitBytes && server.trafficLimitBytes > 0 ? (
+          <span className="text-xs text-slate-400">计算中...</span>
+        ) : (
+          <span className="text-xs text-slate-400">未配置</span>
+        )}
+      </td>
       <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
         <ArrowUpIcon className="w-3.5 h-3.5 mr-1 text-emerald-500 inline-block" /> {upSpeed}
       </td>
