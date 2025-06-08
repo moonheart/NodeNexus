@@ -14,6 +14,7 @@ pub mod settings_service;
 pub mod tag_service;
 pub mod user_service;
 pub mod vps_service;
+pub mod alert_service; // Added alert_service module
 
 // Re-export all public functions and structs from the sub-modules
 // to make them accessible directly under `crate::db::services::*`.
@@ -22,3 +23,4 @@ pub use settings_service::*;
 pub use tag_service::*;
 pub use user_service::*;
 pub use vps_service::*;
+pub use alert_service::*; // Re-export alert_service

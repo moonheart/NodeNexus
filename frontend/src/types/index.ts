@@ -181,38 +181,86 @@ export interface UpdateTagPayload {
   is_visible: boolean;
 }
 
-// Type for creating a new tag, matches backend CreateTagRequest
-export interface CreateTagPayload {
+// --- Notification Channel Types ---
+
+/**
+ * Defines the structure for a field in a channel template for the frontend.
+ * This should match the `ChannelTemplateField` struct from the backend.
+ */
+export interface ChannelTemplateField {
   name: string;
-  color: string;
-  icon?: string;
-  url?: string;
-  is_visible?: boolean;
+  type: string; // e.g., "text", "textarea", "password"
+  required: boolean;
+  label: string;
+  helpText?: string | null;
 }
 
-// Type for updating a tag, matches backend UpdateTagRequest
-export interface UpdateTagPayload {
+/**
+ * Defines the template for a channel type, used to dynamically generate UI.
+ * This should match the `ChannelTemplate` struct from the backend.
+ */
+export interface ChannelTemplate {
+  channelType: string;
   name: string;
-  color: string;
-  icon?: string;
-  url?: string;
-  is_visible: boolean;
+  fields: ChannelTemplateField[];
 }
 
-// Type for creating a new tag, matches backend CreateTagRequest
-export interface CreateTagPayload {
+/**
+ * Represents the API response for a single notification channel.
+ * This should match the `ChannelResponse` struct from the backend.
+ */
+export interface ChannelResponse {
+  id: number;
   name: string;
-  color: string;
-  icon?: string;
-  url?: string;
-  is_visible?: boolean;
+  channelType: string;
+  config?: Record<string, unknown>; // Added optional config for editing
 }
 
-// Type for updating a tag, matches backend UpdateTagRequest
-export interface UpdateTagPayload {
+/**
+ * Represents the API request payload for creating a new notification channel.
+ * This should match the `CreateChannelRequest` struct from the backend.
+ */
+export interface CreateChannelRequest {
   name: string;
-  color: string;
-  icon?: string;
-  url?: string;
-  is_visible: boolean;
+  channelType: string;
+  config: Record<string, unknown>; // The raw config JSON from the frontend
 }
+
+/**
+ * Represents the API request payload for updating an existing notification channel.
+ * This should match the `UpdateChannelRequest` struct from the backend.
+ */
+export interface UpdateChannelRequest {
+  name?: string;
+  config?: Record<string, unknown>;
+}
+// --- Alert Rule Types ---
+
+export interface AlertRule {
+  id: number;
+  userId: number;
+  name: string; // Added name field for better identification
+  vpsId?: number | null;
+  metricType: string;
+  threshold: number;
+  comparisonOperator: string;
+  durationSeconds: number;
+  notificationChannelIds?: number[]; // To link to notification_channels table
+  cooldownSeconds?: number;
+  isActive: boolean; // Added
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAlertRulePayload {
+  name: string;
+  vpsId?: number | null;
+  metricType: string;
+  threshold: number;
+  comparisonOperator: string;
+  durationSeconds: number;
+  notificationChannelIds?: number[]; // Array of channel IDs
+  cooldownSeconds?: number; // Added
+}
+
+export type UpdateAlertRulePayload = Partial<CreateAlertRulePayload>;

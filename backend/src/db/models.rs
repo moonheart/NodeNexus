@@ -121,18 +121,41 @@ pub struct TaskRun {
     pub output: Option<String>,
 }
 
-/// Represents an alert rule defined by a user.
-/// Corresponds to the `alert_rules` table.
+/// Represents an alert rule defined by a user, directly mapping to `alert_rules` table columns.
+/// Used for direct database row mapping.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct AlertRuleFromDb {
+    pub id: i32,
+    pub user_id: i32,
+    pub name: String,
+    pub vps_id: Option<i32>,
+    pub metric_type: String,
+    pub threshold: f64,
+    pub comparison_operator: String,
+    pub duration_seconds: i32,
+    pub is_active: bool,
+    pub last_triggered_at: Option<DateTime<Utc>>,
+    pub cooldown_seconds: i32, // Added
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Represents a complete AlertRule for API responses, including associated channel IDs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AlertRule {
     pub id: i32,
     pub user_id: i32,
-    pub vps_id: Option<i32>, // Can be global if null
-    pub metric_type: String, // e.g., "cpu_usage", "mem_usage"
+    pub name: String,
+    pub vps_id: Option<i32>,
+    pub metric_type: String,
     pub threshold: f64,
-    pub comparison_operator: String, // e.g., ">", "<", "="
+    pub comparison_operator: String,
     pub duration_seconds: i32,
-    pub notification_channel: String, // e.g., "email", "slack"
+    pub notification_channel_ids: Option<Vec<i32>>, // Manually populated
+    pub is_active: bool,
+    pub last_triggered_at: Option<DateTime<Utc>>,
+    pub cooldown_seconds: i32, // Added
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -231,4 +254,25 @@ pub struct Tag {
 pub struct VpsTag {
     pub vps_id: i32,
     pub tag_id: i32,
+}
+
+/// Represents a configured notification channel.
+/// Corresponds to the `notification_channels` table.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct NotificationChannel {
+    pub id: i32,
+    pub user_id: i32,
+    pub name: String,
+    pub channel_type: String, // e.g., "telegram", "webhook"
+    pub config: Vec<u8>,      // Encrypted JSON blob
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Represents the association between an AlertRule and a NotificationChannel.
+/// Corresponds to the `alert_rule_channels` table.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct AlertRuleChannel {
+    pub alert_rule_id: i32,
+    pub channel_id: i32,
 }

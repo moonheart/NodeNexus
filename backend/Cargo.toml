@@ -25,6 +25,11 @@ dotenv = "0.15"
 toml = "0.8"
 tower-http = { version = "0.6", features = ["cors"] }
 futures = "0.3.31"
+tera = "1.20"
+aes-gcm = "0.10"
+async-trait = "0.1"
+reqwest = { version = "0.12", features = ["json"] }
+hex = "0.4"
 
 [build-dependencies]
 prost-build = "0.13"

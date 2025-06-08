@@ -52,5 +52,20 @@ export const updateVps = async (vpsId: number, payload: UpdateVpsPayload): Promi
   }
 };
 
+/**
+ * Fetches all VPS list items.
+ * Useful for populating dropdowns or lists where full details are not immediately needed per item.
+ */
+export const getAllVpsListItems = async (): Promise<VpsListItemResponse[]> => {
+  try {
+    const response = await apiClient.get<VpsListItemResponse[]>('/api/vps'); // Assuming '/api/vps' endpoint returns the list
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching all VPS list items:', error);
+    throw error;
+  }
+};
+
+
 // You might want to add other VPS related API calls here in the future,
 // e.g., deleteVps, etc.

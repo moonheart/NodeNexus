@@ -9,6 +9,7 @@ import NotFoundPage from './pages/NotFoundPage';
 import VpsDetailPage from './pages/VpsDetailPage';
 import SettingsPage from './pages/SettingsPage';
 import TagManagementPage from './pages/TagManagementPage';
+import NotificationsPage from './pages/NotificationsPage'; // Import the new page
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout'; // Import the new Layout component
 import { useAuthStore } from './store/authStore';
@@ -44,6 +45,7 @@ function App() {
             <Route path="/vps/:vpsId" element={<VpsDetailPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/tags" element={<TagManagementPage />} />
+            <Route path="/notifications" element={<NotificationsPage />} /> {/* Add new route */}
             {/* Add other protected routes that need the layout here */}
           </Route>
         </Route>

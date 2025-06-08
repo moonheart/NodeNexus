@@ -17,6 +17,8 @@ use crate::server::agent_state::{ConnectedAgents, LiveServerDataCache};
 use crate::websocket_models::FullServerListPush; // Added import
 use tower_http::cors::{CorsLayer, Any}; // Added CorsLayer and Any
 use self::auth_logic::{LoginRequest, RegisterRequest};
+use crate::notifications::service::NotificationService;
+use crate::db::services::AlertService; // Added AlertService
 
 pub mod auth_logic;
 pub mod metrics_routes;
@@ -24,15 +26,20 @@ pub mod vps_routes; // Added VPS routes module
 pub mod websocket_handler; // Added WebSocket handler module
 pub mod config_routes;
 pub mod tag_routes;
+pub mod notification_routes;
+pub mod models; // Added models module
+pub mod alert_routes; // Added alert_routes module
 
 // Application state to share PgPool
 #[derive(Clone)]
 pub struct AppState {
-    db_pool: PgPool,
-    live_server_data_cache: LiveServerDataCache,
-    ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
-    connected_agents: Arc<Mutex<ConnectedAgents>>,
-    update_trigger_tx: mpsc::Sender<()>,
+    pub db_pool: PgPool,
+    pub live_server_data_cache: LiveServerDataCache,
+    pub ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
+    pub connected_agents: Arc<Mutex<ConnectedAgents>>,
+    pub update_trigger_tx: mpsc::Sender<()>,
+    pub notification_service: Arc<NotificationService>,
+    pub alert_service: Arc<AlertService>, // Added AlertService to AppState
 }
 
 async fn register_handler(
@@ -121,6 +128,8 @@ pub async fn run_http_server(
     ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
     connected_agents: Arc<Mutex<ConnectedAgents>>,
     update_trigger_tx: mpsc::Sender<()>,
+    notification_service: Arc<NotificationService>,
+    alert_service: Arc<AlertService>, // Added alert_service parameter
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let app_state = Arc::new(AppState {
         db_pool,
@@ -128,6 +137,8 @@ pub async fn run_http_server(
         ws_data_broadcaster_tx,
         connected_agents,
         update_trigger_tx,
+        notification_service,
+        alert_service, // Initialize alert_service in AppState
     });
 
     // Configure CORS
@@ -157,6 +168,14 @@ pub async fn run_http_server(
            "/api/tags",
            tag_routes::create_tags_router().route_layer(middleware::from_fn(auth_logic::auth)),
        )
+       .nest(
+            "/api/notifications",
+            notification_routes::create_notification_router().route_layer(middleware::from_fn(auth_logic::auth)),
+        )
+        .nest(
+            "/api/alerts",
+            alert_routes::create_alert_router().route_layer(middleware::from_fn(auth_logic::auth)),
+        )
         .with_state(app_state.clone())
         .layer(cors);
 

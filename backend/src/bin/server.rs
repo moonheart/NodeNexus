@@ -4,6 +4,9 @@ use backend::server::service::MyAgentCommService;
 use backend::websocket_models::{FullServerListPush, ServerWithDetails}; // Added ServerWithDetails
 use backend::db::services as db_services;
 use backend::server::update_service; // Added for cache population
+use backend::notifications::{encryption::EncryptionService, service::NotificationService};
+use backend::db::services::AlertService; // Added AlertService
+use backend::alerting::evaluation_service::EvaluationService; // Added EvaluationService
 use tonic::transport::Server as TonicServer;
 use backend::agent_service::agent_communication_service_server::AgentCommunicationServiceServer;
 use backend::http_server;
@@ -56,6 +59,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         }
     };
     let live_server_data_cache: LiveServerDataCache = Arc::new(Mutex::new(initial_cache_map));
+
+    // --- Notification Service Setup ---
+    let encryption_key = env::var("NOTIFICATION_ENCRYPTION_KEY")
+        .expect("NOTIFICATION_ENCRYPTION_KEY must be set as a 32-byte hex-encoded string.");
+    // The hex crate will be added in the next step.
+    let key_bytes = hex::decode(encryption_key).expect("Failed to decode encryption key.");
+    let encryption_service = Arc::new(EncryptionService::new(&key_bytes).expect("Failed to create encryption service."));
+    let notification_service = Arc::new(NotificationService::new(db_pool.clone(), encryption_service.clone()));
+    let alert_service = Arc::new(AlertService::new(Arc::new(db_pool.clone()))); // Initialize AlertService
 
     // --- gRPC Server Setup (continued) ---
     let agent_comm_service = MyAgentCommService::new(
@@ -134,6 +146,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         ws_data_broadcaster_tx.clone(), // Pass broadcaster to HTTP service (for AppState)
         connected_agents.clone(),       // Pass connected agents state to HTTP service
         update_trigger_tx.clone(),      // Pass update trigger to HTTP service
+        notification_service.clone(),
+        alert_service.clone(), // Pass AlertService to HTTP server
     );
 
     // --- Debounced Broadcast Task ---
@@ -171,6 +185,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         }
     });
 
+    // --- Alert Evaluation Service Task ---
+    let alert_evaluation_service = Arc::new(EvaluationService::new(
+        Arc::new(db_pool.clone()), // Wrap db_pool in Arc
+        notification_service.clone(),
+        alert_service.clone(),
+    ));
+    let evaluation_task = tokio::spawn(async move {
+        // Define the evaluation interval (e.g., 60 seconds)
+        alert_evaluation_service.start_periodic_evaluation(60).await;
+    });
+
     // --- Run all servers and tasks concurrently ---
     let grpc_handle = tokio::spawn(grpc_server_future);
     let http_handle = tokio::spawn(http_server_future);
@@ -188,6 +213,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     // The debouncer_task will be aborted when main exits. For a graceful shutdown,
     // a cancellation token would be needed, but this is sufficient for now.
     let _ = debouncer_task;
+    let _ = evaluation_task; // Keep the evaluation task handle
 
     Ok(())
 }
