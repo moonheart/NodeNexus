@@ -286,6 +286,7 @@ export interface VpsMetadata {
   total_memory_bytes?: number; // uint64 in backend
   total_swap_bytes?: number;   // uint64 in backend
   cpu_static_info?: CpuStaticInfo;
+  country_code?: string; // Added for flag display
   // Add any other known metadata fields that might be present
   // Ensure keys match exactly what's sent from the backend (e.g., snake_case or camelCase)
   // Based on backend vps_service.rs, keys are snake_case

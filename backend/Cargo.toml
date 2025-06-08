@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 bytes = "1.10"
 prost = "0.13"
-tokio = { version = "1.45", features = ["macros", "rt-multi-thread", "sync"] } # Added "sync" for Mutex
+tokio = { version = "1.45", features = ["macros", "rt-multi-thread", "sync", "time"] } # Added "sync" and "time" for Mutex and IP fetch timeout
 tonic = { version = "0.13", features = ["transport", "codegen", "prost"] }
 chrono = { version = "0.4", features = ["serde"] } # Added for timestamp generation
 futures-util = { version = "0.3" }
@@ -24,11 +24,12 @@ thiserror = "2.0"
 dotenv = "0.15"
 toml = "0.8"
 tower-http = { version = "0.6", features = ["cors"] }
-futures = "0.3.31"
+futures = "0.3" # Ensure this is a compatible version, or update if necessary
+once_cell = "1.21" # Added for static HTTP clients
 tera = "1.20"
 aes-gcm = "0.10"
 async-trait = "0.1"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] } # Updated to a specific 0.12.x version and changed features
 hex = "0.4"
 
 [build-dependencies]

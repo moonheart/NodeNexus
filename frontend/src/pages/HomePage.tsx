@@ -356,10 +356,21 @@ const HomePage: React.FC = () => {
             <table className="w-full min-w-[1000px]">
               <thead className="bg-slate-100">
                 <tr>
-                  <th className="px-4 py-3 text-left"><input type="checkbox" className="checkbox checkbox-primary checkbox-sm" onChange={handleSelectAllClick} checked={isAllDisplayedSelected} /></th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">名称</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        className="checkbox checkbox-primary checkbox-sm mr-4"
+                        onChange={handleSelectAllClick}
+                        checked={isAllDisplayedSelected}
+                        aria-label="Select all servers"
+                      />
+                      <span>名称</span>
+                    </div>
+                  </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">状态</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">IP 地址</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">操作系统</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">CPU</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">内存</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">上传</th>

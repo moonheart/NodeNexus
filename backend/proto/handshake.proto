@@ -21,6 +21,7 @@ message AgentHandshake {
   optional uint64 total_memory_bytes = 13;  // From sysinfo::System::total_memory()
   optional uint64 total_swap_bytes = 14;    // From sysinfo::System::total_swap()
   optional CpuStaticInfo cpu_static_info = 15; // Static info for the global CPU
+  optional string country_code = 16; // Country code from cdn-cgi/trace (loc field)
 }
 
 message CpuStaticInfo {

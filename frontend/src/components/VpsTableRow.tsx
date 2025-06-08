@@ -115,7 +115,14 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, o
           {server.status.toUpperCase()}
         </span>
       </td>
-      <td className="px-4 py-3 text-sm text-slate-600">{server.ipAddress || 'N/A'}</td>
+      <td className="px-4 py-3 text-sm text-slate-600">
+        <div className="flex items-center">
+          {server.metadata?.country_code && (
+            <span className={`fi fi-${server.metadata.country_code.toLowerCase()} mr-2`}></span>
+          )}
+          {server.ipAddress || 'N/A'}
+        </div>
+      </td>
       <td className="px-4 py-3 text-sm text-slate-600 truncate" title={server.metadata?.os_name ? String(server.metadata.os_name) : 'N/A'}>
         {server.metadata?.os_name ? String(server.metadata.os_name) : 'N/A'}
       </td>

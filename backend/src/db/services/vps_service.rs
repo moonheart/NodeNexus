@@ -205,6 +205,11 @@ pub async fn update_vps_info_on_handshake(
             "brand": cpu_info.brand,
         }));
     }
+    if let Some(cc) = &handshake_info.country_code {
+        if !cc.is_empty() {
+            agent_info_metadata_map.insert("country_code".to_string(), json!(cc));
+        }
+    }
     
     let agent_info_metadata = serde_json::Value::Object(agent_info_metadata_map);
 

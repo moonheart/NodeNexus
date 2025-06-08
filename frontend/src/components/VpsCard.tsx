@@ -8,7 +8,6 @@ import {
   CpuChipIcon,
   MemoryStickIcon,
   HardDiskIcon,
-  GlobeAltIcon,
   ArrowUpIcon,
   ArrowDownIcon,
   PencilIcon,
@@ -106,7 +105,9 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
           </span>
         </div>
         <p className="text-xs text-slate-500 flex items-center mb-1">
-          <GlobeAltIcon className="w-3.5 h-3.5 mr-1.5 text-slate-400 flex-shrink-0" />
+          {server.metadata?.country_code && (
+            <span className={`fi fi-${server.metadata.country_code.toLowerCase()} mr-1.5`}></span>
+          )}
           {server.ipAddress || 'N/A'}
         </p>
         {server.metadata?.os_name && (

@@ -165,7 +165,7 @@ impl ConnectionHandler {
                           else if cfg!(target_os = "windows") { OsType::Windows }
                           else { OsType::default() }; // Should ideally be OsType::Unknown or similar
         
-        let public_ip_addresses = collect_public_ip_addresses();
+        let (public_ips, country_opt) = collect_public_ip_addresses().await;
 
         // Create a System instance to gather information.
         // Most System::* functions for static info are associated functions and don't need an instance.
@@ -194,7 +194,7 @@ impl ConnectionHandler {
             os_name: System::name().unwrap_or_else(|| "N/A".to_string()),
             arch: System::cpu_arch(),
             hostname: System::host_name().unwrap_or_else(|| "N/A".to_string()),
-            public_ip_addresses,
+            public_ip_addresses: public_ips,
             kernel_version: System::kernel_version().unwrap_or_else(|| "N/A".to_string()),
             os_version_detail: System::os_version().unwrap_or_else(|| "N/A".to_string()),
             long_os_version: System::long_os_version().unwrap_or_else(|| "N/A".to_string()),
@@ -202,7 +202,8 @@ impl ConnectionHandler {
             physical_core_count: System::physical_core_count().map(|c| c as u32),
             total_memory_bytes: Some(sys.total_memory()),
             total_swap_bytes: Some(sys.total_swap()),
-            cpu_static_info: cpu_static_info_opt, // Use the new optional single CPU info from the first core
+            cpu_static_info: cpu_static_info_opt,
+            country_code: country_opt,
         };
         
         let client_message_id_counter = Arc::new(AtomicU64::new(initial_message_id_counter_val)); // Use AtomicU64::new
