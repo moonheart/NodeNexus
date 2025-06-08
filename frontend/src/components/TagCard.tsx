@@ -24,7 +24,7 @@ const TagCard: React.FC<TagCardProps> = ({ tag, onEdit, onDelete, onToggleVisibi
           {TagIcon && <TagIcon className="w-5 h-5" />}
           <span className="font-bold text-lg">{tag.name}</span>
         </div>
-        <div className="text-sm font-mono bg-black bg-opacity-20 px-2 py-1 rounded">
+        <div className="text-sm font-mono bg-black/20 px-2 py-1 rounded">
           ID: {tag.id}
         </div>
       </div>

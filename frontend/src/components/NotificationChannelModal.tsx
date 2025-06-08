@@ -36,7 +36,8 @@ const NotificationChannelModal: React.FC<NotificationChannelModalProps> = ({
         // For now, assuming editingChannel.config is available or we initialize from template.
         if (template) {
             template.fields.forEach(field => {
-                initialFormData[field.name] = editingChannel?.config?.[field.name] || '';
+                // Use configParams from the backend response
+                initialFormData[field.name] = editingChannel?.configParams?.[field.name] || '';
             });
         }
         setFormData(initialFormData);
@@ -154,7 +155,7 @@ const NotificationChannelModal: React.FC<NotificationChannelModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex justify-center items-center">
+    <div className="fixed inset-0 bg-gray-600/50 overflow-y-auto h-full w-full z-50 flex justify-center items-center">
       <div className="relative mx-auto p-5 border w-full max-w-lg shadow-lg rounded-md bg-white">
         <div className="mt-3 text-center">
           <h3 className="text-lg leading-6 font-medium text-gray-900">

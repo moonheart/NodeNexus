@@ -231,7 +231,7 @@ export interface ChannelResponse {
   id: number;
   name: string;
   channelType: string;
-  config?: Record<string, unknown>; // Added optional config for editing
+  configParams?: Record<string, unknown>; // Renamed from config and matches backend
 }
 
 /**

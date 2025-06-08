@@ -20,6 +20,8 @@ import {
   X,
   Check,
   Signal, // Added
+  Eye,
+  EyeOff,
   type LucideProps,
 } from 'lucide-react';
 
@@ -44,5 +46,7 @@ export const PencilSquareIcon = FilePenLine;
 export const XMarkIcon = X;
 export const CheckIcon = Check;
 export const SignalIcon = Signal; // Added
+export const EyeIcon = Eye;
+export const EyeOffIcon = EyeOff;
 
 export type { LucideProps as SVGProps };

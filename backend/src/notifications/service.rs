@@ -98,11 +98,17 @@ impl NotificationService {
         .bind(encrypted_config)
         .fetch_one(&self.db_pool)
         .await?;
+        
+        // Decrypt config for response
+        let decrypted_config_bytes = self.encryption_service.decrypt(&channel.config)?;
+        let config_params: ChannelConfig = serde_json::from_slice(&decrypted_config_bytes)?;
+        let config_params_json = serde_json::to_value(config_params)?;
 
         Ok(super::models::ChannelResponse {
             id: channel.id,
             name: channel.name,
             channel_type: channel.channel_type,
+            config_params: Some(config_params_json),
         })
     }
 
@@ -110,21 +116,26 @@ impl NotificationService {
         &self,
         user_id: i32,
     ) -> Result<Vec<super::models::ChannelResponse>, NotificationError> {
-        let channels = sqlx::query_as::<_, NotificationChannel>(
+        let channels_db = sqlx::query_as::<_, NotificationChannel>(
             "SELECT * FROM notification_channels WHERE user_id = $1 ORDER BY name",
         )
         .bind(user_id)
         .fetch_all(&self.db_pool)
         .await?;
 
-        Ok(channels
-            .into_iter()
-            .map(|c| super::models::ChannelResponse {
-                id: c.id,
-                name: c.name,
-                channel_type: c.channel_type,
-            })
-            .collect())
+        let mut channels_response = Vec::new();
+        for c_db in channels_db {
+            let decrypted_config_bytes = self.encryption_service.decrypt(&c_db.config)?;
+            let config_params: ChannelConfig = serde_json::from_slice(&decrypted_config_bytes)?;
+            let config_params_json = serde_json::to_value(config_params)?;
+            channels_response.push(super::models::ChannelResponse {
+                id: c_db.id,
+                name: c_db.name,
+                channel_type: c_db.channel_type,
+                config_params: Some(config_params_json),
+            });
+        }
+        Ok(channels_response)
     }
 
     pub async fn get_channel_by_id(
@@ -141,10 +152,15 @@ impl NotificationService {
         .await
         .map_err(|_| NotificationError::NotFound(channel_id))?;
 
+        let decrypted_config_bytes = self.encryption_service.decrypt(&channel.config)?;
+        let config_params: ChannelConfig = serde_json::from_slice(&decrypted_config_bytes)?;
+        let config_params_json = serde_json::to_value(config_params)?;
+
         Ok(super::models::ChannelResponse {
             id: channel.id,
             name: channel.name,
             channel_type: channel.channel_type,
+            config_params: Some(config_params_json),
         })
     }
 
@@ -178,6 +194,7 @@ impl NotificationService {
             id: updated_channel.id,
             name: updated_channel.name,
             channel_type: updated_channel.channel_type,
+            config_params: Some(serde_json::to_value(serde_json::from_slice::<ChannelConfig>(&self.encryption_service.decrypt(&updated_channel.config)?)?)?),
         })
     }
 

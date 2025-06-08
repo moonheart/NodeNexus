@@ -63,6 +63,7 @@ pub struct ChannelResponse {
     pub id: i32,
     pub name: String,
     pub channel_type: String,
+    pub config_params: Option<serde_json::Value>, // Added to include decrypted config
 }
 
 /// API request for sending a test notification.
