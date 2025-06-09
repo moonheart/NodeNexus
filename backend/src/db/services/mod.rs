@@ -13,7 +13,11 @@ pub mod performance_service;
 pub mod settings_service;
 pub mod tag_service;
 pub mod user_service;
-pub mod vps_service;
+pub mod vps_core_service; // Added vps_core_service module
+pub mod vps_detail_service; // Added vps_detail_service module
+pub mod vps_renewal_service; // Added vps_renewal_service module
+pub mod vps_traffic_service; // Added vps_traffic_service module
+pub mod vps_service; // This now re-exports from the above vps_* modules
 pub mod alert_service; // Added alert_service module
 
 // Re-export all public functions and structs from the sub-modules
