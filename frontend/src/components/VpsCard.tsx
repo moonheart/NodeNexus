@@ -1,36 +1,25 @@
 import React from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import type { VpsListItemResponse, ServerStatus } from '../types';
+import type { VpsListItemResponse } from '../types';
 import {
-  CheckCircleIcon,
-  ExclamationTriangleIcon,
-  XCircleIcon,
   CpuChipIcon,
   MemoryStickIcon,
   HardDiskIcon,
   ArrowUpIcon,
   ArrowDownIcon,
   PencilIcon,
-  SignalIcon, // Assuming a generic icon for traffic and as placeholder for CalendarDaysIcon
+  SignalIcon,
 } from './Icons';
-import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_ERROR, STATUS_UNKNOWN } from '../types';
-
-
-// Helper function to format bytes into a readable string (e.g., "10.5 GB")
-const formatBytesForDisplay = (bytes: number | null | undefined, decimals = 1): string => {
-  if (bytes === null || typeof bytes === 'undefined' || bytes === 0) return '0 B';
-  if (bytes < 0) return 'N/A'; // Or handle negative values if they are possible
-
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-  if (i >= sizes.length) return parseFloat((bytes / Math.pow(k, sizes.length -1)).toFixed(dm)) + ' ' + sizes[sizes.length -1];
-
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-};
-
+import {
+  formatBytesForDisplay,
+  getUsageColorClass,
+  formatNetworkSpeed,
+  calculateRenewalInfo,
+  calculateTrafficUsage,
+  getVpsStatusAppearance,
+  SharedProgressBar,
+  RenderVpsTags,
+} from '../utils/vpsUtils';
 
 interface VpsCardProps {
   server: VpsListItemResponse;
@@ -39,150 +28,8 @@ interface VpsCardProps {
   onSelectionChange: (vpsId: number, isSelected: boolean) => void;
 }
 
-const getStatusAppearance = (status: ServerStatus): { cardBorderClass: string; badgeBgClass: string; textClass: string; icon?: React.ReactNode } => {
-  switch (status) {
-    case STATUS_ONLINE:
-      return { cardBorderClass: 'border-green-500', badgeBgClass: 'bg-green-500', textClass: 'text-green-700', icon: <CheckCircleIcon className="w-4 h-4" /> };
-    case STATUS_OFFLINE:
-      return { cardBorderClass: 'border-red-500', badgeBgClass: 'bg-red-500', textClass: 'text-red-700', icon: <XCircleIcon className="w-4 h-4" /> };
-    case STATUS_REBOOTING:
-      return { cardBorderClass: 'border-yellow-500', badgeBgClass: 'bg-yellow-500', textClass: 'text-yellow-700', icon: <ExclamationTriangleIcon className="w-4 h-4" /> };
-    case STATUS_PROVISIONING:
-      return { cardBorderClass: 'border-blue-500', badgeBgClass: 'bg-blue-500', textClass: 'text-blue-700', icon: <ExclamationTriangleIcon className="w-4 h-4" /> };
-    case STATUS_ERROR:
-      return { cardBorderClass: 'border-red-700', badgeBgClass: 'bg-red-700', textClass: 'text-red-800', icon: <XCircleIcon className="w-4 h-4" /> };
-    case STATUS_UNKNOWN: // Explicitly handle UNKNOWN
-    default: // Fallback for any other unhandled statuses
-      return { cardBorderClass: 'border-slate-400', badgeBgClass: 'bg-slate-400', textClass: 'text-slate-700', icon: <ExclamationTriangleIcon className="w-4 h-4" /> };
-  }
-};
-
-const getUsageColorClass = (value: number): string => {
-  if (value > 90) return 'bg-red-500';
-  if (value > 70) return 'bg-yellow-500';
-  return 'bg-green-500';
-};
-
-const ProgressBar: React.FC<{ value: number; colorClass: string }> = ({ value, colorClass }) => (
-  <div className="w-full bg-slate-200 rounded-full h-2 dark:bg-slate-700">
-    <div className={`${colorClass} h-2 rounded-full`} style={{ width: `${Math.max(0, Math.min(value, 100))}%` }}></div>
-  </div>
-);
-
-const formatNetworkSpeed = (bps: number | undefined | null): string => {
-  if (typeof bps !== 'number' || bps === null) return 'N/A';
-  if (bps < 1024) return `${bps.toFixed(0)} B/s`;
-  if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KB/s`;
-  return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
-};
-
-const getContrastingTextColor = (hexColor: string): string => {
-  if (!hexColor) return '#000000';
-  const hex = hexColor.replace('#', '');
-  if (hex.length !== 6) return '#000000';
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
-  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
-  return (yiq >= 128) ? '#000000' : '#ffffff';
-};
-
-// Helper function to calculate remaining days and progress for renewal
-const calculateRenewalInfo = (
-  nextRenewalDateStr?: string | null,
-  lastRenewalDateStr?: string | null,
-  serviceStartDateStr?: string | null,
-  renewalCycle?: string | null,
-  renewalCycleCustomDays?: number | null
-): {
-  remainingDays: number | null;
-  progressPercent: number | null;
-  statusText: string;
-  colorClass: string;
-  isApplicable: boolean;
-} => {
-  if (!nextRenewalDateStr) {
-    return { remainingDays: null, progressPercent: null, statusText: '续费日期未设置', colorClass: 'bg-slate-300', isApplicable: false };
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const nextRenewalDate = new Date(nextRenewalDateStr);
-  nextRenewalDate.setHours(0,0,0,0); // Normalize for day comparison
-
-  const timeDiff = nextRenewalDate.getTime() - today.getTime();
-  const remainingDays = Math.ceil(timeDiff / (1000 * 3600 * 24));
-
-  let totalCycleDays: number | null = null;
-  const referenceStartDateStr = lastRenewalDateStr || serviceStartDateStr;
-
-  if (referenceStartDateStr) {
-    const referenceStartDate = new Date(referenceStartDateStr);
-    referenceStartDate.setHours(0,0,0,0);
-    const cycleTimeDiff = nextRenewalDate.getTime() - referenceStartDate.getTime();
-    if (cycleTimeDiff > 0) {
-      totalCycleDays = Math.ceil(cycleTimeDiff / (1000 * 3600 * 24));
-    }
-  }
-  // If totalCycleDays couldn't be calculated from dates, try using renewalCycle info
-  if (totalCycleDays === null || totalCycleDays <=0 ) {
-    if (renewalCycle === 'custom_days' && renewalCycleCustomDays && renewalCycleCustomDays > 0) {
-      totalCycleDays = renewalCycleCustomDays;
-    } else if (renewalCycle) {
-      // Fallback estimates if reference dates are missing or invalid for cycle calculation
-      const estimates: { [key: string]: number } = {
-        'monthly': 30, 'quarterly': 91, 'semi_annually': 182, 'annually': 365,
-        'biennially': 730, 'triennially': 1095
-      };
-      totalCycleDays = estimates[renewalCycle] || null;
-    }
-  }
-
-
-  let progressPercent: number | null = null;
-  if (totalCycleDays && totalCycleDays > 0 && remainingDays !== null) {
-    const daysPassed = totalCycleDays - Math.max(0, remainingDays);
-    progressPercent = (daysPassed / totalCycleDays) * 100;
-  } else if (remainingDays !== null && remainingDays >=0 && remainingDays <= 7) { // Special case for very near expiry without full cycle info
-    progressPercent = 100 - (remainingDays / 7 * 50); // Show some urgency
-  }
-
-
-  let statusText = '';
-  let colorClass = 'bg-green-500';
-
-  if (remainingDays === null) {
-    statusText = '续费日期未知';
-    colorClass = 'bg-slate-300';
-  } else if (remainingDays < 0) {
-    statusText = `已过期 ${Math.abs(remainingDays)} 天`;
-    colorClass = 'bg-red-600'; // Darker red for overdue
-    progressPercent = 100;
-  } else if (remainingDays === 0) {
-    statusText = '今天到期';
-    colorClass = 'bg-red-500';
-  } else if (remainingDays <= 7) {
-    statusText = `剩余 ${remainingDays} 天`;
-    colorClass = 'bg-red-500';
-  } else if (remainingDays <= 15) { // Changed from 30 to 15
-    statusText = `剩余 ${remainingDays} 天`;
-    colorClass = 'bg-yellow-500';
-  } else {
-    statusText = `剩余 ${remainingDays} 天`;
-  }
-
-  return {
-    remainingDays,
-    progressPercent: progressPercent !== null ? Math.max(0, Math.min(progressPercent, 100)) : null,
-    statusText,
-    colorClass,
-    isApplicable: true,
-  };
-};
-
-
 const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelectionChange }) => {
-  const { cardBorderClass, badgeBgClass, textClass: statusTextClass } = getStatusAppearance(server.status);
+  const { cardBorderClass, cardBadgeBgClass, cardTextClass } = getVpsStatusAppearance(server.status);
   const metrics = server.latestMetrics;
 
   const cpuUsage = metrics?.cpuUsagePercent ?? null;
@@ -194,30 +41,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
   const diskTotalBytes = metrics?.diskTotalBytes ?? null;
   const diskUsagePercent = diskTotalBytes && diskUsedBytes !== null ? (diskUsedBytes / diskTotalBytes) * 100 : null;
 
-  // Traffic usage calculation
-  let usedTrafficBytes: number | null = null;
-  if (server.trafficBillingRule && server.trafficLimitBytes && server.trafficLimitBytes > 0) {
-    const rxBytes = server.trafficCurrentCycleRxBytes ?? 0;
-    const txBytes = server.trafficCurrentCycleTxBytes ?? 0;
-    switch (server.trafficBillingRule) {
-      case 'sum_in_out':
-        usedTrafficBytes = rxBytes + txBytes;
-        break;
-      case 'out_only':
-        usedTrafficBytes = txBytes;
-        break;
-      case 'max_in_out':
-        usedTrafficBytes = Math.max(rxBytes, txBytes);
-        break;
-      default:
-        usedTrafficBytes = null; // Or handle as an error/unknown state
-    }
-  }
-
-  const trafficUsagePercent = (server.trafficLimitBytes && usedTrafficBytes !== null && server.trafficLimitBytes > 0)
-    ? (usedTrafficBytes / server.trafficLimitBytes) * 100
-    : null;
-
+  const { usedTrafficBytes, trafficUsagePercent } = calculateTrafficUsage(server);
   const renewalInfo = calculateRenewalInfo(
     server.nextRenewalDate,
     server.lastRenewalDate,
@@ -244,7 +68,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
               {server.name}
             </RouterLink>
           </h3>
-          <span className={`px-2 py-0.5 text-xs font-semibold rounded-full text-white ${badgeBgClass}`}>
+          <span className={`px-2 py-0.5 text-xs font-semibold rounded-full text-white ${cardBadgeBgClass}`}>
             {server.status.toUpperCase()}
           </span>
         </div>
@@ -264,32 +88,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
             CPU: {server.metadata.cpu_static_info.brand}
           </p>
         )}
-        {server.tags && server.tags.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {server.tags.filter(tag => tag.isVisible).map(tag => {
-              const tagComponent = (
-                <span
-                  className="px-2 py-0.5 text-xs font-medium rounded-full"
-                  style={{
-                    backgroundColor: tag.color,
-                    color: getContrastingTextColor(tag.color),
-                  }}
-                >
-                  {tag.name}
-                </span>
-              );
-
-              if (tag.url) {
-                return (
-                  <a href={tag.url} target="_blank" rel="noopener noreferrer" key={tag.id}>
-                    {tagComponent}
-                  </a>
-                );
-              }
-              return <div key={tag.id}>{tagComponent}</div>;
-            })}
-          </div>
-        )}
+        <RenderVpsTags tags={server.tags} />
         {/* Optional: Add OS Type or other quick info if available and desired */}
         {/* <p className="text-xs text-slate-500">{server.osType || 'Unknown OS'}</p> */}
       </div>
@@ -299,9 +98,9 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
           <div className="text-xs text-slate-600">
             <div className="flex items-center mb-0.5">
               <CpuChipIcon className="w-4 h-4 mr-1.5 text-indigo-500 flex-shrink-0" />
-              <span>CPU: <span className={`font-semibold ${statusTextClass}`}>{cpuUsage.toFixed(1)}%</span></span>
+              <span>CPU: <span className={`font-semibold ${cardTextClass}`}>{cpuUsage.toFixed(1)}%</span></span>
             </div>
-            <ProgressBar value={cpuUsage} colorClass={getUsageColorClass(cpuUsage)} />
+            <SharedProgressBar value={cpuUsage} colorClass={getUsageColorClass(cpuUsage)} />
           </div>
         )}
 
@@ -309,11 +108,11 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
           <div className="text-xs text-slate-600">
             <div className="flex items-center mb-0.5">
               <MemoryStickIcon className="w-4 h-4 mr-1.5 text-purple-500 flex-shrink-0" />
-              <span>RAM: <span className={`font-semibold ${statusTextClass}`}>{memoryUsagePercent.toFixed(1)}%</span>
+              <span>RAM: <span className={`font-semibold ${cardTextClass}`}>{memoryUsagePercent.toFixed(1)}%</span>
                 <span className="text-slate-500 text-xxs"> ({formatBytesForDisplay(memoryUsageBytes, 1)} / {formatBytesForDisplay(memoryTotalBytes, 1)})</span>
               </span>
             </div>
-            <ProgressBar value={memoryUsagePercent} colorClass={getUsageColorClass(memoryUsagePercent)} />
+            <SharedProgressBar value={memoryUsagePercent} colorClass={getUsageColorClass(memoryUsagePercent)} />
           </div>
         )}
         
@@ -321,11 +120,11 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
           <div className="text-xs text-slate-600">
             <div className="flex items-center mb-0.5">
               <HardDiskIcon className="w-4 h-4 mr-1.5 text-orange-500 flex-shrink-0" />
-              <span>Disk: <span className={`font-semibold ${statusTextClass}`}>{diskUsagePercent.toFixed(1)}%</span>
+              <span>Disk: <span className={`font-semibold ${cardTextClass}`}>{diskUsagePercent.toFixed(1)}%</span>
               <span className="text-slate-500 text-xxs"> ({ (diskUsedBytes / (1024*1024*1024)).toFixed(1) }GB / { (diskTotalBytes / (1024*1024*1024)).toFixed(1) }GB)</span>
               </span>
             </div>
-            <ProgressBar value={diskUsagePercent} colorClass={getUsageColorClass(diskUsagePercent)} />
+            <SharedProgressBar value={diskUsagePercent} colorClass={getUsageColorClass(diskUsagePercent)} />
           </div>
         )}
 
@@ -335,13 +134,13 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
             <div className="flex items-center justify-between mb-0.5">
               <div className="flex items-center">
                 <SignalIcon className="w-4 h-4 mr-1.5 text-cyan-500 flex-shrink-0" />
-                <span>流量: <span className={`font-semibold ${statusTextClass}`}>{trafficUsagePercent.toFixed(1)}%</span></span>
+                <span>流量: <span className={`font-semibold ${cardTextClass}`}>{trafficUsagePercent.toFixed(1)}%</span></span>
               </div>
               <span className="text-slate-500 text-xxs">
                 {formatBytesForDisplay(usedTrafficBytes)} / {formatBytesForDisplay(server.trafficLimitBytes)}
               </span>
             </div>
-            <ProgressBar value={trafficUsagePercent} colorClass={getUsageColorClass(trafficUsagePercent)} />
+            <SharedProgressBar value={trafficUsagePercent} colorClass={getUsageColorClass(trafficUsagePercent)} />
           </div>
         )}
 
@@ -354,7 +153,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
                 <span>续费: <span className={`font-semibold ${renewalInfo.colorClass.replace('bg-', 'text-')}`}>{renewalInfo.statusText}</span></span>
               </div>
             </div>
-            <ProgressBar value={renewalInfo.progressPercent} colorClass={renewalInfo.colorClass} />
+            <SharedProgressBar value={renewalInfo.progressPercent} colorClass={renewalInfo.colorClass} />
           </div>
         )}
 
