@@ -1,4 +1,4 @@
-use sqlx::{PgPool, Postgres, Transaction, Executor};
+use sqlx::{PgPool, Postgres, Transaction};
 use std::sync::Arc;
 use crate::db::models::{AlertRule, AlertRuleFromDb, AlertRuleChannel}; // Added AlertRuleFromDb
 use crate::http_server::models::alert_models::{CreateAlertRuleRequest, UpdateAlertRuleRequest};

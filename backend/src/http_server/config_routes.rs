@@ -6,7 +6,7 @@ use axum::{
 use std::sync::Arc;
 use crate::http_server::AppState;
 use crate::agent_service::{AgentConfig, MessageToAgent, message_to_agent::Payload as AgentPayload, UpdateConfigRequest};
-use crate::db::{services as db_services, models::Vps};
+use crate::db::services as db_services;
 use uuid::Uuid;
 
 // This router is for global settings, mounted under /api/settings

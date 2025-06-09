@@ -1,6 +1,6 @@
 use chrono::{TimeZone, Utc};
 use sqlx::postgres::types::PgInterval;
-use sqlx::{FromRow, PgPool, Result};
+use sqlx::{PgPool, Result};
 
 use crate::agent_service::PerformanceSnapshotBatch;
 use crate::db::models::{AggregatedPerformanceMetric, PerformanceMetric};

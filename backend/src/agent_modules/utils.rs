@@ -1,5 +1,5 @@
 use std::net::IpAddr;
-use sysinfo::{Networks, System};
+use sysinfo::System;
 use crate::agent_service::StaticSystemInfo;
 use reqwest::Client;
 use std::time::Duration;

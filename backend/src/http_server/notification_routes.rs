@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{delete, get, post, put},
+    routing::{get, post},
     Extension, Json, Router,
 };
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use std::sync::Arc;
 use crate::http_server::{AppError, AppState, auth_logic::AuthenticatedUser}; // Import AuthenticatedUser
 use crate::notifications::{
     models::{CreateChannelRequest, TestChannelRequest, UpdateChannelRequest},
-    service::{NotificationError, NotificationService},
+    service::NotificationError,
 };
 
 pub fn create_notification_router() -> Router<Arc<AppState>> {

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use axum::{
     extract::{State, Path, Extension},
-    routing::{get, post, put, delete},
+    routing::{get, post, put},
     Json, Router,
 };
 use crate::http_server::{

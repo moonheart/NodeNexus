@@ -3,7 +3,7 @@ use sqlx::PgPool;
 use tokio::time::{interval, Duration as TokioDuration}; // Renamed to avoid conflict
 use chrono::{Utc, Duration as ChronoDuration}; // Added ChronoDuration
 use crate::{
-    db::{models::{AlertRuleFromDb, PerformanceMetric, Vps}, services::{AlertService, vps_service}}, // Added PerformanceMetric, Vps, vps_service
+    db::{models::{AlertRuleFromDb, PerformanceMetric}, services::{AlertService, vps_service}}, // Added PerformanceMetric, Vps, vps_service
     notifications::service::NotificationService,
 };
 

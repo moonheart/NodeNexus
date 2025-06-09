@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::broadcast;
 use sqlx::PgPool;
 
 use crate::db::services;

@@ -1081,7 +1081,7 @@ pub async fn process_vps_traffic_reset(pool: &PgPool, vps_id: i32) -> Result<boo
         tx.commit().await?; // VPS not found, commit to release lock if any was taken by begin
         return Ok(false); 
     }
-    let mut vps_data = vps.unwrap();
+    let vps_data = vps.unwrap();
 
     // Check if reset is due
     if vps_data.next_traffic_reset_at.is_none() || vps_data.next_traffic_reset_at.unwrap() > now {
