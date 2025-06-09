@@ -67,6 +67,20 @@ pub struct ServerWithDetails {
     pub os_type: Option<String>,
     pub created_at: DateTime<Utc>, // Assuming this comes from the database Vps model
     pub metadata: Option<serde_json::Value>, // Added to include VPS metadata
+
+    // Renewal Info Fields
+    pub renewal_cycle: Option<String>,
+    pub renewal_cycle_custom_days: Option<i32>,
+    pub renewal_price: Option<f64>,
+    pub renewal_currency: Option<String>,
+    pub next_renewal_date: Option<DateTime<Utc>>,
+    pub last_renewal_date: Option<DateTime<Utc>>,
+    pub service_start_date: Option<DateTime<Utc>>,
+    pub payment_method: Option<String>,
+    pub auto_renew_enabled: Option<bool>,
+    pub renewal_notes: Option<String>,
+    pub reminder_active: Option<bool>,
+    // pub last_reminder_generated_at: Option<DateTime<Utc>>, // Decided to omit from websocket model for now, primarily backend concern
 }
 
 #[derive(Serialize, Clone, Debug)]

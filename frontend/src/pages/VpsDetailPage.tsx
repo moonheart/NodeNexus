@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { getVpsMetricsTimeseries, getLatestNMetrics } from '../services/metricsService';
+import { dismissVpsRenewalReminder } from '../services/vpsService';
 import type { PerformanceMetricPoint, ServerStatus } from '../types';
 import { useServerListStore } from '../store/serverListStore';
 import EditVpsModal from '../components/EditVpsModal';
@@ -20,6 +21,8 @@ import {
   ArrowUpIcon,
   ArrowDownIcon,
   PencilIcon,
+  SignalIcon, // Placeholder for BellIcon
+  GlobeAltIcon, // Placeholder for InformationCircleIcon
 } from '../components/Icons';
 import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_ERROR } from '../types';
 
@@ -132,6 +135,26 @@ const formatTrafficDate = (dateString: string | null | undefined): string => {
   }
 };
 
+const formatRenewalCycle = (cycle?: string | null, customDays?: number | null): string => {
+  if (!cycle) return '未设置';
+  switch (cycle) {
+    case 'monthly': return '每月';
+    case 'quarterly': return '每季度';
+    case 'semi_annually': return '每半年';
+    case 'annually': return '每年';
+    case 'biennially': return '每两年';
+    case 'triennially': return '每三年';
+    case 'custom_days': return customDays ? `每 ${customDays} 天` : '自定义天数 (未指定天数)';
+    default: return cycle;
+  }
+};
+
+const formatBoolean = (value?: boolean | null): string => {
+  if (value === null || typeof value === 'undefined') return '未设置';
+  return value ? '是' : '否';
+};
+
+
 const getStatusBadgeClasses = (status: ServerStatus): string => {
   switch (status) {
     case STATUS_ONLINE: return "bg-green-100 text-green-800";
@@ -185,14 +208,43 @@ const VpsDetailPage: React.FC = () => {
   const [chartError, setChartError] = useState<string | null>(null);
   const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('realtime');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDismissingReminder, setIsDismissingReminder] = useState(false);
+  const [dismissReminderError, setDismissReminderError] = useState<string | null>(null);
+  const [dismissReminderSuccess, setDismissReminderSuccess] = useState<string | null>(null);
 
   const handleVpsUpdated = () => {
    // The websocket connection should update the store automatically.
    console.log('VPS updated, store should refresh via WebSocket.');
    setIsEditModalOpen(false);
-  };
+ };
 
-  const isLoadingPage = isServerListLoading && !vpsDetail;
+ const handleDismissReminder = async () => {
+   if (!vpsDetail || !vpsDetail.id) return;
+   setIsDismissingReminder(true);
+   setDismissReminderError(null);
+   setDismissReminderSuccess(null);
+   try {
+     await dismissVpsRenewalReminder(vpsDetail.id);
+     setDismissReminderSuccess('续费提醒已成功清除。');
+     // The websocket update should refresh the vpsDetail.reminderActive state
+   } catch (error: unknown) {
+     console.error('Failed to dismiss reminder:', error);
+     let errorMessage = '清除提醒失败。';
+     if (typeof error === 'object' && error !== null) {
+       const errAsAxios = error as { response?: { data?: { error?: string } }, message?: string };
+       if (errAsAxios.response?.data?.error) {
+         errorMessage = errAsAxios.response.data.error;
+       } else if (errAsAxios.message) {
+         errorMessage = errAsAxios.message;
+       }
+     }
+     setDismissReminderError(errorMessage);
+   } finally {
+     setIsDismissingReminder(false);
+   }
+ };
+
+ const isLoadingPage = isServerListLoading && !vpsDetail;
   const pageError = connectionStatus === 'error' || connectionStatus === 'permanently_failed'
     ? "WebSocket connection error."
     : (connectionStatus === 'connected' && !vpsDetail && !isServerListLoading ? "VPS details not found." : null);
@@ -463,6 +515,47 @@ const VpsDetailPage: React.FC = () => {
           <InfoBlock title="Total Disk" value={formatBytes(metrics?.diskTotalBytes)} /> {/* Disk info usually comes from metrics */}
         </div>
       </section>
+
+      {/* Renewal Information Section */}
+      {(vpsDetail.renewalCycle || vpsDetail.nextRenewalDate || vpsDetail.paymentMethod) && ( // Show section if any key renewal info exists
+        <section className="bg-white p-6 rounded-xl shadow-md">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-semibold text-slate-700 flex items-center">
+              <GlobeAltIcon className="w-6 h-6 mr-2 text-indigo-500" /> {/* Placeholder Icon */}
+              续费信息
+            </h2>
+            {vpsDetail.reminderActive && (
+              <button
+                onClick={handleDismissReminder}
+                disabled={isDismissingReminder}
+                className="inline-flex items-center bg-yellow-100 hover:bg-yellow-200 text-yellow-800 font-medium py-1.5 px-3.5 rounded-lg transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <SignalIcon className="w-4 h-4 mr-1.5" /> {/* Placeholder Icon */}
+                {isDismissingReminder ? '清除中...' : '清除提醒'}
+              </button>
+            )}
+          </div>
+
+          {dismissReminderError && <p className="text-sm text-red-600 bg-red-100 p-2 rounded-md mb-4">{dismissReminderError}</p>}
+          {dismissReminderSuccess && <p className="text-sm text-green-600 bg-green-100 p-2 rounded-md mb-4">{dismissReminderSuccess}</p>}
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6 text-sm">
+            <InfoBlock title="续费周期" value={formatRenewalCycle(vpsDetail.renewalCycle, vpsDetail.renewalCycleCustomDays)} />
+            <InfoBlock title="续费价格" value={vpsDetail.renewalPrice != null ? `${vpsDetail.renewalPrice} ${vpsDetail.renewalCurrency || ''}`.trim() : '未设置'} />
+            <InfoBlock title="下次续费日期" value={formatTrafficDate(vpsDetail.nextRenewalDate)} />
+            <InfoBlock title="上次续费日期" value={formatTrafficDate(vpsDetail.lastRenewalDate)} />
+            <InfoBlock title="服务开始日期" value={formatTrafficDate(vpsDetail.serviceStartDate)} />
+            <InfoBlock title="支付方式" value={vpsDetail.paymentMethod || '未设置'} />
+            <InfoBlock title="自动续费" value={formatBoolean(vpsDetail.autoRenewEnabled)} />
+            <InfoBlock title="提醒状态" value={formatBoolean(vpsDetail.reminderActive)} />
+            {vpsDetail.renewalNotes && (
+              <div className="md:col-span-2 lg:col-span-3">
+                <InfoBlock title="续费备注" value={vpsDetail.renewalNotes} />
+              </div>
+            )}
+          </div>
+        </section>
+      )}
     </div>
   );
 };

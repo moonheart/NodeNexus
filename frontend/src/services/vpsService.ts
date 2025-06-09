@@ -50,6 +50,19 @@ export interface UpdateVpsPayload {
   traffic_reset_config_type?: string | null;
   traffic_reset_config_value?: string | null;
   next_traffic_reset_at?: string | null; // ISO string for DateTime<Utc>
+
+  // Renewal Info Fields (matching backend UpdateVpsRequest)
+  renewalCycle?: string | null;
+  renewalCycleCustomDays?: number | null;
+  renewalPrice?: number | null;
+  renewalCurrency?: string | null;
+  nextRenewalDate?: string | null; // ISO string for DateTime<Utc>
+  lastRenewalDate?: string | null; // ISO string for DateTime<Utc>
+  serviceStartDate?: string | null; // ISO string for DateTime<Utc>
+  paymentMethod?: string | null;
+  autoRenewEnabled?: boolean | null;
+  renewalNotes?: string | null;
+  // reminderActive is managed by backend
 }
 
 /**
@@ -78,6 +91,17 @@ export const getAllVpsListItems = async (): Promise<VpsListItemResponse[]> => {
   }
 };
 
+/**
+ * Dismisses the active renewal reminder for a specific VPS.
+ */
+export const dismissVpsRenewalReminder = async (vpsId: number): Promise<void> => {
+  try {
+    await apiClient.post(`/api/vps/${vpsId}/renewal/dismiss-reminder`);
+  } catch (error) {
+    console.error(`Error dismissing renewal reminder for VPS ID ${vpsId}:`, error);
+    throw error;
+  }
+};
 
 // You might want to add other VPS related API calls here in the future,
 // e.g., deleteVps, etc.

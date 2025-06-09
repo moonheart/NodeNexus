@@ -288,3 +288,24 @@ pub struct AlertRuleChannel {
     pub alert_rule_id: i32,
     pub channel_id: i32,
 }
+
+/// Represents detailed renewal information for a VPS, including reminder status.
+/// Corresponds to the `vps_renewal_info` table.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct VpsRenewalInfo {
+    pub vps_id: i32, // Primary Key, Foreign Key to vps.id
+    pub renewal_cycle: Option<String>, // e.g., "monthly", "annually", "custom_days"
+    pub renewal_cycle_custom_days: Option<i32>, // if renewal_cycle is "custom_days"
+    pub renewal_price: Option<f64>,
+    pub renewal_currency: Option<String>, // e.g., "USD", "CNY"
+    pub next_renewal_date: Option<DateTime<Utc>>,
+    pub last_renewal_date: Option<DateTime<Utc>>,
+    pub service_start_date: Option<DateTime<Utc>>,
+    pub payment_method: Option<String>,
+    pub auto_renew_enabled: Option<bool>, // Default false in DB
+    pub renewal_notes: Option<String>,
+    pub reminder_active: Option<bool>, // Default false in DB, true if a reminder is active
+    pub last_reminder_generated_at: Option<DateTime<Utc>>, // Tracks when the last reminder was generated
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}

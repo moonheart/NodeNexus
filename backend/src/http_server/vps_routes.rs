@@ -74,14 +74,8 @@ pub struct VpsListItemResponse {
     pub name: String,
     pub ip_address: Option<String>,
     pub os_type: Option<String>,
-    // agent_secret is sensitive and should not be sent to the list view.
-    // pub agent_secret: String,
     pub status: String,
-    // metadata is large and not needed for the list view.
-    // pub metadata: Option<serde_json::Value>,
     pub created_at: String,
-    // updated_at is not currently used in the UI list.
-    // pub updated_at: String,
     #[serde(rename = "group")]
     pub group: Option<String>,
     pub tags: Option<Vec<crate::websocket_models::Tag>>,
@@ -89,23 +83,36 @@ pub struct VpsListItemResponse {
     pub config_status: String,
     pub last_config_update_at: Option<String>,
     pub last_config_error: Option<String>,
-    // agent_config_override is not needed for the list view.
-    // pub agent_config_override: Option<serde_json::Value>,
 
     // Traffic monitoring fields
     pub traffic_limit_bytes: Option<i64>,
     pub traffic_billing_rule: Option<String>,
     pub traffic_current_cycle_rx_bytes: Option<i64>,
     pub traffic_current_cycle_tx_bytes: Option<i64>,
-    pub traffic_last_reset_at: Option<String>, // DateTime<Utc> to String
+    pub traffic_last_reset_at: Option<String>,
     pub traffic_reset_config_type: Option<String>,
     pub traffic_reset_config_value: Option<String>,
-    pub next_traffic_reset_at: Option<String>, // DateTime<Utc> to String
+    pub next_traffic_reset_at: Option<String>,
+
+    // Renewal Info Fields (flattened)
+    pub renewal_cycle: Option<String>,
+    pub renewal_cycle_custom_days: Option<i32>,
+    pub renewal_price: Option<f64>,
+    pub renewal_currency: Option<String>,
+    pub next_renewal_date: Option<String>, // DateTime<Utc> to String
+    pub last_renewal_date: Option<String>, // DateTime<Utc> to String
+    pub service_start_date: Option<String>, // DateTime<Utc> to String
+    pub payment_method: Option<String>,
+    pub auto_renew_enabled: Option<bool>,
+    pub renewal_notes: Option<String>,
+    pub reminder_active: Option<bool>,
+    // last_reminder_generated_at is likely not needed by list view, but can be added if detail view needs it
 }
 
 // This converts the unified `ServerWithDetails` model (used by websockets)
 // into the `VpsListItemResponse` model (used by the REST API).
 // This ensures data consistency between initial load (REST) and updates (WS).
+// NOTE: This will require `ServerWithDetails` to be updated to include renewal fields.
 impl From<crate::websocket_models::ServerWithDetails> for VpsListItemResponse {
     fn from(details: crate::websocket_models::ServerWithDetails) -> Self {
         Self {
@@ -122,7 +129,6 @@ impl From<crate::websocket_models::ServerWithDetails> for VpsListItemResponse {
             config_status: details.basic_info.config_status,
             last_config_update_at: details.basic_info.last_config_update_at.map(|dt| dt.to_rfc3339()),
             last_config_error: details.basic_info.last_config_error,
-            // Map new traffic fields
             traffic_limit_bytes: details.basic_info.traffic_limit_bytes,
             traffic_billing_rule: details.basic_info.traffic_billing_rule,
             traffic_current_cycle_rx_bytes: details.basic_info.traffic_current_cycle_rx_bytes,
@@ -131,6 +137,21 @@ impl From<crate::websocket_models::ServerWithDetails> for VpsListItemResponse {
             traffic_reset_config_type: details.basic_info.traffic_reset_config_type,
             traffic_reset_config_value: details.basic_info.traffic_reset_config_value,
             next_traffic_reset_at: details.basic_info.next_traffic_reset_at.map(|dt| dt.to_rfc3339()),
+
+            // Map renewal fields (assuming they will be added to ServerWithDetails or a similar joined struct)
+            // For now, these will default to None or false if not present in ServerWithDetails.
+            // This part will need to be updated when ServerWithDetails is modified.
+            renewal_cycle: details.renewal_cycle.clone(),
+            renewal_cycle_custom_days: details.renewal_cycle_custom_days,
+            renewal_price: details.renewal_price,
+            renewal_currency: details.renewal_currency.clone(),
+            next_renewal_date: details.next_renewal_date.map(|dt| dt.to_rfc3339()),
+            last_renewal_date: details.last_renewal_date.map(|dt| dt.to_rfc3339()),
+            service_start_date: details.service_start_date.map(|dt| dt.to_rfc3339()),
+            payment_method: details.payment_method.clone(),
+            auto_renew_enabled: details.auto_renew_enabled,
+            renewal_notes: details.renewal_notes.clone(),
+            reminder_active: details.reminder_active,
         }
     }
 }
@@ -211,12 +232,14 @@ async fn get_vps_detail_handler(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateVpsRequest {
     name: Option<String>,
     group: Option<String>,
     tag_ids: Option<Vec<i32>>,
+
     // Traffic monitoring config fields
-    #[serde(default)] // Allows field to be omitted in JSON, defaulting to None
+    #[serde(default)]
     traffic_limit_bytes: Option<i64>,
     #[serde(default)]
     traffic_billing_rule: Option<String>,
@@ -225,9 +248,31 @@ pub struct UpdateVpsRequest {
     #[serde(default)]
     traffic_reset_config_value: Option<String>,
     #[serde(default)]
-    next_traffic_reset_at: Option<DateTime<Utc>>, // Assuming frontend sends RFC3339 string
-}
+    next_traffic_reset_at: Option<DateTime<Utc>>,
 
+    // Renewal Info Fields
+    #[serde(default)]
+    renewal_cycle: Option<String>,
+    #[serde(default)]
+    renewal_cycle_custom_days: Option<i32>,
+    #[serde(default)]
+    renewal_price: Option<f64>,
+    #[serde(default)]
+    renewal_currency: Option<String>,
+    #[serde(default)]
+    next_renewal_date: Option<DateTime<Utc>>,
+    #[serde(default)]
+    last_renewal_date: Option<DateTime<Utc>>,
+    #[serde(default)]
+    service_start_date: Option<DateTime<Utc>>,
+    #[serde(default)]
+    payment_method: Option<String>,
+    #[serde(default)]
+    auto_renew_enabled: Option<bool>,
+    #[serde(default)]
+    renewal_notes: Option<String>,
+    // reminder_active and last_reminder_generated_at are managed by backend, not set by client directly in update
+}
 
 async fn update_vps_handler(
     Extension(authenticated_user): Extension<AuthenticatedUser>,
@@ -247,6 +292,37 @@ async fn update_vps_handler(
     }
 
     // Proceed with the update
+
+    // Construct VpsRenewalDataInput from payload
+    // Only create Some(VpsRenewalDataInput) if at least one renewal field is present in the payload.
+    // This avoids unnecessary database operations if no renewal info is being updated.
+    let renewal_input_opt = if payload.renewal_cycle.is_some()
+        || payload.renewal_cycle_custom_days.is_some()
+        || payload.renewal_price.is_some()
+        || payload.renewal_currency.is_some()
+        || payload.next_renewal_date.is_some()
+        || payload.last_renewal_date.is_some()
+        || payload.service_start_date.is_some()
+        || payload.payment_method.is_some()
+        || payload.auto_renew_enabled.is_some()
+        || payload.renewal_notes.is_some()
+    {
+        Some(services::VpsRenewalDataInput {
+            renewal_cycle: payload.renewal_cycle,
+            renewal_cycle_custom_days: payload.renewal_cycle_custom_days,
+            renewal_price: payload.renewal_price,
+            renewal_currency: payload.renewal_currency,
+            next_renewal_date: payload.next_renewal_date,
+            last_renewal_date: payload.last_renewal_date,
+            service_start_date: payload.service_start_date,
+            payment_method: payload.payment_method,
+            auto_renew_enabled: payload.auto_renew_enabled,
+            renewal_notes: payload.renewal_notes,
+        })
+    } else {
+        None
+    };
+
     let change_detected = services::update_vps(
         &app_state.db_pool,
         vps_id,
@@ -254,12 +330,12 @@ async fn update_vps_handler(
         payload.name,
         payload.group,
         payload.tag_ids,
-        // Pass new traffic fields
         payload.traffic_limit_bytes,
         payload.traffic_billing_rule,
         payload.traffic_reset_config_type,
         payload.traffic_reset_config_value,
         payload.next_traffic_reset_at,
+        renewal_input_opt, // Pass the constructed renewal input
 ).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
 if change_detected {
@@ -389,6 +465,45 @@ async fn bulk_update_vps_tags_handler(
     }
 }
 
+// --- Renewal Reminder Handler ---
+
+async fn dismiss_renewal_reminder_handler(
+    Extension(authenticated_user): Extension<AuthenticatedUser>,
+    State(app_state): State<Arc<AppState>>,
+    Path(vps_id): Path<i32>,
+) -> Result<StatusCode, AppError> {
+    let user_id = authenticated_user.id;
+
+    // Authorize: Check if user owns the VPS
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
+
+    if vps.user_id != user_id {
+        return Err(AppError::Unauthorized("Permission denied to VPS".to_string()));
+    }
+
+    // Attempt to dismiss the reminder
+    match services::dismiss_vps_renewal_reminder(&app_state.db_pool, vps_id).await {
+        Ok(rows_affected) => {
+            if rows_affected > 0 {
+                // Successfully dismissed, trigger a full state update to ensure consistency
+                update_service::broadcast_full_state_update(
+                    &app_state.db_pool,
+                    &app_state.live_server_data_cache,
+                    &app_state.ws_data_broadcaster_tx,
+                ).await;
+                Ok(StatusCode::OK)
+            } else {
+                // No reminder was active, or VPS not found in renewal info (though ownership check should catch this)
+                Ok(StatusCode::NOT_MODIFIED) // Or NOT_FOUND if we want to be more specific
+            }
+        }
+        Err(e) => Err(AppError::DatabaseError(e.to_string())),
+    }
+}
+
+
 pub fn vps_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", post(create_vps_handler))
@@ -396,6 +511,7 @@ pub fn vps_router() -> Router<Arc<AppState>> {
         .route("/bulk-actions", post(bulk_update_vps_tags_handler))
         .route("/{vps_id}", get(get_vps_detail_handler))
         .route("/{vps_id}", put(update_vps_handler))
+        .route("/{vps_id}/renewal/dismiss-reminder", post(dismiss_renewal_reminder_handler)) // New route
         .nest("/{vps_id}/tags", vps_tags_router()) // Nest the tags router
         .merge(config_routes::create_vps_config_router())
 }

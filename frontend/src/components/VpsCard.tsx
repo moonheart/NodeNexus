@@ -11,7 +11,7 @@ import {
   ArrowUpIcon,
   ArrowDownIcon,
   PencilIcon,
-  SignalIcon, // Assuming a generic icon for traffic
+  SignalIcon, // Assuming a generic icon for traffic and as placeholder for CalendarDaysIcon
 } from './Icons';
 import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_ERROR, STATUS_UNKNOWN } from '../types';
 
@@ -87,6 +87,100 @@ const getContrastingTextColor = (hexColor: string): string => {
   return (yiq >= 128) ? '#000000' : '#ffffff';
 };
 
+// Helper function to calculate remaining days and progress for renewal
+const calculateRenewalInfo = (
+  nextRenewalDateStr?: string | null,
+  lastRenewalDateStr?: string | null,
+  serviceStartDateStr?: string | null,
+  renewalCycle?: string | null,
+  renewalCycleCustomDays?: number | null
+): {
+  remainingDays: number | null;
+  progressPercent: number | null;
+  statusText: string;
+  colorClass: string;
+  isApplicable: boolean;
+} => {
+  if (!nextRenewalDateStr) {
+    return { remainingDays: null, progressPercent: null, statusText: '续费日期未设置', colorClass: 'bg-slate-300', isApplicable: false };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const nextRenewalDate = new Date(nextRenewalDateStr);
+  nextRenewalDate.setHours(0,0,0,0); // Normalize for day comparison
+
+  const timeDiff = nextRenewalDate.getTime() - today.getTime();
+  const remainingDays = Math.ceil(timeDiff / (1000 * 3600 * 24));
+
+  let totalCycleDays: number | null = null;
+  const referenceStartDateStr = lastRenewalDateStr || serviceStartDateStr;
+
+  if (referenceStartDateStr) {
+    const referenceStartDate = new Date(referenceStartDateStr);
+    referenceStartDate.setHours(0,0,0,0);
+    const cycleTimeDiff = nextRenewalDate.getTime() - referenceStartDate.getTime();
+    if (cycleTimeDiff > 0) {
+      totalCycleDays = Math.ceil(cycleTimeDiff / (1000 * 3600 * 24));
+    }
+  }
+  // If totalCycleDays couldn't be calculated from dates, try using renewalCycle info
+  if (totalCycleDays === null || totalCycleDays <=0 ) {
+    if (renewalCycle === 'custom_days' && renewalCycleCustomDays && renewalCycleCustomDays > 0) {
+      totalCycleDays = renewalCycleCustomDays;
+    } else if (renewalCycle) {
+      // Fallback estimates if reference dates are missing or invalid for cycle calculation
+      const estimates: { [key: string]: number } = {
+        'monthly': 30, 'quarterly': 91, 'semi_annually': 182, 'annually': 365,
+        'biennially': 730, 'triennially': 1095
+      };
+      totalCycleDays = estimates[renewalCycle] || null;
+    }
+  }
+
+
+  let progressPercent: number | null = null;
+  if (totalCycleDays && totalCycleDays > 0 && remainingDays !== null) {
+    const daysPassed = totalCycleDays - Math.max(0, remainingDays);
+    progressPercent = (daysPassed / totalCycleDays) * 100;
+  } else if (remainingDays !== null && remainingDays >=0 && remainingDays <= 7) { // Special case for very near expiry without full cycle info
+    progressPercent = 100 - (remainingDays / 7 * 50); // Show some urgency
+  }
+
+
+  let statusText = '';
+  let colorClass = 'bg-green-500';
+
+  if (remainingDays === null) {
+    statusText = '续费日期未知';
+    colorClass = 'bg-slate-300';
+  } else if (remainingDays < 0) {
+    statusText = `已过期 ${Math.abs(remainingDays)} 天`;
+    colorClass = 'bg-red-600'; // Darker red for overdue
+    progressPercent = 100;
+  } else if (remainingDays === 0) {
+    statusText = '今天到期';
+    colorClass = 'bg-red-500';
+  } else if (remainingDays <= 7) {
+    statusText = `剩余 ${remainingDays} 天`;
+    colorClass = 'bg-red-500';
+  } else if (remainingDays <= 15) { // Changed from 30 to 15
+    statusText = `剩余 ${remainingDays} 天`;
+    colorClass = 'bg-yellow-500';
+  } else {
+    statusText = `剩余 ${remainingDays} 天`;
+  }
+
+  return {
+    remainingDays,
+    progressPercent: progressPercent !== null ? Math.max(0, Math.min(progressPercent, 100)) : null,
+    statusText,
+    colorClass,
+    isApplicable: true,
+  };
+};
+
+
 const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelectionChange }) => {
   const { cardBorderClass, badgeBgClass, textClass: statusTextClass } = getStatusAppearance(server.status);
   const metrics = server.latestMetrics;
@@ -123,6 +217,14 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
   const trafficUsagePercent = (server.trafficLimitBytes && usedTrafficBytes !== null && server.trafficLimitBytes > 0)
     ? (usedTrafficBytes / server.trafficLimitBytes) * 100
     : null;
+
+  const renewalInfo = calculateRenewalInfo(
+    server.nextRenewalDate,
+    server.lastRenewalDate,
+    server.serviceStartDate,
+    server.renewalCycle,
+    server.renewalCycleCustomDays
+  );
 
   return (
     <div className={`relative bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300 overflow-hidden flex flex-col border-l-4 ${cardBorderClass}`}>
@@ -240,6 +342,19 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
               </span>
             </div>
             <ProgressBar value={trafficUsagePercent} colorClass={getUsageColorClass(trafficUsagePercent)} />
+          </div>
+        )}
+
+        {/* Renewal Progress Bar */}
+        {renewalInfo.isApplicable && renewalInfo.progressPercent !== null && (
+          <div className="text-xs text-slate-600">
+            <div className="flex items-center justify-between mb-0.5">
+              <div className="flex items-center">
+                 <SignalIcon className="w-4 h-4 mr-1.5 text-blue-500 flex-shrink-0" /> {/* Placeholder Icon */}
+                <span>续费: <span className={`font-semibold ${renewalInfo.colorClass.replace('bg-', 'text-')}`}>{renewalInfo.statusText}</span></span>
+              </div>
+            </div>
+            <ProgressBar value={renewalInfo.progressPercent} colorClass={renewalInfo.colorClass} />
           </div>
         )}
 

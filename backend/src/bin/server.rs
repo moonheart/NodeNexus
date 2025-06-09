@@ -244,6 +244,74 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         }
     });
 
+    // --- Renewal Reminder Check Task ---
+    let pool_for_renewal_reminder = db_pool.clone();
+    let trigger_for_renewal_reminder = update_trigger_tx.clone();
+    const REMINDER_THRESHOLD_DAYS: i64 = 7; // Remind 7 days in advance
+    const RENEWAL_REMINDER_CHECK_INTERVAL_SECONDS: u64 = 6 * 60 * 60; // Check every 6 hours
+
+    tokio::spawn(async move {
+        let mut interval = interval(Duration::from_secs(RENEWAL_REMINDER_CHECK_INTERVAL_SECONDS));
+        println!(
+            "Renewal reminder check task started. Interval: {} seconds, Threshold: {} days.",
+            RENEWAL_REMINDER_CHECK_INTERVAL_SECONDS, REMINDER_THRESHOLD_DAYS
+        );
+
+        loop {
+            interval.tick().await;
+            println!("Performing scheduled renewal reminder check...");
+            match db_services::check_and_generate_reminders(&pool_for_renewal_reminder, REMINDER_THRESHOLD_DAYS).await {
+                Ok(reminders_generated) => {
+                    if reminders_generated > 0 {
+                        println!("{} renewal reminders were generated/updated. Triggering state update.", reminders_generated);
+                        if trigger_for_renewal_reminder.send(()).await.is_err() {
+                            eprintln!("Failed to send update trigger from renewal reminder task.");
+                        }
+                    } else {
+                        // println!("No new renewal reminders generated at this time.");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error checking/generating renewal reminders: {}", e);
+                }
+            }
+        }
+    });
+ 
+    // --- Automatic Renewal Processing Task ---
+    let pool_for_auto_renewal = db_pool.clone();
+    let trigger_for_auto_renewal = update_trigger_tx.clone();
+    const AUTO_RENEWAL_CHECK_INTERVAL_SECONDS: u64 = 6 * 60 * 60; // Check every 6 hours
+
+    tokio::spawn(async move {
+        let mut interval = interval(Duration::from_secs(AUTO_RENEWAL_CHECK_INTERVAL_SECONDS));
+        println!(
+            "Automatic renewal processing task started. Interval: {} seconds.",
+            AUTO_RENEWAL_CHECK_INTERVAL_SECONDS
+        );
+
+        loop {
+            interval.tick().await;
+            println!("Performing scheduled automatic renewal processing...");
+            match db_services::process_all_automatic_renewals(&pool_for_auto_renewal).await {
+                Ok(renewed_count) => {
+                    if renewed_count > 0 {
+                        println!("{} VPS were automatically renewed. Triggering state update.", renewed_count);
+                        if trigger_for_auto_renewal.send(()).await.is_err() {
+                            eprintln!("Failed to send update trigger from automatic renewal task.");
+                        }
+                    } else {
+                        // println!("No VPS were automatically renewed at this time.");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error processing automatic renewals: {}", e);
+                }
+            }
+        }
+    });
+
+
     // --- Run all servers and tasks concurrently ---
     let grpc_handle = tokio::spawn(grpc_server_future);
     let http_handle = tokio::spawn(http_server_future);
@@ -263,6 +331,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     let _ = debouncer_task;
     let _ = evaluation_task; // Keep the evaluation task handle
     let _ = traffic_reset_task; // Keep the traffic reset task handle
+    // The renewal reminder task also runs in the background and will be aborted when main exits.
 
     Ok(())
 }

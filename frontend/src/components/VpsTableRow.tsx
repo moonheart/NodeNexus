@@ -81,6 +81,97 @@ const getContrastingTextColor = (hexColor: string): string => {
   return (yiq >= 128) ? '#000000' : '#ffffff';
 };
 
+// Helper function to calculate remaining days and progress for renewal (same as in VpsCard.tsx)
+const calculateRenewalInfo = (
+  nextRenewalDateStr?: string | null,
+  lastRenewalDateStr?: string | null,
+  serviceStartDateStr?: string | null,
+  renewalCycle?: string | null,
+  renewalCycleCustomDays?: number | null
+): {
+  remainingDays: number | null;
+  progressPercent: number | null;
+  statusText: string;
+  colorClass: string;
+  isApplicable: boolean;
+} => {
+  if (!nextRenewalDateStr) {
+    return { remainingDays: null, progressPercent: null, statusText: 'N/A', colorClass: 'bg-slate-300', isApplicable: false };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const nextRenewalDate = new Date(nextRenewalDateStr);
+  nextRenewalDate.setHours(0,0,0,0);
+
+  const timeDiff = nextRenewalDate.getTime() - today.getTime();
+  const remainingDays = Math.ceil(timeDiff / (1000 * 3600 * 24));
+
+  let totalCycleDays: number | null = null;
+  const referenceStartDateStr = lastRenewalDateStr || serviceStartDateStr;
+
+  if (referenceStartDateStr) {
+    const referenceStartDate = new Date(referenceStartDateStr);
+    referenceStartDate.setHours(0,0,0,0);
+    const cycleTimeDiff = nextRenewalDate.getTime() - referenceStartDate.getTime();
+    if (cycleTimeDiff > 0) {
+      totalCycleDays = Math.ceil(cycleTimeDiff / (1000 * 3600 * 24));
+    }
+  }
+  
+  if (totalCycleDays === null || totalCycleDays <=0 ) {
+    if (renewalCycle === 'custom_days' && renewalCycleCustomDays && renewalCycleCustomDays > 0) {
+      totalCycleDays = renewalCycleCustomDays;
+    } else if (renewalCycle) {
+      const estimates: { [key: string]: number } = {
+        'monthly': 30, 'quarterly': 91, 'semi_annually': 182, 'annually': 365,
+        'biennially': 730, 'triennially': 1095
+      };
+      totalCycleDays = estimates[renewalCycle] || null;
+    }
+  }
+
+  let progressPercent: number | null = null;
+  if (totalCycleDays && totalCycleDays > 0 && remainingDays !== null) {
+    const daysPassed = totalCycleDays - Math.max(0, remainingDays);
+    progressPercent = (daysPassed / totalCycleDays) * 100;
+  } else if (remainingDays !== null && remainingDays >=0 && remainingDays <= 7) {
+    progressPercent = 100 - (remainingDays / 7 * 50);
+  }
+
+  let statusText = '';
+  let colorClass = 'bg-green-500';
+
+  if (remainingDays === null) {
+    statusText = 'N/A';
+    colorClass = 'bg-slate-300';
+  } else if (remainingDays < 0) {
+    statusText = `过期 ${Math.abs(remainingDays)}天`;
+    colorClass = 'bg-red-600';
+    progressPercent = 100;
+  } else if (remainingDays === 0) {
+    statusText = '今天到期';
+    colorClass = 'bg-red-500';
+  } else if (remainingDays <= 7) {
+    statusText = `剩 ${remainingDays}天`;
+    colorClass = 'bg-red-500';
+  } else if (remainingDays <= 15) { // Changed from 30 to 15
+    statusText = `剩 ${remainingDays}天`;
+    colorClass = 'bg-yellow-500';
+  } else {
+    statusText = `剩 ${remainingDays}天`;
+  }
+
+  return {
+    remainingDays,
+    progressPercent: progressPercent !== null ? Math.max(0, Math.min(progressPercent, 100)) : null,
+    statusText,
+    colorClass,
+    isApplicable: true,
+  };
+};
+
+
 const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, onSelectionChange }) => {
   const { badgeClass, textClass, icon } = getStatusAppearance(server.status);
   const metrics = server.latestMetrics;
@@ -115,6 +206,14 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, o
   const trafficUsagePercent = (server.trafficLimitBytes && usedTrafficBytes !== null && server.trafficLimitBytes > 0)
     ? (usedTrafficBytes / server.trafficLimitBytes) * 100
     : null;
+
+  const renewalInfo = calculateRenewalInfo(
+    server.nextRenewalDate,
+    server.lastRenewalDate,
+    server.serviceStartDate,
+    server.renewalCycle,
+    server.renewalCycleCustomDays
+  );
   
   return (
     <tr className="bg-white hover:bg-slate-50 transition-colors duration-150 border-b border-slate-200 last:border-b-0">
@@ -193,6 +292,21 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, o
           </div>
         ) : server.trafficLimitBytes && server.trafficLimitBytes > 0 ? (
           <span className="text-xs text-slate-400">计算中...</span>
+        ) : (
+          <span className="text-xs text-slate-400">未配置</span>
+        )}
+      </td>
+      {/* Renewal Info Column */}
+      <td className="px-4 py-3 text-sm text-slate-600">
+        {renewalInfo.isApplicable && renewalInfo.progressPercent !== null ? (
+          <div className="w-28"> {/* Fixed width for consistency */}
+            <div className="flex items-center justify-between text-xs mb-0.5">
+              <span className={`font-semibold ${renewalInfo.colorClass.replace('bg-', 'text-')}`}>{renewalInfo.statusText}</span>
+              {/* Optional: Show percentage if space allows or on hover */}
+              {/* <span className="text-slate-500">{renewalInfo.progressPercent.toFixed(0)}%</span> */}
+            </div>
+            <ProgressBar value={renewalInfo.progressPercent} colorClass={renewalInfo.colorClass} />
+          </div>
         ) : (
           <span className="text-xs text-slate-400">未配置</span>
         )}

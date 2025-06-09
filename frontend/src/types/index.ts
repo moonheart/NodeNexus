@@ -133,6 +133,19 @@ export interface VpsListItemResponse {
   trafficResetConfigType?: string | null;
   trafficResetConfigValue?: string | null;
   nextTrafficResetAt?: string | null;
+
+  // Renewal Info Fields
+  renewalCycle?: string | null;
+  renewalCycleCustomDays?: number | null;
+  renewalPrice?: number | null;
+  renewalCurrency?: string | null;
+  nextRenewalDate?: string | null; // DateTime<Utc> as string
+  lastRenewalDate?: string | null; // DateTime<Utc> as string
+  serviceStartDate?: string | null; // DateTime<Utc> as string
+  paymentMethod?: string | null;
+  autoRenewEnabled?: boolean | null;
+  renewalNotes?: string | null;
+  reminderActive?: boolean | null;
 }
 
 /**

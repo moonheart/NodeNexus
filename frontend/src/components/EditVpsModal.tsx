@@ -5,7 +5,7 @@ import { updateVps } from '../services/vpsService';
 import type { VpsListItemResponse } from '../types';
 import axios from 'axios';
 import { useServerListStore } from '../store/serverListStore';
-import { X } from 'lucide-react';
+import { X } from 'lucide-react'; // Removed ChevronDown, ChevronUp
 const BYTES_IN_KB = 1024;
 const BYTES_IN_MB = BYTES_IN_KB * 1024;
 const BYTES_IN_GB = BYTES_IN_MB * 1024;
@@ -67,6 +67,20 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, allVp
   const [trafficResetConfigValue, setTrafficResetConfigValue] = useState<string>('');
   const [nextTrafficResetAt, setNextTrafficResetAt] = useState<string>('');
 
+  // Renewal Info States
+  const [renewalCycle, setRenewalCycle] = useState<string>('');
+  const [renewalCycleCustomDays, setRenewalCycleCustomDays] = useState<string>(''); // Input as string
+  const [renewalPrice, setRenewalPrice] = useState<string>(''); // Input as string
+  const [renewalCurrency, setRenewalCurrency] = useState<string>('');
+  const [nextRenewalDate, setNextRenewalDate] = useState<string>(''); // datetime-local format
+  const [lastRenewalDate, setLastRenewalDate] = useState<string>(''); // datetime-local format
+  const [serviceStartDate, setServiceStartDate] = useState<string>(''); // datetime-local format
+  const [paymentMethod, setPaymentMethod] = useState<string>('');
+  const [autoRenewEnabled, setAutoRenewEnabled] = useState<boolean>(false);
+  const [renewalNotes, setRenewalNotes] = useState<string>('');
+  // const [isRenewalSectionOpen, setIsRenewalSectionOpen] = useState(true); // Removed
+  const [activeTab, setActiveTab] = useState<'basic' | 'traffic' | 'renewal'>('basic');
+ 
   const allTags = useServerListStore((state) => state.allTags);
   const fetchAllTags = useServerListStore((state) => state.fetchAllTags);
 
@@ -107,6 +121,18 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, allVp
       setTrafficResetConfigType(vps.trafficResetConfigType || '');
       setTrafficResetConfigValue(vps.trafficResetConfigValue || '');
       setNextTrafficResetAt(vps.nextTrafficResetAt ? vps.nextTrafficResetAt.substring(0, 16) : ''); // Format for datetime-local
+
+      // Initialize renewal fields
+      setRenewalCycle(vps.renewalCycle || '');
+      setRenewalCycleCustomDays(vps.renewalCycleCustomDays?.toString() || '');
+      setRenewalPrice(vps.renewalPrice?.toString() || '');
+      setRenewalCurrency(vps.renewalCurrency || '');
+      setNextRenewalDate(vps.nextRenewalDate ? vps.nextRenewalDate.substring(0, 16) : '');
+      setLastRenewalDate(vps.lastRenewalDate ? vps.lastRenewalDate.substring(0, 16) : '');
+      setServiceStartDate(vps.serviceStartDate ? vps.serviceStartDate.substring(0, 16) : '');
+      setPaymentMethod(vps.paymentMethod || '');
+      setAutoRenewEnabled(vps.autoRenewEnabled || false);
+      setRenewalNotes(vps.renewalNotes || '');
 
       setError(null);
       setIsLoading(false);
@@ -168,12 +194,24 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, allVp
     const payload = {
       name: name.trim(),
       group: group?.value,
-      tag_ids: selectedTags.map(t => t.value),
-      traffic_limit_bytes: trafficLimitInput ? unitToBytes(parseFloat(trafficLimitInput), trafficLimitUnit) : null,
-      traffic_billing_rule: trafficBillingRule || null,
-      traffic_reset_config_type: trafficResetConfigType || null,
-      traffic_reset_config_value: trafficResetConfigValue || null,
-      next_traffic_reset_at: nextTrafficResetAt ? new Date(nextTrafficResetAt).toISOString() : null,
+      tagIds: selectedTags.map(t => t.value), // Renamed from tag_ids
+      trafficLimitBytes: trafficLimitInput ? unitToBytes(parseFloat(trafficLimitInput), trafficLimitUnit) : null, // Renamed
+      trafficBillingRule: trafficBillingRule || null, // Renamed
+      trafficResetConfigType: trafficResetConfigType || null, // Renamed
+      trafficResetConfigValue: trafficResetConfigValue || null, // Renamed
+      nextTrafficResetAt: nextTrafficResetAt ? new Date(nextTrafficResetAt).toISOString() : null, // Renamed
+ 
+      // Renewal Info
+      renewalCycle: renewalCycle || null,
+      renewalCycleCustomDays: renewalCycleCustomDays ? parseInt(renewalCycleCustomDays, 10) : null,
+      renewalPrice: renewalPrice ? parseFloat(renewalPrice) : null,
+      renewalCurrency: renewalCurrency || null,
+      nextRenewalDate: nextRenewalDate ? new Date(nextRenewalDate).toISOString() : null,
+      lastRenewalDate: lastRenewalDate ? new Date(lastRenewalDate).toISOString() : null,
+      serviceStartDate: serviceStartDate ? new Date(serviceStartDate).toISOString() : null,
+      paymentMethod: paymentMethod || null,
+      autoRenewEnabled: autoRenewEnabled,
+      renewalNotes: renewalNotes || null,
     };
 
     try {
@@ -209,9 +247,51 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, allVp
         </div>
 
         <form onSubmit={handleSubmit}>
+          {/* Tab Navigation */}
+          <div className="mb-4 border-b border-slate-200">
+            <nav className="-mb-px flex space-x-4" aria-label="Tabs">
+              <button
+                type="button"
+                onClick={() => setActiveTab('basic')}
+                className={`${
+                  activeTab === 'basic'
+                    ? 'border-indigo-500 text-indigo-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                } whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm focus:outline-none`}
+              >
+                基本信息
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('traffic')}
+                className={`${
+                  activeTab === 'traffic'
+                    ? 'border-indigo-500 text-indigo-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                } whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm focus:outline-none`}
+              >
+                流量监控
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('renewal')}
+                className={`${
+                  activeTab === 'renewal'
+                    ? 'border-indigo-500 text-indigo-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                } whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm focus:outline-none`}
+              >
+                续费设置
+              </button>
+            </nav>
+          </div>
+
           <div className="space-y-4">
-            <div>
-              <label htmlFor="vpsName" className="block text-sm font-medium text-slate-700 mb-1">名称</label>
+            {/* Basic Info Tab Content */}
+            {activeTab === 'basic' && (
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="vpsName" className="block text-sm font-medium text-slate-700 mb-1">名称</label>
               <input
                 type="text"
                 id="vpsName"
@@ -242,12 +322,15 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, allVp
                 closeMenuOnSelect={false}
               />
             </div>
+              </div>
+            )}
 
-            {/* Traffic Monitoring Fields */}
-            <div className="border-t border-slate-200 pt-4 mt-4">
-              <h3 className="text-md font-semibold text-slate-800 mb-3">流量监控配置</h3>
-              <div>
-                <label htmlFor="trafficLimitInput" className="block text-sm font-medium text-slate-700 mb-1">流量限制</label>
+            {/* Traffic Monitoring Tab Content */}
+            {activeTab === 'traffic' && (
+              // Removed "border-t border-slate-200 pt-4 mt-4" and h3 title
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="trafficLimitInput" className="block text-sm font-medium text-slate-700 mb-1">流量限制</label>
                 <div className="flex space-x-2">
                   <input
                     type="number"
@@ -343,9 +426,205 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, allVp
                     : '如果留空，后端将根据重置规则自动计算。如果填写，将以此时间为准。'}
                 </p>
               </div>
-            </div>
-          </div>
+              </div> // Closing div for activeTab === 'traffic'
+            )}
+ 
+            {/* Renewal Information Tab Content */}
+            {activeTab === 'renewal' && (
+              // Removed "border-t border-slate-200 pt-4 mt-4" and collapsible button
+              <div className="space-y-4">
+                  <div>
+                    <label htmlFor="renewalCycle" className="block text-sm font-medium text-slate-700 mb-1">续费周期</label>
+                <select
+                  id="renewalCycle"
+                  value={renewalCycle}
+                  onChange={(e) => {
+                    const newCycle = e.target.value;
+                    setRenewalCycle(newCycle);
+                    if (newCycle !== 'custom_days') {
+                      setRenewalCycleCustomDays('');
+                    }
+                    if (newCycle === '') { // If "不设置" is chosen, clear all other renewal fields
+                      setRenewalCycleCustomDays('');
+                      setRenewalPrice('');
+                      setRenewalCurrency('');
+                      setNextRenewalDate('');
+                      setLastRenewalDate('');
+                      setServiceStartDate('');
+                      setPaymentMethod('');
+                      setAutoRenewEnabled(false);
+                      setRenewalNotes('');
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                >
+                  <option value="">不设置</option>
+                  <option value="monthly">每月</option>
+                  <option value="quarterly">每季度</option>
+                  <option value="semi_annually">每半年</option>
+                  <option value="annually">每年</option>
+                  <option value="biennially">每两年</option>
+                  <option value="triennially">每三年</option>
+                  <option value="custom_days">自定义天数</option>
+                </select>
+              </div>
+ 
+              {/* Conditionally render the rest of the renewal fields only if a renewalCycle is selected */}
+              {renewalCycle && (
+                <>
+                  {renewalCycle === 'custom_days' && (
+                    <div className="mt-4">
+                      <label htmlFor="renewalCycleCustomDays" className="block text-sm font-medium text-slate-700 mb-1">自定义周期天数</label>
+                      <input
+                        type="number"
+                        id="renewalCycleCustomDays"
+                        value={renewalCycleCustomDays}
+                        onChange={(e) => setRenewalCycleCustomDays(e.target.value)}
+                        placeholder="例如: 45"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                    </div>
+                  )}
 
+                  {/* Renewal Price and Currency on the same line */}
+                  <div className="mt-4 grid grid-cols-4 gap-4 items-end">
+                    <div className="col-span-2">
+                      <label htmlFor="renewalPrice" className="block text-sm font-medium text-slate-700 mb-1">续费价格</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="renewalPrice"
+                        value={renewalPrice}
+                        onChange={(e) => setRenewalPrice(e.target.value)}
+                        placeholder="例如: 19.99"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label htmlFor="renewalCurrency" className="block text-sm font-medium text-slate-700 mb-1">货币</label>
+                      <CreatableSelect
+                        id="renewalCurrency"
+                        isClearable
+                        value={renewalCurrency ? { value: renewalCurrency, label: renewalCurrency } : null}
+                        onChange={(selectedOption) => setRenewalCurrency(selectedOption ? selectedOption.value : '')}
+                        options={[
+                          { value: 'USD', label: 'USD' },
+                          { value: 'CNY', label: 'CNY' },
+                          { value: 'EUR', label: 'EUR' },
+                          { value: 'JPY', label: 'JPY' },
+                          { value: 'GBP', label: 'GBP' },
+                          { value: 'HKD', label: 'HKD' },
+                          { value: 'AUD', label: 'AUD' },
+                          { value: 'CAD', label: 'CAD' },
+                          { value: 'SGD', label: 'SGD' },
+                        ]}
+                        placeholder="选择或输入..."
+                        classNamePrefix="react-select"
+                        styles={{
+                          control: (base) => ({ ...base, minHeight: '42px', borderColor: 'rgb(203 213 225)', boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)', '&:hover': { borderColor: 'rgb(99 102 241)' }}),
+                          input: (base) => ({ ...base, margin: '0px', paddingBottom: '0px', paddingTop: '0px' }),
+                          valueContainer: (base) => ({ ...base, padding: '0px 8px' }),
+                          placeholder: (base) => ({ ...base, color: 'rgb(100 116 139)' })
+                        }}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="mt-4">
+                <label htmlFor="serviceStartDate" className="block text-sm font-medium text-slate-700 mb-1">服务开始日期</label>
+                <input
+                  type="datetime-local"
+                  id="serviceStartDate"
+                  value={serviceStartDate}
+                  onChange={(e) => setServiceStartDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="mt-4">
+                <label htmlFor="lastRenewalDate" className="block text-sm font-medium text-slate-700 mb-1">上次续费日期</label>
+                <input
+                  type="datetime-local"
+                  id="lastRenewalDate"
+                  value={lastRenewalDate}
+                  onChange={(e) => setLastRenewalDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="mt-4">
+                <label htmlFor="nextRenewalDate" className="block text-sm font-medium text-slate-700 mb-1">下次续费日期</label>
+                <input
+                  type="datetime-local"
+                  id="nextRenewalDate"
+                  value={nextRenewalDate}
+                  onChange={(e) => setNextRenewalDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                />
+                 <p className="text-xs text-slate-500 mt-1">如果留空，且设置了续费周期和上次续费/服务开始日期，后端将自动计算。</p>
+              </div>
+
+              <div className="mt-4">
+                <label htmlFor="paymentMethod" className="block text-sm font-medium text-slate-700 mb-1">支付方式</label>
+                <CreatableSelect
+                  id="paymentMethod"
+                  isClearable
+                  value={paymentMethod ? { value: paymentMethod, label: paymentMethod } : null}
+                  onChange={(selectedOption) => setPaymentMethod(selectedOption ? selectedOption.value : '')}
+                  options={[
+                    { value: 'PayPal', label: 'PayPal' },
+                    { value: 'Alipay', label: 'Alipay (支付宝)' },
+                    { value: 'Credit Card', label: 'Credit Card (信用卡)' },
+                    { value: 'Stripe', label: 'Stripe' },
+                    { value: 'Bank Transfer', label: 'Bank Transfer (银行转账)' },
+                    { value: 'WeChat Pay', label: 'WeChat Pay (微信支付)' },
+                    { value: 'UnionPay', label: 'UnionPay (银联)' },
+                    { value: 'Apple Pay', label: 'Apple Pay' },
+                    { value: 'Google Pay', label: 'Google Pay' },
+                  ]}
+                  placeholder="选择或输入支付方式..."
+                  classNamePrefix="react-select"
+                  styles={{
+                    control: (base) => ({ ...base, minHeight: '42px', borderColor: 'rgb(203 213 225)', boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)', '&:hover': { borderColor: 'rgb(99 102 241)' }}),
+                    input: (base) => ({ ...base, margin: '0px', paddingBottom: '0px', paddingTop: '0px' }),
+                    valueContainer: (base) => ({ ...base, padding: '0px 8px' }),
+                    placeholder: (base) => ({ ...base, color: 'rgb(100 116 139)' })
+                  }}
+                />
+              </div>
+ 
+              <div className="mt-4">
+                <label htmlFor="renewalNotes" className="block text-sm font-medium text-slate-700 mb-1">续费备注</label>
+                <textarea
+                  id="renewalNotes"
+                  value={renewalNotes}
+                  onChange={(e) => setRenewalNotes(e.target.value)}
+                  rows={3}
+                  placeholder="例如: 优惠码 XYZ, 自动续费已绑定信用卡"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="mt-4 flex items-center">
+                <input
+                  id="autoRenewEnabled"
+                  name="autoRenewEnabled"
+                  type="checkbox"
+                  checked={autoRenewEnabled}
+                  onChange={(e) => setAutoRenewEnabled(e.target.checked)}
+                  className="h-4 w-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"
+                />
+                <label htmlFor="autoRenewEnabled" className="ml-2 block text-sm text-slate-900">
+                  启用自动续费
+                </label>
+              </div>
+                </>
+              )}
+              {/* End of conditional rendering for renewalCycle */}
+              </div> // Closing div for activeTab === 'renewal'
+            )}
+          </div>
+ 
           {error && <p className="text-red-500 text-sm mt-4">错误: {error}</p>}
 
           <div className="mt-6 flex justify-end space-x-3">
