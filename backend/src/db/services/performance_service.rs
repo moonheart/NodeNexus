@@ -1,167 +1,169 @@
-use chrono::{TimeZone, Utc};
-use sqlx::postgres::types::PgInterval;
-use sqlx::{PgPool, Result};
+use chrono::{DateTime, TimeZone, Utc};
+use sea_orm::{
+    ActiveModelTrait,
+    ColumnTrait,
+    DatabaseConnection,
+    DbErr,
+    EntityTrait,
+    FromQueryResult,
+    Order,
+    QueryFilter,
+    QueryOrder,
+    QuerySelect,
+    Set, // Removed IntoActiveModel, ModelTrait, PaginatorTrait, Value
+    TransactionTrait,
+    sea_query::{Alias, Expr, Func},
+};
+use serde::{Deserialize, Serialize};
 
 use crate::agent_service::PerformanceSnapshotBatch;
-use crate::db::models::{AggregatedPerformanceMetric, PerformanceMetric};
-use crate::db::services::vps_service; // Added for traffic stats update
+use crate::db::entities::{performance_disk_usage, performance_metric};
+use crate::db::services::vps_traffic_service; // Corrected direct import
 
 // --- PerformanceMetric Service Functions ---
 
+/// Represents an aggregated performance metric, typically used for time-bucketed queries.
+#[derive(FromQueryResult, Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AggregatedPerformanceMetric {
+    pub time: Option<DateTime<Utc>>,
+    pub vps_id: i32,
+    pub avg_cpu_usage_percent: Option<f64>,
+    pub avg_memory_usage_bytes: Option<f64>,
+    pub max_memory_total_bytes: Option<i64>,
+    pub avg_network_rx_instant_bps: Option<f64>,
+    pub avg_network_tx_instant_bps: Option<f64>,
+}
+
 /// Retrieves performance metrics for a given VPS within a time range.
 pub async fn get_performance_metrics_for_vps(
-    pool: &PgPool,
+    db: &DatabaseConnection,
     vps_id: i32,
-    start_time: chrono::DateTime<chrono::Utc>,
-    end_time: chrono::DateTime<chrono::Utc>,
+    start_time: DateTime<Utc>,
+    end_time: DateTime<Utc>,
     interval_seconds: Option<u32>,
-) -> Result<Vec<AggregatedPerformanceMetric>> {
+) -> Result<Vec<AggregatedPerformanceMetric>, DbErr> {
     if let Some(seconds) = interval_seconds {
-        let interval_value = PgInterval {
-            months: 0,
-            days: 0,
-            microseconds: (seconds.max(1) as i64) * 1_000_000,
-        };
+        let time_bucket_expr = Expr::cust(format!(
+            "time_bucket(INTERVAL '{} seconds', \"time\")",
+            seconds.max(1)
+        ));
 
-        sqlx::query_as!(
-            AggregatedPerformanceMetric,
-            r#"
-            WITH TimeBucketed AS (
-                SELECT
-                    time_bucket($4::interval, time) AS bucket_time,
-                    vps_id,
-                    AVG(cpu_usage_percent) AS avg_cpu_usage_percent,
-                    AVG(memory_usage_bytes) AS avg_memory_usage_bytes,
-                    MAX(memory_total_bytes) AS max_memory_total_bytes,
-                    AVG(network_rx_instant_bps) AS avg_network_rx_instant_bps,
-                    AVG(network_tx_instant_bps) AS avg_network_tx_instant_bps
-                FROM performance_metrics
-                WHERE vps_id = $1 AND time >= $2 AND time <= $3
-                GROUP BY bucket_time, vps_id
+        performance_metric::Entity::find()
+            .select_only()
+            .column_as(time_bucket_expr.clone(), "time")
+            .column(performance_metric::Column::VpsId)
+            .column_as(
+                Expr::expr(Func::avg(Expr::col(
+                    performance_metric::Column::CpuUsagePercent,
+                ))),
+                "avg_cpu_usage_percent",
             )
-            SELECT
-                bucket_time AS time,
-                vps_id,
-                avg_cpu_usage_percent,
-                avg_memory_usage_bytes::FLOAT8,
-                max_memory_total_bytes,
-                avg_network_rx_instant_bps::FLOAT8,
-                avg_network_tx_instant_bps::FLOAT8
-            FROM TimeBucketed
-            ORDER BY time ASC
-            "#,
-            vps_id,
-            start_time,
-            end_time,
-            interval_value
-        )
-        .fetch_all(pool)
-        .await
+            .column_as(
+                Expr::expr(Func::avg(Expr::col(
+                    performance_metric::Column::MemoryUsageBytes,
+                ))),
+                "avg_memory_usage_bytes",
+            )
+            .column_as(
+                Expr::expr(Func::max(Expr::col(
+                    performance_metric::Column::MemoryTotalBytes,
+                ))),
+                "max_memory_total_bytes",
+            )
+            .column_as(
+                Expr::expr(Func::avg(Expr::col(
+                    performance_metric::Column::NetworkRxInstantBps,
+                ))),
+                "avg_network_rx_instant_bps",
+            )
+            .column_as(
+                Expr::expr(Func::avg(Expr::col(
+                    performance_metric::Column::NetworkTxInstantBps,
+                ))),
+                "avg_network_tx_instant_bps",
+            )
+            .filter(performance_metric::Column::VpsId.eq(vps_id))
+            .filter(performance_metric::Column::Time.gte(start_time))
+            .filter(performance_metric::Column::Time.lte(end_time))
+            .group_by(time_bucket_expr)
+            .group_by(performance_metric::Column::VpsId)
+            .order_by(Expr::col(Alias::new("time")), Order::Asc)
+            .into_model::<AggregatedPerformanceMetric>()
+            .all(db)
+            .await
     } else {
-        sqlx::query_as!(
-             AggregatedPerformanceMetric,
-            r#"
-            WITH RankedMetrics AS (
-                SELECT
-                    id, time, vps_id, cpu_usage_percent, memory_usage_bytes, memory_total_bytes,
-                    swap_usage_bytes, swap_total_bytes,
-                    disk_io_read_bps, disk_io_write_bps,
-                    network_rx_bps, network_tx_bps,
-                    network_rx_instant_bps, network_tx_instant_bps,
-                    uptime_seconds, total_processes_count, running_processes_count,
-                    tcp_established_connection_count
-                FROM performance_metrics
-                WHERE vps_id = $1 AND time >= $2 AND time <= $3
+        performance_metric::Entity::find()
+            .select_only()
+            .column_as(performance_metric::Column::Time, "time")
+            .column(performance_metric::Column::VpsId)
+            .column_as(
+                performance_metric::Column::CpuUsagePercent,
+                "avg_cpu_usage_percent",
             )
-            SELECT
-                time,
-                vps_id,
-                cpu_usage_percent AS avg_cpu_usage_percent,
-                memory_usage_bytes::FLOAT8 AS avg_memory_usage_bytes,
-                memory_total_bytes AS max_memory_total_bytes,
-                network_rx_instant_bps::FLOAT8 AS avg_network_rx_instant_bps,
-                network_tx_instant_bps::FLOAT8 AS avg_network_tx_instant_bps
-            FROM RankedMetrics
-            ORDER BY time ASC
-            "#,
-            vps_id,
-            start_time,
-            end_time
-        )
-        .fetch_all(pool)
-        .await
+            .column_as(
+                Expr::col(performance_metric::Column::MemoryUsageBytes),
+                "avg_memory_usage_bytes",
+            )
+            .column_as(
+                performance_metric::Column::MemoryTotalBytes,
+                "max_memory_total_bytes",
+            )
+            .column_as(
+                Expr::col(performance_metric::Column::NetworkRxInstantBps),
+                "avg_network_rx_instant_bps",
+            )
+            .column_as(
+                Expr::col(performance_metric::Column::NetworkTxInstantBps),
+                "avg_network_tx_instant_bps",
+            )
+            .filter(performance_metric::Column::VpsId.eq(vps_id))
+            .filter(performance_metric::Column::Time.gte(start_time))
+            .filter(performance_metric::Column::Time.lte(end_time))
+            .order_by(performance_metric::Column::Time, Order::Asc)
+            .into_model::<AggregatedPerformanceMetric>()
+            .all(db)
+            .await
     }
 }
 
 /// Retrieves the latest performance metric for a given VPS.
 pub async fn get_latest_performance_metric_for_vps(
-    pool: &PgPool,
+    db: &DatabaseConnection,
     vps_id: i32,
-) -> Result<Option<PerformanceMetric>> {
-    sqlx::query_as!(
-        PerformanceMetric,
-        r#"
-        SELECT
-            id, time, vps_id, cpu_usage_percent, memory_usage_bytes, memory_total_bytes,
-            swap_usage_bytes, swap_total_bytes,
-            disk_io_read_bps, disk_io_write_bps,
-            network_rx_bps, network_tx_bps,
-            network_rx_instant_bps, network_tx_instant_bps,
-            uptime_seconds, total_processes_count, running_processes_count,
-            tcp_established_connection_count
-        FROM performance_metrics
-        WHERE vps_id = $1
-        ORDER BY time DESC
-        LIMIT 1
-        "#,
-        vps_id
-    )
-    .fetch_optional(pool)
-    .await
+) -> Result<Option<performance_metric::Model>, DbErr> {
+    performance_metric::Entity::find()
+        .filter(performance_metric::Column::VpsId.eq(vps_id))
+        .order_by_desc(performance_metric::Column::Time)
+        .one(db)
+        .await
 }
 
 /// Retrieves the latest N performance metrics for a given VPS.
 /// The results are sorted by time in ascending order.
 pub async fn get_latest_n_performance_metrics_for_vps(
-    pool: &PgPool,
+    db: &DatabaseConnection,
     vps_id: i32,
     count: u32,
-) -> Result<Vec<PerformanceMetric>> {
-    let metrics = sqlx::query_as!(
-        PerformanceMetric,
-        r#"
-        SELECT
-            id, time, vps_id, cpu_usage_percent, memory_usage_bytes, memory_total_bytes,
-            swap_usage_bytes, swap_total_bytes,
-            disk_io_read_bps, disk_io_write_bps,
-            network_rx_bps, network_tx_bps,
-            network_rx_instant_bps, network_tx_instant_bps,
-            uptime_seconds, total_processes_count, running_processes_count,
-            tcp_established_connection_count
-        FROM (
-            SELECT * FROM performance_metrics
-            WHERE vps_id = $1
-            ORDER BY time DESC
-            LIMIT $2
-        ) AS latest_metrics
-        ORDER BY time ASC
-        "#,
-        vps_id,
-        count as i64 // LIMIT requires i64
-    )
-    .fetch_all(pool)
-    .await?;
+) -> Result<Vec<performance_metric::Model>, DbErr> {
+    let mut metrics = performance_metric::Entity::find()
+        .filter(performance_metric::Column::VpsId.eq(vps_id))
+        .order_by_desc(performance_metric::Column::Time)
+        .limit(count as u64)
+        .all(db)
+        .await?;
+    metrics.reverse(); // To sort by time ASC
     Ok(metrics)
 }
 
 /// Saves a batch of performance snapshots for a given VPS.
 /// This includes the main metrics, detailed disk usage, and detailed network interface stats.
 pub async fn save_performance_snapshot_batch(
-    pool: &PgPool,
+    db: &DatabaseConnection,
     vps_id: i32,
     batch: &PerformanceSnapshotBatch,
-) -> Result<(), sqlx::Error> {
-    let mut tx = pool.begin().await?;
+) -> Result<(), DbErr> {
+    let txn = db.begin().await?;
 
     for snapshot in &batch.snapshots {
         let timestamp = Utc
@@ -169,130 +171,118 @@ pub async fn save_performance_snapshot_batch(
             .single()
             .unwrap_or_else(Utc::now);
 
-        let metric_id = sqlx::query!(
-            r#"
-            INSERT INTO performance_metrics (
-                time, vps_id, cpu_usage_percent, memory_usage_bytes, memory_total_bytes,
-                swap_usage_bytes, swap_total_bytes,
-                disk_io_read_bps, disk_io_write_bps,
-                network_rx_bps, network_tx_bps,
-                network_rx_instant_bps, network_tx_instant_bps,
-                uptime_seconds, total_processes_count, running_processes_count,
-                tcp_established_connection_count
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-            RETURNING id
-            "#,
-            timestamp,
-            vps_id,
-            snapshot.cpu_overall_usage_percent as f64,
-            snapshot.memory_usage_bytes as i64,
-            snapshot.memory_total_bytes as i64,
-            snapshot.swap_usage_bytes as i64,
-            snapshot.swap_total_bytes as i64,
-            snapshot.disk_total_io_read_bytes_per_sec as i64,
-            snapshot.disk_total_io_write_bytes_per_sec as i64,
-            snapshot.network_rx_bytes_cumulative as i64,
-            snapshot.network_tx_bytes_cumulative as i64,
-            snapshot.network_rx_bytes_per_sec as i64,
-            snapshot.network_tx_bytes_per_sec as i64,
-            snapshot.uptime_seconds as i64,
-            snapshot.total_processes_count as i32,
-            snapshot.running_processes_count as i32,
-            snapshot.tcp_established_connection_count as i32
-        )
-        .fetch_one(&mut *tx)
-        .await?
-        .id;
+        let metric_active_model = performance_metric::ActiveModel {
+            time: Set(timestamp),
+            vps_id: Set(vps_id),
+            cpu_usage_percent: Set(snapshot.cpu_overall_usage_percent as f64),
+            memory_usage_bytes: Set(snapshot.memory_usage_bytes as i64),
+            memory_total_bytes: Set(snapshot.memory_total_bytes as i64),
+            swap_usage_bytes: Set(snapshot.swap_usage_bytes as i64),
+            swap_total_bytes: Set(snapshot.swap_total_bytes as i64),
+            disk_io_read_bps: Set(snapshot.disk_total_io_read_bytes_per_sec as i64),
+            disk_io_write_bps: Set(snapshot.disk_total_io_write_bytes_per_sec as i64),
+            network_rx_bps: Set(snapshot.network_rx_bytes_cumulative as i64),
+            network_tx_bps: Set(snapshot.network_tx_bytes_cumulative as i64),
+            network_rx_instant_bps: Set(snapshot.network_rx_bytes_per_sec as i64),
+            network_tx_instant_bps: Set(snapshot.network_tx_bytes_per_sec as i64),
+            uptime_seconds: Set(snapshot.uptime_seconds as i64),
+            total_processes_count: Set(snapshot.total_processes_count as i32),
+            running_processes_count: Set(snapshot.running_processes_count as i32),
+            tcp_established_connection_count: Set(snapshot.tcp_established_connection_count as i32),
+            ..Default::default() // For id
+        };
+        let metric_model = metric_active_model.insert(&txn).await?;
 
         for disk_usage in &snapshot.disk_usages {
-            sqlx::query!(
-                r#"
-                INSERT INTO performance_disk_usages (
-                    performance_metric_id, mount_point, used_bytes, total_bytes, fstype, usage_percent
-                )
-                VALUES ($1, $2, $3, $4, $5, $6)
-                "#,
-                metric_id,
-                disk_usage.mount_point,
-                disk_usage.used_bytes as i64,
-                disk_usage.total_bytes as i64,
-                disk_usage.fstype,
-                disk_usage.usage_percent as f64
-            )
-            .execute(&mut *tx)
-            .await?;
+            let disk_usage_active_model = performance_disk_usage::ActiveModel {
+                performance_metric_id: Set(metric_model.id),
+                mount_point: Set(disk_usage.mount_point.clone()),
+                used_bytes: Set(disk_usage.used_bytes as i64),
+                total_bytes: Set(disk_usage.total_bytes as i64),
+                fstype: Set(Some(disk_usage.fstype.clone())), // Corrected: Wrapped with Some()
+                usage_percent: Set(disk_usage.usage_percent as f64),
+                ..Default::default() // For id
+            };
+            disk_usage_active_model.insert(&txn).await?;
         }
 
         // After saving the metric and its related disk usages, update VPS traffic stats
-        if let Err(e) = vps_service::update_vps_traffic_stats_after_metric(
-            &mut tx, // Pass the transaction
+        // Assuming vps_traffic_service is correctly imported and its function signature is updated
+        if let Err(e) = vps_traffic_service::update_vps_traffic_stats_after_metric(
+            &txn, // Pass the transaction
             vps_id,
             snapshot.network_rx_bytes_cumulative as i64,
             snapshot.network_tx_bytes_cumulative as i64,
         )
         .await
         {
-            // If updating traffic stats fails, we might want to rollback the whole transaction
-            // or log the error and continue. For now, let's propagate the error,
-            // which will cause the transaction to rollback if not handled.
             eprintln!(
                 "Failed to update VPS traffic stats for vps_id {}: {}. Rolling back metric save.",
                 vps_id, e
             );
-            return Err(e); // This will cause tx.commit() to not be reached and tx will be rolled back on drop.
+            txn.rollback().await?;
+            return Err(e);
         }
     }
 
-    tx.commit().await?;
+    txn.commit().await?;
     Ok(())
+}
+
+/// Helper struct for the disk usage summary query
+#[derive(FromQueryResult, Debug)]
+struct DiskUsageSummary {
+    total_sum_bytes: Option<i64>,
+    used_sum_bytes: Option<i64>,
 }
 
 /// Retrieves the summary of total and used disk space from the latest performance metric.
 pub async fn get_latest_disk_usage_summary(
-    pool: &PgPool,
+    db: &DatabaseConnection,
     vps_id: i32,
-) -> Result<Option<(i64, i64)>> {
-    // Returns (total_bytes, used_bytes)
-    let result = sqlx::query_as!(
-        DiskUsageSummary,
-        r#"
-        WITH LatestMetric AS (
-            SELECT id
-            FROM performance_metrics
-            WHERE vps_id = $1
-            ORDER BY time DESC
-            LIMIT 1
-        )
-        SELECT
-            SUM(pdu.total_bytes)::BIGINT as total_sum_bytes,
-            SUM(pdu.used_bytes)::BIGINT as used_sum_bytes
-        FROM performance_disk_usages pdu
-        JOIN LatestMetric lm ON pdu.performance_metric_id = lm.id
-        WHERE EXISTS (SELECT 1 FROM LatestMetric)
-        GROUP BY lm.id
-        "#,
-        vps_id
-    )
-    .fetch_optional(pool)
-    .await?;
+) -> Result<Option<(i64, i64)>, DbErr> {
+    let latest_metric_opt = performance_metric::Entity::find()
+        .filter(performance_metric::Column::VpsId.eq(vps_id))
+        .order_by_desc(performance_metric::Column::Time)
+        .one(db)
+        .await?;
 
-    match result {
-        Some(summary) => {
-            let total = summary.total_sum_bytes.unwrap_or(0);
-            let used = summary.used_sum_bytes.unwrap_or(0);
-            if total == 0 && used == 0 && summary.total_sum_bytes.is_none() {
-                Ok(None)
-            } else {
-                Ok(Some((total, used)))
+    if let Some(latest_metric) = latest_metric_opt {
+        let summary_opt: Option<DiskUsageSummary> = performance_disk_usage::Entity::find()
+            .select_only()
+            .column_as(
+                Expr::expr(Func::sum(Expr::col(
+                    performance_disk_usage::Column::TotalBytes,
+                ))),
+                "total_sum_bytes",
+            )
+            .column_as(
+                Expr::expr(Func::sum(Expr::col(
+                    performance_disk_usage::Column::UsedBytes,
+                ))),
+                "used_sum_bytes",
+            )
+            .filter(performance_disk_usage::Column::PerformanceMetricId.eq(latest_metric.id))
+            .into_model::<DiskUsageSummary>()
+            .one(db)
+            .await?;
+
+        match summary_opt {
+            Some(summary) => {
+                // If SUM results in NULL (no rows or all values NULL), FromQueryResult sets Option to None.
+                // If there are no disk usage records for the latest metric, both sums will be None.
+                if summary.total_sum_bytes.is_none() && summary.used_sum_bytes.is_none() {
+                    Ok(None)
+                } else {
+                    let total = summary.total_sum_bytes.unwrap_or(0);
+                    let used = summary.used_sum_bytes.unwrap_or(0);
+                    Ok(Some((total, used)))
+                }
             }
+            None => Ok(None), // Should not happen if latest_metric exists and query is structured correctly,
+                              // but implies no disk usage records.
         }
-        None => Ok(None),
+    } else {
+        Ok(None) // No performance metrics for this VPS
     }
-}
-
-// Helper struct for the above query
-struct DiskUsageSummary {
-    total_sum_bytes: Option<i64>,
-    used_sum_bytes: Option<i64>,
 }

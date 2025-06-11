@@ -4,9 +4,11 @@ use axum::{
     Json, Router, http::StatusCode,
 };
 use std::sync::Arc;
-use crate::http_server::AppState;
+// Removed: use sea_orm::DbErr; // Added DbErr
+use crate::http_server::{AppState, AppError}; // Added AppError
 use crate::agent_service::{AgentConfig, MessageToAgent, message_to_agent::Payload as AgentPayload, UpdateConfigRequest};
 use crate::db::services as db_services;
+use crate::db::entities::{setting, vps}; // Added setting and vps entities
 use uuid::Uuid;
 
 // This router is for global settings, mounted under /api/settings
@@ -25,18 +27,18 @@ pub fn create_vps_config_router() -> Router<Arc<AppState>> {
 #[axum::debug_handler]
 async fn get_global_agent_config(
     State(app_state): State<Arc<AppState>>,
-) -> Result<Json<AgentConfig>, (StatusCode, String)> {
-    let setting = db_services::get_setting(&app_state.db_pool, "global_agent_config")
+) -> Result<Json<AgentConfig>, AppError> { // Changed return type
+    let setting_model_option: Option<setting::Model> = db_services::get_setting(&app_state.db_pool, "global_agent_config")
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|db_err| AppError::DatabaseError(db_err.to_string()))?;
 
-    match setting {
-        Some(s) => {
-            let config: AgentConfig = serde_json::from_value(s.value)
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse global config: {}", e)))?;
+    match setting_model_option {
+        Some(s_model) => {
+            let config: AgentConfig = serde_json::from_value(s_model.value) // s_model.value is already serde_json::Value
+                .map_err(|e| AppError::ServerError(format!("Failed to parse global config: {}", e)))?;
             Ok(Json(config))
         },
-        None => Err((StatusCode::NOT_FOUND, "Global agent config not found.".to_string())),
+        None => Err(AppError::NotFound("Global agent config not found.".to_string())),
     }
 }
 
@@ -44,21 +46,26 @@ async fn get_global_agent_config(
 async fn update_global_agent_config(
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<AgentConfig>,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<StatusCode, AppError> { // Changed return type
     let value = serde_json::to_value(&payload)
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Failed to serialize config: {}", e)))?;
+        .map_err(|e| AppError::InvalidInput(format!("Failed to serialize config: {}", e)))?;
     
     db_services::update_setting(&app_state.db_pool, "global_agent_config", &value)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|db_err| AppError::DatabaseError(db_err.to_string()))?;
 
     // Trigger config push to all agents that don't have an override.
-    let all_vps = db_services::get_vps_by_user_id(&app_state.db_pool, 1).await // Assuming user_id 1 for now
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // Assuming get_vps_by_user_id now returns Result<Vec<vps::Model>, DbErr>
+    let all_vps_models: Vec<vps::Model> = db_services::get_vps_by_user_id(&app_state.db_pool, 1).await // Assuming user_id 1 for now
+        .map_err(|db_err| AppError::DatabaseError(db_err.to_string()))?;
 
-    for vps in all_vps {
-        if vps.agent_config_override.is_none() {
-            let _ = push_config_to_vps(app_state.clone(), vps.id).await;
+    for vps_model in all_vps_models {
+        if vps_model.agent_config_override.is_none() {
+            // push_config_to_vps now returns Result<(), AppError>, handle or ignore error
+            if let Err(e) = push_config_to_vps(app_state.clone(), vps_model.id).await {
+                eprintln!("Failed to push config to VPS {}: {:?}", vps_model.id, e);
+                // Decide if this should halt the process or just log
+            }
         }
     }
 
@@ -71,15 +78,15 @@ async fn update_vps_config_override(
     Path(vps_id): Path<i32>,
     // TODO: Add user auth check
     Json(payload): Json<serde_json::Value>,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<StatusCode, AppError> { // Changed return type
     let user_id = 1; // For now, user_id is hardcoded.
     
     db_services::update_vps_config_override(&app_state.db_pool, vps_id, user_id, &payload)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|db_err| AppError::DatabaseError(db_err.to_string()))?;
 
     // Trigger config push to this specific agent.
-    push_config_to_vps(app_state, vps_id).await?;
+    push_config_to_vps(app_state, vps_id).await?; // push_config_to_vps now returns AppError
 
     Ok(StatusCode::OK)
 }
@@ -88,8 +95,8 @@ async fn update_vps_config_override(
 async fn retry_config_push(
     State(app_state): State<Arc<AppState>>,
     Path(vps_id): Path<i32>,
-) -> Result<StatusCode, (StatusCode, String)> {
-    push_config_to_vps(app_state, vps_id).await?;
+) -> Result<StatusCode, AppError> { // Changed return type
+    push_config_to_vps(app_state, vps_id).await?; // push_config_to_vps now returns AppError
     Ok(StatusCode::OK)
 }
 
@@ -97,25 +104,26 @@ async fn retry_config_push(
 async fn push_config_to_vps(
     app_state: Arc<AppState>,
     vps_id: i32,
-) -> Result<(), (StatusCode, String)> {
+) -> Result<(), AppError> { // Changed return type
     // 1. Get global config
-    let global_config_setting = db_services::get_setting(&app_state.db_pool, "global_agent_config")
+    let global_config_setting_model: setting::Model = db_services::get_setting(&app_state.db_pool, "global_agent_config")
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| (StatusCode::INTERNAL_SERVER_ERROR, "Global agent config not found.".to_string()))?;
+        .map_err(|db_err| AppError::DatabaseError(db_err.to_string()))?
+        .ok_or_else(|| AppError::NotFound("Global agent config not found.".to_string()))?;
     
-    let mut effective_config: AgentConfig = serde_json::from_value(global_config_setting.value)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse global config: {}", e)))?;
+    let mut effective_config: AgentConfig = serde_json::from_value(global_config_setting_model.value)
+        .map_err(|e| AppError::ServerError(format!("Failed to parse global config: {}", e)))?;
 
     // 2. Get VPS and merge override if it exists
-    let vps = db_services::get_vps_by_id(&app_state.db_pool, vps_id)
+    // Assuming get_vps_by_id now returns Result<Option<vps::Model>, DbErr>
+    let vps_model: vps::Model = db_services::get_vps_by_id(&app_state.db_pool, vps_id)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "VPS not found".to_string()))?;
+        .map_err(|db_err| AppError::DatabaseError(db_err.to_string()))?
+        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
 
-    if let Some(override_json) = vps.agent_config_override {
+    if let Some(override_json) = vps_model.agent_config_override { // Use vps_model
         let override_config: AgentConfig = serde_json::from_value(override_json)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse override config: {}", e)))?;
+            .map_err(|e| AppError::ServerError(format!("Failed to parse override config: {}", e)))?;
         
         // This is a simple merge. A more sophisticated merge might be needed.
         if override_config.metrics_collect_interval_seconds > 0 { effective_config.metrics_collect_interval_seconds = override_config.metrics_collect_interval_seconds; }
@@ -148,14 +156,21 @@ async fn push_config_to_vps(
         };
 
         if state.sender.send(Ok(msg)).await.is_ok() {
-            db_services::update_vps_config_status(&app_state.db_pool, vps_id, "pending", None).await.ok();
+            // Assuming update_vps_config_status returns Result<_, DbErr>
+            if let Err(e) = db_services::update_vps_config_status(&app_state.db_pool, vps_id, "pending", None).await {
+                eprintln!("Failed to update VPS config status to pending for {}: {:?}", vps_id, e);
+            }
         } else {
             let err_msg = "Failed to send config to agent (channel closed).";
-            db_services::update_vps_config_status(&app_state.db_pool, vps_id, "failed", Some(err_msg)).await.ok();
+            if let Err(e) = db_services::update_vps_config_status(&app_state.db_pool, vps_id, "failed", Some(err_msg)).await {
+                 eprintln!("Failed to update VPS config status to failed (send error) for {}: {:?}", vps_id, e);
+            }
         }
     } else {
         let err_msg = "Agent is not connected.";
-        db_services::update_vps_config_status(&app_state.db_pool, vps_id, "failed", Some(err_msg)).await.ok();
+        if let Err(e) = db_services::update_vps_config_status(&app_state.db_pool, vps_id, "failed", Some(err_msg)).await {
+            eprintln!("Failed to update VPS config status to failed (not connected) for {}: {:?}", vps_id, e);
+        }
     }
 
     Ok(())

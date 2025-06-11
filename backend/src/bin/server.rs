@@ -11,7 +11,7 @@ use tonic::transport::Server as TonicServer;
 use backend::agent_service::agent_communication_service_server::AgentCommunicationServiceServer;
 use backend::http_server;
 
-use sqlx::postgres::PgPoolOptions;
+use sea_orm::{Database, DatabaseConnection, ConnectOptions};
 use std::net::SocketAddr;
 use dotenv::dotenv;
 use std::env;
@@ -32,11 +32,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     // --- Database Pool Setup ---
     let database_url = env::var("DATABASE_URL")
         .expect("DATABASE_URL must be set in .env file");
-    let db_pool = PgPoolOptions::new()
-        .max_connections(10) // Adjust as needed
-        .connect(&database_url)
+    let mut opt = ConnectOptions::new(database_url.to_owned());
+    opt.max_connections(10)
+       // .sqlx_logging(true) // 您可以根据需要启用日志记录
+       // .sqlx_logging_level(log::LevelFilter::Info) // 设置日志级别
+       ;
+
+    let db_pool: DatabaseConnection = Database::connect(opt)
         .await
-        .expect("Failed to create database pool.");
+        .expect("Failed to create database connection.");
     
     // --- gRPC Server Setup ---
     let grpc_addr: SocketAddr = "0.0.0.0:50051".parse()?;
@@ -115,7 +119,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
                 println!("Found {} disconnected agents. Updating status to 'offline'.", disconnected_vps_ids.len());
                 let mut needs_broadcast = false;
                 for vps_id in disconnected_vps_ids {
-                    match db_services::update_vps_status(&pool_for_check, vps_id, "offline").await {
+                    match db_services::update_vps_status(&*pool_for_check, vps_id, "offline").await { // Dereference Arc
                         Ok(rows_affected) if rows_affected > 0 => {
                             needs_broadcast = true;
                         }

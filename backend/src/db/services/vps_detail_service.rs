@@ -1,211 +1,130 @@
 use chrono::{DateTime, Utc};
-use sqlx::{FromRow, PgPool, Result};
+use sea_orm::{DatabaseConnection, DbErr, EntityTrait, ModelTrait, QueryFilter, QueryOrder, ColumnTrait}; // Removed QuerySelect
+// Removed use sea_orm::sea_query::Expr;
 
-use crate::websocket_models::{ServerBasicInfo, ServerMetricsSnapshot, ServerWithDetails};
+
+use crate::db::entities::{
+    performance_disk_usage, performance_metric, tag, vps, vps_renewal_info, // Removed vps_tag
+};
+use crate::websocket_models::{ServerBasicInfo, ServerMetricsSnapshot, ServerWithDetails, Tag as WebsocketTag};
 
 // --- Vps Detail Service Functions ---
 
-// Helper struct for the get_all_vps_with_details_for_cache query result
-#[derive(FromRow, Debug)]
-struct VpsDetailQueryResult {
-    vps_id: i32,
-    vps_user_id: i32,
-    vps_name: String,
-    vps_ip_address: Option<String>,
-    vps_status: String,
-    vps_os_type: Option<String>,
-    vps_group: Option<String>,
-    vps_tags_json: Option<serde_json::Value>,
-    vps_created_at: chrono::DateTime<Utc>,
-    vps_metadata: Option<serde_json::Value>,
-    vps_config_status: String,
-    vps_last_config_update_at: Option<chrono::DateTime<Utc>>,
-    vps_last_config_error: Option<String>,
-    vps_traffic_limit_bytes: Option<i64>,
-    vps_traffic_billing_rule: Option<String>,
-    vps_traffic_current_cycle_rx_bytes: Option<i64>,
-    vps_traffic_current_cycle_tx_bytes: Option<i64>,
-    vps_last_processed_cumulative_rx: Option<i64>,
-    vps_last_processed_cumulative_tx: Option<i64>,
-    vps_traffic_last_reset_at: Option<chrono::DateTime<Utc>>,
-    vps_traffic_reset_config_type: Option<String>,
-    vps_traffic_reset_config_value: Option<String>,
-    vps_next_traffic_reset_at: Option<chrono::DateTime<Utc>>,
-    cpu_usage_percent: Option<f64>,
-    memory_usage_bytes: Option<i64>,
-    memory_total_bytes: Option<i64>,
-    network_rx_instant_bps: Option<i64>,
-    network_tx_instant_bps: Option<i64>,
-    uptime_seconds: Option<i64>,
-    total_disk_used_bytes: Option<i64>,
-    total_disk_total_bytes: Option<i64>,
-    metric_time: Option<chrono::DateTime<Utc>>,
-    renewal_cycle: Option<String>,
-    renewal_cycle_custom_days: Option<i32>,
-    renewal_price: Option<f64>,
-    renewal_currency: Option<String>,
-    next_renewal_date: Option<DateTime<Utc>>,
-    last_renewal_date: Option<DateTime<Utc>>,
-    service_start_date: Option<DateTime<Utc>>,
-    payment_method: Option<String>,
-    auto_renew_enabled: Option<bool>,
-    renewal_notes: Option<String>,
-    reminder_active: Option<bool>,
+async fn build_server_with_details(
+    db: &DatabaseConnection,
+    vps_model: vps::Model,
+) -> Result<ServerWithDetails, DbErr> {
+    let _vps_id = vps_model.id; // Renamed vps_id
+
+    // Fetch latest performance metric
+    let latest_metric_opt: Option<performance_metric::Model> = vps_model
+        .find_related(performance_metric::Entity)
+        .order_by_desc(performance_metric::Column::Time)
+        .one(db)
+        .await?;
+
+    let mut latest_metrics_snapshot: Option<ServerMetricsSnapshot> = None;
+    // total_disk_used_bytes and total_disk_total_bytes moved inside the if block
+
+    if let Some(latest_metric) = &latest_metric_opt {
+        // Fetch disk usages for the latest metric
+        let disk_usages: Vec<performance_disk_usage::Model> = latest_metric
+            .find_related(performance_disk_usage::Entity)
+            .all(db)
+            .await?;
+
+        let total_disk_used_bytes: i64 = disk_usages.iter().map(|du| du.used_bytes).sum();
+        let total_disk_total_bytes: i64 = disk_usages.iter().map(|du| du.total_bytes).sum();
+
+        latest_metrics_snapshot = Some(ServerMetricsSnapshot {
+            time: latest_metric.time,
+            cpu_usage_percent: latest_metric.cpu_usage_percent as f32,
+            memory_usage_bytes: latest_metric.memory_usage_bytes as u64,
+            memory_total_bytes: latest_metric.memory_total_bytes as u64,
+            network_rx_instant_bps: Some(latest_metric.network_rx_instant_bps as u64),
+            network_tx_instant_bps: Some(latest_metric.network_tx_instant_bps as u64),
+            uptime_seconds: Some(latest_metric.uptime_seconds as u64),
+            disk_used_bytes: Some(total_disk_used_bytes as u64),
+            disk_total_bytes: Some(total_disk_total_bytes as u64),
+        });
+    }
+
+    // Fetch tags
+    let tags_models: Vec<tag::Model> = vps_model.find_related(tag::Entity).all(db).await?;
+    let ws_tags: Option<Vec<WebsocketTag>> = if !tags_models.is_empty() {
+        Some(
+            tags_models
+                .into_iter()
+                .map(|t| WebsocketTag {
+                    id: t.id,
+                    name: t.name,
+                    color: t.color,
+                    icon: t.icon,
+                    url: t.url,
+                    is_visible: t.is_visible,
+                })
+                .collect(),
+        )
+    } else {
+        None
+    };
+
+    // Fetch renewal info
+    let renewal_info_opt: Option<vps_renewal_info::Model> = vps_model
+        .find_related(vps_renewal_info::Entity)
+        .one(db)
+        .await?;
+
+    let basic_info = ServerBasicInfo {
+        id: vps_model.id,
+        user_id: vps_model.user_id,
+        name: vps_model.name,
+        ip_address: vps_model.ip_address,
+        status: vps_model.status,
+        group: vps_model.group,
+        tags: ws_tags,
+        config_status: vps_model.config_status,
+        last_config_update_at: vps_model.last_config_update_at,
+        last_config_error: vps_model.last_config_error,
+        traffic_limit_bytes: vps_model.traffic_limit_bytes,
+        traffic_billing_rule: vps_model.traffic_billing_rule,
+        traffic_current_cycle_rx_bytes: vps_model.traffic_current_cycle_rx_bytes,
+        traffic_current_cycle_tx_bytes: vps_model.traffic_current_cycle_tx_bytes,
+        traffic_last_reset_at: vps_model.traffic_last_reset_at,
+        traffic_reset_config_type: vps_model.traffic_reset_config_type,
+        traffic_reset_config_value: vps_model.traffic_reset_config_value,
+        next_traffic_reset_at: vps_model.next_traffic_reset_at,
+    };
+
+    Ok(ServerWithDetails {
+        basic_info,
+        latest_metrics: latest_metrics_snapshot,
+        os_type: vps_model.os_type,
+        created_at: vps_model.created_at,
+        metadata: vps_model.metadata,
+        renewal_cycle: renewal_info_opt.as_ref().and_then(|ri| ri.renewal_cycle.clone()),
+        renewal_cycle_custom_days: renewal_info_opt.as_ref().and_then(|ri| ri.renewal_cycle_custom_days),
+        renewal_price: renewal_info_opt.as_ref().and_then(|ri| ri.renewal_price),
+        renewal_currency: renewal_info_opt.as_ref().and_then(|ri| ri.renewal_currency.clone()),
+        next_renewal_date: renewal_info_opt.as_ref().and_then(|ri| ri.next_renewal_date),
+        last_renewal_date: renewal_info_opt.as_ref().and_then(|ri| ri.last_renewal_date),
+        service_start_date: renewal_info_opt.as_ref().and_then(|ri| ri.service_start_date),
+        payment_method: renewal_info_opt.as_ref().and_then(|ri| ri.payment_method.clone()),
+        auto_renew_enabled: renewal_info_opt.as_ref().and_then(|ri| ri.auto_renew_enabled),
+        renewal_notes: renewal_info_opt.as_ref().and_then(|ri| ri.renewal_notes.clone()),
+        reminder_active: renewal_info_opt.as_ref().and_then(|ri| ri.reminder_active),
+    })
 }
 
 /// Retrieves all VPS along with their latest metrics and disk usage for cache initialization.
 pub async fn get_all_vps_with_details_for_cache(
-    pool: &PgPool,
-) -> Result<Vec<ServerWithDetails>> {
-    let query_results = sqlx::query_as::<_, VpsDetailQueryResult>(
-        r#"
-        WITH RankedMetrics AS (
-            SELECT *, ROW_NUMBER() OVER (PARTITION BY vps_id ORDER BY time DESC) as rn
-            FROM performance_metrics
-        ),
-        LatestVpsMetrics AS (
-            SELECT * FROM RankedMetrics WHERE rn = 1
-        ),
-        LatestVpsDiskUsage AS (
-            SELECT
-                lvm.vps_id,
-                SUM(pdu.used_bytes)::BIGINT as total_disk_used_bytes,
-                SUM(pdu.total_bytes)::BIGINT as total_disk_total_bytes
-            FROM performance_disk_usages pdu
-            JOIN LatestVpsMetrics lvm ON pdu.performance_metric_id = lvm.id
-            GROUP BY lvm.vps_id
-        ),
-        VpsTagsAggregated AS (
-            SELECT
-                vt.vps_id,
-                json_agg(json_build_object(
-                    'id', t.id,
-                    'name', t.name,
-                    'color', t.color,
-                    'icon', t.icon,
-                    'url', t.url,
-                    'isVisible', t.is_visible
-                )) as tags_json
-            FROM vps_tags vt
-            JOIN tags t ON vt.tag_id = t.id
-            GROUP BY vt.vps_id
-        )
-        SELECT
-            v.id as vps_id,
-            v.user_id as vps_user_id,
-            v.name as vps_name,
-            v.ip_address as vps_ip_address,
-            v.status as vps_status,
-            v.os_type as vps_os_type,
-            v."group" as vps_group,
-            vta.tags_json as vps_tags_json,
-            v.created_at as vps_created_at,
-            v.metadata as vps_metadata,
-            v.config_status as vps_config_status,
-            v.last_config_update_at as vps_last_config_update_at,
-            v.last_config_error as vps_last_config_error,
-            v.traffic_limit_bytes as vps_traffic_limit_bytes,
-            v.traffic_billing_rule as vps_traffic_billing_rule,
-            v.traffic_current_cycle_rx_bytes as vps_traffic_current_cycle_rx_bytes,
-            v.traffic_current_cycle_tx_bytes as vps_traffic_current_cycle_tx_bytes,
-            v.last_processed_cumulative_rx as vps_last_processed_cumulative_rx,
-            v.last_processed_cumulative_tx as vps_last_processed_cumulative_tx,
-            v.traffic_last_reset_at as vps_traffic_last_reset_at,
-            v.traffic_reset_config_type as vps_traffic_reset_config_type,
-            v.traffic_reset_config_value as vps_traffic_reset_config_value,
-            v.next_traffic_reset_at as vps_next_traffic_reset_at,
-            lvm.cpu_usage_percent,
-            lvm.memory_usage_bytes,
-            lvm.memory_total_bytes,
-            lvm.network_rx_instant_bps,
-            lvm.network_tx_instant_bps,
-            lvm.uptime_seconds,
-            lvdu.total_disk_used_bytes,
-            lvdu.total_disk_total_bytes,
-            lvm.time as metric_time,
-            vri.renewal_cycle,
-            vri.renewal_cycle_custom_days,
-            vri.renewal_price,
-            vri.renewal_currency,
-            vri.next_renewal_date,
-            vri.last_renewal_date,
-            vri.service_start_date,
-            vri.payment_method,
-            vri.auto_renew_enabled,
-            vri.renewal_notes,
-            vri.reminder_active
-        FROM vps v
-        LEFT JOIN LatestVpsMetrics lvm ON v.id = lvm.vps_id
-        LEFT JOIN LatestVpsDiskUsage lvdu ON v.id = lvdu.vps_id
-        LEFT JOIN VpsTagsAggregated vta ON v.id = vta.vps_id
-        LEFT JOIN vps_renewal_info vri ON v.id = vri.vps_id
-        ORDER BY v.id;
-        "#,
-    )
-    .fetch_all(pool)
-    .await?;
-
+    db: &DatabaseConnection,
+) -> Result<Vec<ServerWithDetails>, DbErr> {
+    let all_vps: Vec<vps::Model> = vps::Entity::find().order_by_asc(vps::Column::Id).all(db).await?;
     let mut servers_with_details = Vec::new();
-    for row in query_results {
-        let tags: Option<Vec<crate::websocket_models::Tag>> =
-            row.vps_tags_json
-                .and_then(|json_value| serde_json::from_value(json_value).ok());
 
-        let basic_info = ServerBasicInfo {
-            id: row.vps_id,
-            user_id: row.vps_user_id,
-            name: row.vps_name,
-            ip_address: row.vps_ip_address,
-            status: row.vps_status,
-            group: row.vps_group,
-            tags,
-            config_status: row.vps_config_status,
-            last_config_update_at: row.vps_last_config_update_at,
-            last_config_error: row.vps_last_config_error,
-            traffic_limit_bytes: row.vps_traffic_limit_bytes,
-            traffic_billing_rule: row.vps_traffic_billing_rule,
-            traffic_current_cycle_rx_bytes: row.vps_traffic_current_cycle_rx_bytes,
-            traffic_current_cycle_tx_bytes: row.vps_traffic_current_cycle_tx_bytes,
-            traffic_last_reset_at: row.vps_traffic_last_reset_at,
-            traffic_reset_config_type: row.vps_traffic_reset_config_type,
-            traffic_reset_config_value: row.vps_traffic_reset_config_value,
-            next_traffic_reset_at: row.vps_next_traffic_reset_at,
-        };
-
-        let latest_metrics = if row.cpu_usage_percent.is_some() && row.metric_time.is_some() {
-            Some(ServerMetricsSnapshot {
-                time: row.metric_time.unwrap(),
-                cpu_usage_percent: row.cpu_usage_percent.unwrap_or(0.0) as f32,
-                memory_usage_bytes: row.memory_usage_bytes.unwrap_or(0) as u64,
-                memory_total_bytes: row.memory_total_bytes.unwrap_or(0) as u64,
-                network_rx_instant_bps: row.network_rx_instant_bps.map(|val| val as u64),
-                network_tx_instant_bps: row.network_tx_instant_bps.map(|val| val as u64),
-                uptime_seconds: row.uptime_seconds.map(|val| val as u64),
-                disk_used_bytes: row.total_disk_used_bytes.map(|val| val as u64),
-                disk_total_bytes: row.total_disk_total_bytes.map(|val| val as u64),
-            })
-        } else {
-            None
-        };
-
-        servers_with_details.push(ServerWithDetails {
-            basic_info,
-            latest_metrics,
-            os_type: row.vps_os_type,
-            created_at: row.vps_created_at,
-            metadata: row.vps_metadata,
-            renewal_cycle: row.renewal_cycle,
-            renewal_cycle_custom_days: row.renewal_cycle_custom_days,
-            renewal_price: row.renewal_price,
-            renewal_currency: row.renewal_currency,
-            next_renewal_date: row.next_renewal_date,
-            last_renewal_date: row.last_renewal_date,
-            service_start_date: row.service_start_date,
-            payment_method: row.payment_method,
-            auto_renew_enabled: row.auto_renew_enabled,
-            renewal_notes: row.renewal_notes,
-            reminder_active: row.reminder_active,
-        });
+    for vps_model in all_vps {
+        servers_with_details.push(build_server_with_details(db, vps_model).await?);
     }
 
     Ok(servers_with_details)
@@ -213,321 +132,31 @@ pub async fn get_all_vps_with_details_for_cache(
 
 /// Retrieves all VPS for a specific user along with their latest metrics and disk usage.
 pub async fn get_all_vps_with_details_for_user(
-    pool: &PgPool,
+    db: &DatabaseConnection,
     user_id: i32,
-) -> Result<Vec<ServerWithDetails>> {
-    let query_results = sqlx::query_as::<_, VpsDetailQueryResult>(
-        r#"
-        WITH RankedMetrics AS (
-            SELECT *, ROW_NUMBER() OVER (PARTITION BY vps_id ORDER BY time DESC) as rn
-            FROM performance_metrics
-            WHERE vps_id IN (SELECT id FROM vps WHERE user_id = $1)
-        ),
-        LatestVpsMetrics AS (
-            SELECT * FROM RankedMetrics WHERE rn = 1
-        ),
-        LatestVpsDiskUsage AS (
-            SELECT
-                lvm.vps_id,
-                SUM(pdu.used_bytes)::BIGINT as total_disk_used_bytes,
-                SUM(pdu.total_bytes)::BIGINT as total_disk_total_bytes
-            FROM performance_disk_usages pdu
-            JOIN LatestVpsMetrics lvm ON pdu.performance_metric_id = lvm.id
-            GROUP BY lvm.vps_id
-        ),
-        VpsTagsAggregated AS (
-            SELECT
-                vt.vps_id,
-                json_agg(json_build_object(
-                    'id', t.id,
-                    'name', t.name,
-                    'color', t.color,
-                    'icon', t.icon,
-                    'url', t.url,
-                    'isVisible', t.is_visible
-                )) as tags_json
-            FROM vps_tags vt
-            JOIN tags t ON vt.tag_id = t.id
-            WHERE vt.vps_id IN (SELECT id FROM vps WHERE user_id = $1)
-            GROUP BY vt.vps_id
-        )
-        SELECT
-            v.id as vps_id,
-            v.user_id as vps_user_id,
-            v.name as vps_name,
-            v.ip_address as vps_ip_address,
-            v.status as vps_status,
-            v.os_type as vps_os_type,
-            v."group" as vps_group,
-            vta.tags_json as vps_tags_json,
-            v.created_at as vps_created_at,
-            v.metadata as vps_metadata,
-            v.config_status as vps_config_status,
-            v.last_config_update_at as vps_last_config_update_at,
-            v.last_config_error as vps_last_config_error,
-            v.traffic_limit_bytes as vps_traffic_limit_bytes,
-            v.traffic_billing_rule as vps_traffic_billing_rule,
-            v.traffic_current_cycle_rx_bytes as vps_traffic_current_cycle_rx_bytes,
-            v.traffic_current_cycle_tx_bytes as vps_traffic_current_cycle_tx_bytes,
-            v.last_processed_cumulative_rx as vps_last_processed_cumulative_rx,
-            v.last_processed_cumulative_tx as vps_last_processed_cumulative_tx,
-            v.traffic_last_reset_at as vps_traffic_last_reset_at,
-            v.traffic_reset_config_type as vps_traffic_reset_config_type,
-            v.traffic_reset_config_value as vps_traffic_reset_config_value,
-            v.next_traffic_reset_at as vps_next_traffic_reset_at,
-            lvm.cpu_usage_percent,
-            lvm.memory_usage_bytes,
-            lvm.memory_total_bytes,
-            lvm.network_rx_instant_bps,
-            lvm.network_tx_instant_bps,
-            lvm.uptime_seconds,
-            lvdu.total_disk_used_bytes,
-            lvdu.total_disk_total_bytes,
-            lvm.time as metric_time,
-            vri.renewal_cycle,
-            vri.renewal_cycle_custom_days,
-            vri.renewal_price,
-            vri.renewal_currency,
-            vri.next_renewal_date,
-            vri.last_renewal_date,
-            vri.service_start_date,
-            vri.payment_method,
-            vri.auto_renew_enabled,
-            vri.renewal_notes,
-            vri.reminder_active
-        FROM vps v
-        LEFT JOIN LatestVpsMetrics lvm ON v.id = lvm.vps_id
-        LEFT JOIN LatestVpsDiskUsage lvdu ON v.id = lvdu.vps_id
-        LEFT JOIN VpsTagsAggregated vta ON v.id = vta.vps_id
-        LEFT JOIN vps_renewal_info vri ON v.id = vri.vps_id
-        WHERE v.user_id = $1
-        ORDER BY v.id;
-        "#,
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
+) -> Result<Vec<ServerWithDetails>, DbErr> {
+    let user_vps: Vec<vps::Model> = vps::Entity::find()
+        .filter(vps::Column::UserId.eq(user_id))
+        .order_by_asc(vps::Column::Id)
+        .all(db)
+        .await?;
 
     let mut servers_with_details = Vec::new();
-    for row in query_results {
-        let tags: Option<Vec<crate::websocket_models::Tag>> =
-            row.vps_tags_json
-                .and_then(|json_value| serde_json::from_value(json_value).ok());
-
-        let basic_info = ServerBasicInfo {
-            id: row.vps_id,
-            user_id: row.vps_user_id,
-            name: row.vps_name,
-            ip_address: row.vps_ip_address,
-            status: row.vps_status,
-            group: row.vps_group,
-            tags,
-            config_status: row.vps_config_status,
-            last_config_update_at: row.vps_last_config_update_at,
-            last_config_error: row.vps_last_config_error,
-            traffic_limit_bytes: row.vps_traffic_limit_bytes,
-            traffic_billing_rule: row.vps_traffic_billing_rule,
-            traffic_current_cycle_rx_bytes: row.vps_traffic_current_cycle_rx_bytes,
-            traffic_current_cycle_tx_bytes: row.vps_traffic_current_cycle_tx_bytes,
-            traffic_last_reset_at: row.vps_traffic_last_reset_at,
-            traffic_reset_config_type: row.vps_traffic_reset_config_type,
-            traffic_reset_config_value: row.vps_traffic_reset_config_value,
-            next_traffic_reset_at: row.vps_next_traffic_reset_at,
-        };
-
-        let latest_metrics = if row.cpu_usage_percent.is_some() && row.metric_time.is_some() {
-            Some(ServerMetricsSnapshot {
-                time: row.metric_time.unwrap(),
-                cpu_usage_percent: row.cpu_usage_percent.unwrap_or(0.0) as f32,
-                memory_usage_bytes: row.memory_usage_bytes.unwrap_or(0) as u64,
-                memory_total_bytes: row.memory_total_bytes.unwrap_or(0) as u64,
-                network_rx_instant_bps: row.network_rx_instant_bps.map(|val| val as u64),
-                network_tx_instant_bps: row.network_tx_instant_bps.map(|val| val as u64),
-                uptime_seconds: row.uptime_seconds.map(|val| val as u64),
-                disk_used_bytes: row.total_disk_used_bytes.map(|val| val as u64),
-                disk_total_bytes: row.total_disk_total_bytes.map(|val| val as u64),
-            })
-        } else {
-            None
-        };
-
-        servers_with_details.push(ServerWithDetails {
-            basic_info,
-            latest_metrics,
-            os_type: row.vps_os_type,
-            created_at: row.vps_created_at,
-            metadata: row.vps_metadata,
-            renewal_cycle: row.renewal_cycle,
-            renewal_cycle_custom_days: row.renewal_cycle_custom_days,
-            renewal_price: row.renewal_price,
-            renewal_currency: row.renewal_currency,
-            next_renewal_date: row.next_renewal_date,
-            last_renewal_date: row.last_renewal_date,
-            service_start_date: row.service_start_date,
-            payment_method: row.payment_method,
-            auto_renew_enabled: row.auto_renew_enabled,
-            renewal_notes: row.renewal_notes,
-            reminder_active: row.reminder_active,
-        });
+    for vps_model in user_vps {
+        servers_with_details.push(build_server_with_details(db, vps_model).await?);
     }
-
     Ok(servers_with_details)
 }
 
 /// Retrieves a single VPS with its full details for cache updates.
 pub async fn get_vps_with_details_for_cache_by_id(
-    pool: &PgPool,
-    vps_id: i32,
-) -> Result<Option<ServerWithDetails>> {
-    let query_result = sqlx::query_as::<_, VpsDetailQueryResult>(
-        r#"
-        WITH RankedMetrics AS (
-            SELECT *, ROW_NUMBER() OVER (PARTITION BY vps_id ORDER BY time DESC) as rn
-            FROM performance_metrics
-        ),
-        LatestVpsMetrics AS (
-            SELECT * FROM RankedMetrics WHERE rn = 1
-        ),
-        LatestVpsDiskUsage AS (
-            SELECT
-                lvm.vps_id,
-                SUM(pdu.used_bytes)::BIGINT as total_disk_used_bytes,
-                SUM(pdu.total_bytes)::BIGINT as total_disk_total_bytes
-            FROM performance_disk_usages pdu
-            JOIN LatestVpsMetrics lvm ON pdu.performance_metric_id = lvm.id
-            GROUP BY lvm.vps_id
-        ),
-        VpsTagsAggregated AS (
-            SELECT
-                vt.vps_id,
-                json_agg(json_build_object(
-                    'id', t.id,
-                    'name', t.name,
-                    'color', t.color,
-                    'icon', t.icon,
-                    'url', t.url,
-                    'isVisible', t.is_visible
-                )) as tags_json
-            FROM vps_tags vt
-            JOIN tags t ON vt.tag_id = t.id
-            GROUP BY vt.vps_id
-        )
-        SELECT
-            v.id as vps_id,
-            v.user_id as vps_user_id,
-            v.name as vps_name,
-            v.ip_address as vps_ip_address,
-            v.status as vps_status,
-            v.os_type as vps_os_type,
-            v."group" as vps_group,
-            vta.tags_json as vps_tags_json,
-            v.created_at as vps_created_at,
-            v.metadata as vps_metadata,
-            v.config_status as vps_config_status,
-            v.last_config_update_at as vps_last_config_update_at,
-            v.last_config_error as vps_last_config_error,
-            v.traffic_limit_bytes as vps_traffic_limit_bytes,
-            v.traffic_billing_rule as vps_traffic_billing_rule,
-            v.traffic_current_cycle_rx_bytes as vps_traffic_current_cycle_rx_bytes,
-            v.traffic_current_cycle_tx_bytes as vps_traffic_current_cycle_tx_bytes,
-            v.last_processed_cumulative_rx as vps_last_processed_cumulative_rx,
-            v.last_processed_cumulative_tx as vps_last_processed_cumulative_tx,
-            v.traffic_last_reset_at as vps_traffic_last_reset_at,
-            v.traffic_reset_config_type as vps_traffic_reset_config_type,
-            v.traffic_reset_config_value as vps_traffic_reset_config_value,
-            v.next_traffic_reset_at as vps_next_traffic_reset_at,
-            lvm.cpu_usage_percent,
-            lvm.memory_usage_bytes,
-            lvm.memory_total_bytes,
-            lvm.network_rx_instant_bps,
-            lvm.network_tx_instant_bps,
-            lvm.uptime_seconds,
-            lvdu.total_disk_used_bytes,
-            lvdu.total_disk_total_bytes,
-            lvm.time as metric_time,
-            vri.renewal_cycle,
-            vri.renewal_cycle_custom_days,
-            vri.renewal_price,
-            vri.renewal_currency,
-            vri.next_renewal_date,
-            vri.last_renewal_date,
-            vri.service_start_date,
-            vri.payment_method,
-            vri.auto_renew_enabled,
-            vri.renewal_notes,
-            vri.reminder_active
-        FROM vps v
-        LEFT JOIN LatestVpsMetrics lvm ON v.id = lvm.vps_id
-        LEFT JOIN LatestVpsDiskUsage lvdu ON v.id = lvdu.vps_id
-        LEFT JOIN VpsTagsAggregated vta ON v.id = vta.vps_id
-        LEFT JOIN vps_renewal_info vri ON v.id = vri.vps_id
-        WHERE v.id = $1
-        "#,
-    )
-    .bind(vps_id)
-    .fetch_optional(pool)
-    .await?;
+    db: &DatabaseConnection,
+    vps_id_param: i32, // Renamed to avoid conflict
+) -> Result<Option<ServerWithDetails>, DbErr> {
+    let vps_model_opt: Option<vps::Model> = vps::Entity::find_by_id(vps_id_param).one(db).await?;
 
-    if let Some(row) = query_result {
-        let tags: Option<Vec<crate::websocket_models::Tag>> =
-            row.vps_tags_json
-                .and_then(|json_value| serde_json::from_value(json_value).ok());
-
-        let basic_info = ServerBasicInfo {
-            id: row.vps_id,
-            user_id: row.vps_user_id,
-            name: row.vps_name,
-            ip_address: row.vps_ip_address,
-            status: row.vps_status,
-            group: row.vps_group,
-            tags,
-            config_status: row.vps_config_status,
-            last_config_update_at: row.vps_last_config_update_at,
-            last_config_error: row.vps_last_config_error,
-            traffic_limit_bytes: row.vps_traffic_limit_bytes,
-            traffic_billing_rule: row.vps_traffic_billing_rule,
-            traffic_current_cycle_rx_bytes: row.vps_traffic_current_cycle_rx_bytes,
-            traffic_current_cycle_tx_bytes: row.vps_traffic_current_cycle_tx_bytes,
-            traffic_last_reset_at: row.vps_traffic_last_reset_at,
-            traffic_reset_config_type: row.vps_traffic_reset_config_type,
-            traffic_reset_config_value: row.vps_traffic_reset_config_value,
-            next_traffic_reset_at: row.vps_next_traffic_reset_at,
-        };
-
-        let latest_metrics = if row.cpu_usage_percent.is_some() && row.metric_time.is_some() {
-            Some(ServerMetricsSnapshot {
-                time: row.metric_time.unwrap(),
-                cpu_usage_percent: row.cpu_usage_percent.unwrap_or(0.0) as f32,
-                memory_usage_bytes: row.memory_usage_bytes.unwrap_or(0) as u64,
-                memory_total_bytes: row.memory_total_bytes.unwrap_or(0) as u64,
-                network_rx_instant_bps: row.network_rx_instant_bps.map(|val| val as u64),
-                network_tx_instant_bps: row.network_tx_instant_bps.map(|val| val as u64),
-                uptime_seconds: row.uptime_seconds.map(|val| val as u64),
-                disk_used_bytes: row.total_disk_used_bytes.map(|val| val as u64),
-                disk_total_bytes: row.total_disk_total_bytes.map(|val| val as u64),
-            })
-        } else {
-            None
-        };
-
-        Ok(Some(ServerWithDetails {
-            basic_info,
-            latest_metrics,
-            os_type: row.vps_os_type,
-            created_at: row.vps_created_at,
-            metadata: row.vps_metadata,
-            renewal_cycle: row.renewal_cycle,
-            renewal_cycle_custom_days: row.renewal_cycle_custom_days,
-            renewal_price: row.renewal_price,
-            renewal_currency: row.renewal_currency,
-            next_renewal_date: row.next_renewal_date,
-            last_renewal_date: row.last_renewal_date,
-            service_start_date: row.service_start_date,
-            payment_method: row.payment_method,
-            auto_renew_enabled: row.auto_renew_enabled,
-            renewal_notes: row.renewal_notes,
-            reminder_active: row.reminder_active,
-        }))
+    if let Some(vps_model) = vps_model_opt {
+        Ok(Some(build_server_with_details(db, vps_model).await?))
     } else {
         Ok(None)
     }

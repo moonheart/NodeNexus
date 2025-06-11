@@ -1,51 +1,45 @@
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
-use sqlx::{PgPool, Result};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set,
+    TransactionTrait, IntoActiveModel, QuerySelect, // Added QuerySelect
+    // Removed commented out Select and sea_query::LockType
+};
 
-use crate::db::models::Vps;
+use crate::db::entities::vps;
 
 // --- Vps Traffic Service Functions ---
 
 /// Updates VPS traffic statistics after a new performance metric is recorded.
 /// This function should be called within the same transaction as saving the performance metric.
 pub async fn update_vps_traffic_stats_after_metric(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    txn: &sea_orm::DatabaseTransaction, // Changed
     vps_id: i32,
     new_cumulative_rx: i64,
     new_cumulative_tx: i64,
-) -> Result<()> {
-    // 1. Get the current Vps traffic stats
-    let vps = sqlx::query_as!(
-        Vps,
-        r#"
-        SELECT 
-            id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, "group",
-            agent_config_override, config_status, last_config_update_at, last_config_error,
-            traffic_limit_bytes, traffic_billing_rule, traffic_current_cycle_rx_bytes, traffic_current_cycle_tx_bytes,
-            last_processed_cumulative_rx, last_processed_cumulative_tx, traffic_last_reset_at,
-            traffic_reset_config_type, traffic_reset_config_value, next_traffic_reset_at
-        FROM vps WHERE id = $1 FOR UPDATE
-        "#,
-        vps_id
-    )
-    .fetch_one(&mut **tx)
-    .await?;
+) -> Result<(), DbErr> { // Changed
+    // 1. Get the current Vps traffic stats with exclusive lock
+    let vps_model = vps::Entity::find_by_id(vps_id)
+        .lock_exclusive() // Equivalent to FOR UPDATE
+        .one(txn)
+        .await?
+        .ok_or_else(|| DbErr::RecordNotFound(format!("VPS with id {} not found", vps_id)))?;
 
-    let last_rx = vps.last_processed_cumulative_rx.unwrap_or(0);
-    let last_tx = vps.last_processed_cumulative_tx.unwrap_or(0);
-    let mut current_cycle_rx = vps.traffic_current_cycle_rx_bytes.unwrap_or(0);
-    let mut current_cycle_tx = vps.traffic_current_cycle_tx_bytes.unwrap_or(0);
+    let last_rx = vps_model.last_processed_cumulative_rx.unwrap_or(0);
+    let last_tx = vps_model.last_processed_cumulative_tx.unwrap_or(0);
+    let mut current_cycle_rx = vps_model.traffic_current_cycle_rx_bytes.unwrap_or(0);
+    let mut current_cycle_tx = vps_model.traffic_current_cycle_tx_bytes.unwrap_or(0);
 
     // 2. Calculate delta, handling counter resets
     let delta_rx = if new_cumulative_rx >= last_rx {
         new_cumulative_rx - last_rx
     } else {
-        new_cumulative_rx 
+        new_cumulative_rx // Counter reset
     };
 
     let delta_tx = if new_cumulative_tx >= last_tx {
         new_cumulative_tx - last_tx
     } else {
-        new_cumulative_tx
+        new_cumulative_tx // Counter reset
     };
 
     // 3. Update cycle usage
@@ -53,26 +47,14 @@ pub async fn update_vps_traffic_stats_after_metric(
     current_cycle_tx += delta_tx;
 
     // 4. Update Vps table
-    sqlx::query!(
-        r#"
-        UPDATE vps
-        SET
-            traffic_current_cycle_rx_bytes = $1,
-            traffic_current_cycle_tx_bytes = $2,
-            last_processed_cumulative_rx = $3,
-            last_processed_cumulative_tx = $4,
-            updated_at = $5
-        WHERE id = $6
-        "#,
-        current_cycle_rx,
-        current_cycle_tx,
-        new_cumulative_rx,
-        new_cumulative_tx,
-        Utc::now(),
-        vps_id
-    )
-    .execute(&mut **tx)
-    .await?;
+    let mut active_vps: vps::ActiveModel = vps_model.into_active_model();
+    active_vps.traffic_current_cycle_rx_bytes = Set(Some(current_cycle_rx));
+    active_vps.traffic_current_cycle_tx_bytes = Set(Some(current_cycle_tx));
+    active_vps.last_processed_cumulative_rx = Set(Some(new_cumulative_rx));
+    active_vps.last_processed_cumulative_tx = Set(Some(new_cumulative_tx));
+    active_vps.updated_at = Set(Utc::now());
+
+    active_vps.update(txn).await?;
 
     Ok(())
 }
@@ -80,41 +62,38 @@ pub async fn update_vps_traffic_stats_after_metric(
 /// Processes traffic reset for a single VPS if due.
 /// Resets current cycle usage, updates last reset time, and calculates the next reset time.
 /// Returns Ok(true) if a reset was performed, Ok(false) otherwise.
-pub async fn process_vps_traffic_reset(pool: &PgPool, vps_id: i32) -> Result<bool> {
-    let mut tx = pool.begin().await?;
+pub async fn process_vps_traffic_reset(
+    db: &DatabaseConnection, // Changed
+    vps_id: i32,
+) -> Result<bool, DbErr> { // Changed
     let now = Utc::now();
 
-    let vps = sqlx::query_as!(
-        Vps,
-        r#"
-        SELECT 
-            id, user_id, name, ip_address, os_type, agent_secret, status, metadata, created_at, updated_at, "group",
-            agent_config_override, config_status, last_config_update_at, last_config_error,
-            traffic_limit_bytes, traffic_billing_rule, traffic_current_cycle_rx_bytes, traffic_current_cycle_tx_bytes,
-            last_processed_cumulative_rx, last_processed_cumulative_tx, traffic_last_reset_at,
-            traffic_reset_config_type, traffic_reset_config_value, next_traffic_reset_at
-        FROM vps WHERE id = $1 FOR UPDATE
-        "#,
-        vps_id
-    )
-    .fetch_optional(&mut *tx)
-    .await?;
+    // Transaction for the whole process
+    let txn = db.begin().await?;
 
-    if vps.is_none() {
-        tx.commit().await?;
-        return Ok(false); 
+    let vps_model_opt = vps::Entity::find_by_id(vps_id)
+        .lock_exclusive() // Lock the row for update
+        .one(&txn)
+        .await?;
+
+    if vps_model_opt.is_none() {
+        txn.commit().await?; // Commit as no action was taken on this VPS
+        return Ok(false);
     }
-    let vps_data = vps.unwrap();
+    let vps_data = vps_model_opt.unwrap();
 
     if vps_data.next_traffic_reset_at.is_none() || vps_data.next_traffic_reset_at.unwrap() > now {
-        tx.commit().await?;
+        txn.commit().await?; // Commit as no reset is due
         return Ok(false);
     }
 
-    let last_reset_time = vps_data.next_traffic_reset_at.unwrap(); 
+    let last_reset_time = vps_data.next_traffic_reset_at.unwrap();
 
     let new_next_reset_at: Option<DateTime<Utc>>;
-    match (vps_data.traffic_reset_config_type.as_deref(), vps_data.traffic_reset_config_value.as_deref()) {
+    match (
+        vps_data.traffic_reset_config_type.as_deref(),
+        vps_data.traffic_reset_config_value.as_deref(),
+    ) {
         (Some("monthly_day_of_month"), Some(value_str)) => {
             let mut day_of_month: Option<u32> = None;
             let mut time_offset_seconds: i64 = 0;
@@ -134,26 +113,28 @@ pub async fn process_vps_traffic_reset(pool: &PgPool, vps_id: i32) -> Result<boo
                 let current_reset_naive_date = last_reset_time.date_naive();
                 let mut next_month_year = current_reset_naive_date.year();
                 let mut next_month_month = current_reset_naive_date.month() + 1;
-                
+
                 if next_month_month > 12 {
                     next_month_month = 1;
                     next_month_year += 1;
                 }
-                
+
                 let first_day_of_next_month = NaiveDate::from_ymd_opt(next_month_year, next_month_month, 1).unwrap();
                 let days_in_next_month = if next_month_month == 12 {
                     NaiveDate::from_ymd_opt(next_month_year + 1, 1, 1).unwrap()
                 } else {
                     NaiveDate::from_ymd_opt(next_month_year, next_month_month + 1, 1).unwrap()
-                }.signed_duration_since(first_day_of_next_month).num_days() as u32;
-                
+                }
+                .signed_duration_since(first_day_of_next_month)
+                .num_days() as u32;
+
                 let actual_day = std::cmp::min(day, days_in_next_month);
 
                 if let Some(naive_date_next) = NaiveDate::from_ymd_opt(next_month_year, next_month_month, actual_day) {
-                     let naive_datetime_next = naive_date_next.and_hms_opt(0,0,0).unwrap_or(naive_date_next.and_hms_opt(0,0,0).expect("Should be valid time")) + Duration::seconds(time_offset_seconds);
+                    let naive_datetime_next = naive_date_next.and_hms_opt(0,0,0).unwrap_or(naive_date_next.and_hms_opt(0,0,0).expect("Should be valid time")) + Duration::seconds(time_offset_seconds);
                     new_next_reset_at = Some(DateTime::<Utc>::from_naive_utc_and_offset(naive_datetime_next, Utc));
                 } else {
-                    new_next_reset_at = None; 
+                    new_next_reset_at = None;
                     eprintln!("Error calculating next reset date for monthly_day_of_month for VPS ID {}: Could not form NaiveDate from y/m/d: {}/{}/{}", vps_id, next_month_year, next_month_month, actual_day);
                 }
             } else {
@@ -180,47 +161,33 @@ pub async fn process_vps_traffic_reset(pool: &PgPool, vps_id: i32) -> Result<boo
         }
     }
 
-    sqlx::query!(
-        r#"
-        UPDATE vps
-        SET
-            traffic_current_cycle_rx_bytes = 0,
-            traffic_current_cycle_tx_bytes = 0,
-            traffic_last_reset_at = $1,
-            next_traffic_reset_at = $2,
-            updated_at = $3
-        WHERE id = $4
-        "#,
-        last_reset_time,
-        new_next_reset_at,
-        Utc::now(),
-        vps_id
-    )
-    .execute(&mut *tx)
-    .await?;
+    let mut active_vps: vps::ActiveModel = vps_data.into_active_model();
+    active_vps.traffic_current_cycle_rx_bytes = Set(Some(0));
+    active_vps.traffic_current_cycle_tx_bytes = Set(Some(0));
+    active_vps.traffic_last_reset_at = Set(Some(last_reset_time));
+    active_vps.next_traffic_reset_at = Set(new_next_reset_at);
+    active_vps.updated_at = Set(Utc::now());
 
-    tx.commit().await?;
+    active_vps.update(&txn).await?;
+
+    txn.commit().await?;
     Ok(true)
 }
 
 /// Retrieves IDs of VPS that are due for a traffic reset check.
-pub async fn get_vps_due_for_traffic_reset(pool: &PgPool) -> Result<Vec<i32>> {
+pub async fn get_vps_due_for_traffic_reset(
+    db: &DatabaseConnection, // Changed
+) -> Result<Vec<i32>, DbErr> { // Changed
     let now = Utc::now();
-    let vps_ids = sqlx::query!(
-        r#"
-        SELECT id
-        FROM vps
-        WHERE traffic_reset_config_type IS NOT NULL 
-          AND traffic_reset_config_value IS NOT NULL
-          AND next_traffic_reset_at IS NOT NULL
-          AND next_traffic_reset_at <= $1
-        "#,
-        now
-    )
-    .fetch_all(pool)
-    .await?
-    .into_iter()
-    .map(|row| row.id)
-    .collect();
+    let vps_ids: Vec<i32> = vps::Entity::find()
+        .select_only()
+        .column(vps::Column::Id)
+        .filter(vps::Column::TrafficResetConfigType.is_not_null())
+        .filter(vps::Column::TrafficResetConfigValue.is_not_null())
+        .filter(vps::Column::NextTrafficResetAt.is_not_null())
+        .filter(vps::Column::NextTrafficResetAt.lte(now))
+        .into_tuple()
+        .all(db)
+        .await?;
     Ok(vps_ids)
 }

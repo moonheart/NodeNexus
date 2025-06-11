@@ -7,7 +7,7 @@ use axum::{
     Json,
     Router,
 };
-use sqlx::PgPool;
+use sea_orm::DatabaseConnection; // Replaced PgPool
 use std::sync::Arc;
  // Added for LiveServerDataCache
 use tokio::sync::{broadcast, mpsc, Mutex}; // Added Mutex and mpsc
@@ -33,7 +33,7 @@ pub mod alert_routes; // Added alert_routes module
 // Application state to share PgPool
 #[derive(Clone)]
 pub struct AppState {
-    pub db_pool: PgPool,
+    pub db_pool: DatabaseConnection, // Changed PgPool to DatabaseConnection
     pub live_server_data_cache: LiveServerDataCache,
     pub ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
     pub connected_agents: Arc<Mutex<ConnectedAgents>>,
@@ -122,7 +122,7 @@ async fn login_test_handler() -> (StatusCode, Json<serde_json::Value>) {
 }
 
 pub async fn run_http_server(
-    db_pool: PgPool,
+    db_pool: DatabaseConnection, // Changed PgPool to DatabaseConnection
     http_addr: SocketAddr,
     live_server_data_cache: LiveServerDataCache,
     ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,

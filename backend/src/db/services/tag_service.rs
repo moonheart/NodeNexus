@@ -1,12 +1,16 @@
 use chrono::Utc;
-use sqlx::{FromRow, PgPool, Result};
+use sea_orm::{
+    sea_query::OnConflict, ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, DeleteResult,
+    EntityTrait, FromQueryResult, InsertResult, IntoActiveModel, JoinType, // Removed ModelTrait
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Set, TransactionTrait,
+};
 
-use crate::db::models::Tag;
+use crate::db::entities::{tag, vps, vps_tag}; // Removed prelude::*
 
 // --- Tag Service Functions ---
 
 /// A struct that includes a Tag and its usage count.
-#[derive(FromRow, serde::Serialize, Debug)]
+#[derive(FromQueryResult, serde::Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct TagWithCount {
     pub id: i32,
@@ -23,61 +27,66 @@ pub struct TagWithCount {
 
 /// Creates a new tag for a user.
 pub async fn create_tag(
-    pool: &PgPool,
+    db: &DatabaseConnection,
     user_id: i32,
     name: &str,
     color: &str,
     icon: Option<&str>,
     url: Option<&str>,
     is_visible: bool,
-) -> Result<Tag> {
+) -> Result<tag::Model, DbErr> {
     let now = Utc::now();
-    sqlx::query_as!(
-        Tag,
-        r#"
-        INSERT INTO tags (user_id, name, color, icon, url, is_visible, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id, user_id, name, color, icon, url, is_visible, created_at, updated_at
-        "#,
-        user_id,
-        name,
-        color,
-        icon,
-        url,
-        is_visible,
-        now,
-        now
-    )
-    .fetch_one(pool)
-    .await
+    let new_tag = tag::ActiveModel {
+        user_id: Set(user_id),
+        name: Set(name.to_owned()),
+        color: Set(color.to_owned()),
+        icon: Set(icon.map(|s| s.to_owned())),
+        url: Set(url.map(|s| s.to_owned())),
+        is_visible: Set(is_visible),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default() // For id
+    };
+    new_tag.insert(db).await
 }
 
 /// Retrieves all tags for a user, including a count of how many VPS use each tag.
 pub async fn get_tags_by_user_id_with_count(
-    pool: &PgPool,
+    db: &DatabaseConnection,
     user_id: i32,
-) -> Result<Vec<TagWithCount>> {
-    sqlx::query_as!(
-        TagWithCount,
-        r#"
-        SELECT
-            t.id, t.user_id, t.name, t.color, t.icon, t.url, t.is_visible, t.created_at, t.updated_at,
-            COALESCE(COUNT(vt.vps_id), 0) as "vps_count!"
-        FROM tags t
-        LEFT JOIN vps_tags vt ON t.id = vt.tag_id
-        WHERE t.user_id = $1
-        GROUP BY t.id
-        ORDER BY t.name
-        "#,
-        user_id
-    )
-    .fetch_all(pool)
-    .await
+) -> Result<Vec<TagWithCount>, DbErr> {
+    tag::Entity::find()
+        .select_only()
+        .column(tag::Column::Id)
+        .column(tag::Column::UserId)
+        .column(tag::Column::Name)
+        .column(tag::Column::Color)
+        .column(tag::Column::Icon)
+        .column(tag::Column::Url)
+        .column(tag::Column::IsVisible)
+        .column(tag::Column::CreatedAt)
+        .column(tag::Column::UpdatedAt)
+        .column_as(vps_tag::Column::VpsId.count(), "vps_count")
+        .join(JoinType::LeftJoin, crate::db::entities::vps_tag::Relation::Tag.def().rev())
+        .filter(tag::Column::UserId.eq(user_id))
+        .group_by(tag::Column::Id)
+        .group_by(tag::Column::UserId)
+        .group_by(tag::Column::Name)
+        .group_by(tag::Column::Color)
+        .group_by(tag::Column::Icon)
+        .group_by(tag::Column::Url)
+        .group_by(tag::Column::IsVisible)
+        .group_by(tag::Column::CreatedAt)
+        .group_by(tag::Column::UpdatedAt)
+        .order_by_asc(tag::Column::Name)
+        .into_model::<TagWithCount>()
+        .all(db)
+        .await
 }
 
 /// Updates an existing tag.
 pub async fn update_tag(
-    pool: &PgPool,
+    db: &DatabaseConnection,
     tag_id: i32,
     user_id: i32, // for authorization
     name: &str,
@@ -85,146 +94,132 @@ pub async fn update_tag(
     icon: Option<&str>,
     url: Option<&str>,
     is_visible: bool,
-) -> Result<u64> {
+) -> Result<tag::Model, DbErr> {
     let now = Utc::now();
-    let rows_affected = sqlx::query!(
-        r#"
-        UPDATE tags
-        SET name = $1, color = $2, icon = $3, url = $4, is_visible = $5, updated_at = $6
-        WHERE id = $7 AND user_id = $8
-        "#,
-        name,
-        color,
-        icon,
-        url,
-        is_visible,
-        now,
-        tag_id,
-        user_id
-    )
-    .execute(pool)
-    .await?
-    .rows_affected();
-    Ok(rows_affected)
+    let tag_to_update = tag::Entity::find_by_id(tag_id)
+        .filter(tag::Column::UserId.eq(user_id))
+        .one(db)
+        .await?
+        .ok_or_else(|| DbErr::RecordNotFound(format!("Tag with id {} not found for user {}", tag_id, user_id)))?;
+
+    let mut active_tag: tag::ActiveModel = tag_to_update.into_active_model();
+    active_tag.name = Set(name.to_owned());
+    active_tag.color = Set(color.to_owned());
+    active_tag.icon = Set(icon.map(|s| s.to_owned()));
+    active_tag.url = Set(url.map(|s| s.to_owned()));
+    active_tag.is_visible = Set(is_visible);
+    active_tag.updated_at = Set(now);
+    active_tag.update(db).await
 }
 
 /// Deletes a tag. The ON DELETE CASCADE in the DB will handle vps_tags entries.
-pub async fn delete_tag(pool: &PgPool, tag_id: i32, user_id: i32) -> Result<u64> {
-    let rows_affected = sqlx::query!(
-        "DELETE FROM tags WHERE id = $1 AND user_id = $2",
-        tag_id,
-        user_id
-    )
-    .execute(pool)
-    .await?
-    .rows_affected();
-    Ok(rows_affected)
+pub async fn delete_tag(db: &DatabaseConnection, tag_id: i32, user_id: i32) -> Result<DeleteResult, DbErr> {
+    tag::Entity::delete_many()
+        .filter(tag::Column::Id.eq(tag_id))
+        .filter(tag::Column::UserId.eq(user_id))
+        .exec(db)
+        .await
 }
 
 /// Associates a tag with a VPS. Ignores conflicts if the association already exists.
-pub async fn add_tag_to_vps(pool: &PgPool, vps_id: i32, tag_id: i32) -> Result<u64> {
-    let rows_affected = sqlx::query!(
-        "INSERT INTO vps_tags (vps_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-        vps_id,
-        tag_id
+/// Returns InsertResult which includes rows_affected.
+pub async fn add_tag_to_vps(db: &DatabaseConnection, vps_id: i32, tag_id: i32) -> Result<InsertResult<vps_tag::ActiveModel>, DbErr> {
+    vps_tag::Entity::insert(vps_tag::ActiveModel {
+        vps_id: Set(vps_id),
+        tag_id: Set(tag_id),
+    })
+    .on_conflict(
+        OnConflict::columns([vps_tag::Column::VpsId, vps_tag::Column::TagId])
+            .do_nothing()
+            .to_owned(),
     )
-    .execute(pool)
-    .await?
-    .rows_affected();
-    Ok(rows_affected)
+    .exec(db)
+    .await
 }
 
+
 /// Removes a tag from a VPS.
-pub async fn remove_tag_from_vps(pool: &PgPool, vps_id: i32, tag_id: i32) -> Result<u64> {
-    let rows_affected = sqlx::query!(
-        "DELETE FROM vps_tags WHERE vps_id = $1 AND tag_id = $2",
-        vps_id,
-        tag_id
-    )
-    .execute(pool)
-    .await?
-    .rows_affected();
-    Ok(rows_affected)
+pub async fn remove_tag_from_vps(db: &DatabaseConnection, vps_id: i32, tag_id: i32) -> Result<DeleteResult, DbErr> {
+    vps_tag::Entity::delete_by_id((vps_id, tag_id)).exec(db).await
 }
 
 /// Retrieves all tags for a specific VPS.
-pub async fn get_tags_for_vps(pool: &PgPool, vps_id: i32) -> Result<Vec<Tag>> {
-    sqlx::query_as!(
-        Tag,
-        r#"
-        SELECT t.id, t.user_id, t.name, t.color, t.icon, t.url, t.is_visible, t.created_at, t.updated_at
-        FROM tags t
-        INNER JOIN vps_tags vt ON t.id = vt.tag_id
-        WHERE vt.vps_id = $1
-        ORDER BY t.name
-        "#,
-        vps_id
-    )
-    .fetch_all(pool)
-    .await
+pub async fn get_tags_for_vps(db: &DatabaseConnection, vps_id: i32) -> Result<Vec<tag::Model>, DbErr> {
+    // Assuming Vps entity has a find_related(tag::Entity) through VpsTag
+    // If not, the manual join is correct. Let's use the manual join for clarity as per plan.
+    tag::Entity::find()
+        .join(JoinType::InnerJoin, crate::db::entities::vps_tag::Relation::Tag.def().rev())
+        .filter(vps_tag::Column::VpsId.eq(vps_id))
+        .order_by_asc(tag::Column::Name)
+        .all(db)
+        .await
 }
 
 /// Bulk adds/removes tags for a list of VPS.
 /// This function performs operations in a single transaction.
 pub async fn bulk_update_vps_tags(
-    pool: &PgPool,
+    db: &DatabaseConnection,
     user_id: i32, // For authorization
     vps_ids: &[i32],
     add_tag_ids: &[i32],
     remove_tag_ids: &[i32],
-) -> Result<(), sqlx::Error> {
-    if vps_ids.is_empty() {
+) -> Result<(), DbErr> {
+    if vps_ids.is_empty() && (add_tag_ids.is_empty() && remove_tag_ids.is_empty()) {
         return Ok(()); // Nothing to do
     }
 
-    let mut tx = pool.begin().await?;
+    let txn = db.begin().await?;
 
     // Authorize: Ensure the user owns all the VPS they are trying to modify.
-    let owned_vps_count = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM vps WHERE id = ANY($1) AND user_id = $2",
-        vps_ids,
-        user_id
-    )
-    .fetch_one(&mut *tx)
-    .await?
-    .unwrap_or(0);
+    if !vps_ids.is_empty() {
+        let owned_vps_count = vps::Entity::find()
+            .filter(vps::Column::Id.is_in(vps_ids.to_vec()))
+            .filter(vps::Column::UserId.eq(user_id))
+            .count(&txn)
+            .await?;
 
-    if owned_vps_count != vps_ids.len() as i64 {
-        // Use RowNotFound to signal an authorization failure to the handler.
-        return Err(sqlx::Error::RowNotFound);
+        if owned_vps_count != vps_ids.len() as u64 {
+            txn.rollback().await?; // Rollback before returning error
+            return Err(DbErr::Custom(
+                "Authorization failed: User does not own all specified VPS".to_string(),
+            ));
+        }
     }
 
+
     // Bulk add tags
-    if !add_tag_ids.is_empty() {
-        sqlx::query!(
-            r#"
-            INSERT INTO vps_tags (vps_id, tag_id)
-            SELECT vps_id, tag_id
-            FROM UNNEST($1::int[]) as vps_id, UNNEST($2::int[]) as tag_id
-            ON CONFLICT (vps_id, tag_id) DO NOTHING
-            "#,
-            vps_ids,
-            add_tag_ids
-        )
-        .execute(&mut *tx)
-        .await?;
+    if !add_tag_ids.is_empty() && !vps_ids.is_empty() {
+        let mut batch_inserts = Vec::new();
+        for v_id in vps_ids {
+            for t_id in add_tag_ids {
+                batch_inserts.push(vps_tag::ActiveModel {
+                    vps_id: Set(*v_id),
+                    tag_id: Set(*t_id),
+                });
+            }
+        }
+        if !batch_inserts.is_empty() {
+            vps_tag::Entity::insert_many(batch_inserts)
+                .on_conflict(
+                    OnConflict::columns([vps_tag::Column::VpsId, vps_tag::Column::TagId])
+                        .do_nothing()
+                        .to_owned(),
+                )
+                .exec(&txn)
+                .await?;
+        }
     }
 
     // Bulk remove tags
-    if !remove_tag_ids.is_empty() {
-        sqlx::query!(
-            r#"
-            DELETE FROM vps_tags
-            WHERE vps_id = ANY($1) AND tag_id = ANY($2)
-            "#,
-            vps_ids,
-            remove_tag_ids
-        )
-        .execute(&mut *tx)
-        .await?;
+    if !remove_tag_ids.is_empty() && !vps_ids.is_empty() {
+        vps_tag::Entity::delete_many()
+            .filter(vps_tag::Column::VpsId.is_in(vps_ids.to_vec()))
+            .filter(vps_tag::Column::TagId.is_in(remove_tag_ids.to_vec()))
+            .exec(&txn)
+            .await?;
     }
 
-    tx.commit().await?;
+    txn.commit().await?;
 
     Ok(())
 }

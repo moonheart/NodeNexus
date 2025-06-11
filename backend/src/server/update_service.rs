@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use sqlx::PgPool;
+use sea_orm::DatabaseConnection; // Replaced PgPool
 
 use crate::db::services;
 use crate::server::agent_state::LiveServerDataCache;
@@ -19,7 +19,7 @@ use crate::websocket_models::FullServerListPush;
 /// This function should be called after ANY event that modifies VPS data to ensure
 /// data consistency across the entire system.
 pub async fn broadcast_full_state_update(
-    pool: &PgPool,
+    pool: &DatabaseConnection, // Changed PgPool to DatabaseConnection
     cache: &LiveServerDataCache,
     broadcaster: &broadcast::Sender<Arc<FullServerListPush>>,
 ) {

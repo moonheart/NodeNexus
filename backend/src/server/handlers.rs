@@ -8,7 +8,7 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Status};
 use uuid::Uuid;
-use sqlx::PgPool; // Added PgPool
+use sea_orm::DatabaseConnection; // Replaced PgPool
 
 use crate::agent_service::{
     AgentConfig, MessageToAgent, MessageToServer, ServerHandshakeAck, // Added OsType
@@ -26,7 +26,7 @@ use tokio::sync::broadcast;
 pub async fn handle_connection(
     mut in_stream: tonic::Streaming<MessageToServer>,
     connected_agents_arc: Arc<Mutex<ConnectedAgents>>,
-    pool: Arc<PgPool>,
+    pool: Arc<DatabaseConnection>, // Changed PgPool to DatabaseConnection
     live_server_data_cache: LiveServerDataCache,
     ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
     update_trigger_tx: mpsc::Sender<()>,
@@ -37,8 +37,8 @@ pub async fn handle_connection(
 
     let connected_agents_arc_clone = connected_agents_arc.clone();
     let pool_clone = pool.clone();
-    let cache_clone = live_server_data_cache.clone(); // Not used directly for broadcast anymore
-    let broadcaster_clone = ws_data_broadcaster_tx.clone(); // Not used directly for broadcast anymore
+    let _cache_clone = live_server_data_cache.clone(); // Renamed, Not used directly for broadcast anymore
+    let _broadcaster_clone = ws_data_broadcaster_tx.clone(); // Renamed, Not used directly for broadcast anymore
     let trigger_clone = update_trigger_tx.clone();
 
     tokio::spawn(async move {
@@ -56,7 +56,7 @@ pub async fn handle_connection(
                     let mut auth_successful_for_msg = false;
                     let mut error_message_for_ack = String::new();
 
-                    match services::get_vps_by_id(&pool_clone, vps_db_id_from_msg).await {
+                    match services::get_vps_by_id(&*pool_clone, vps_db_id_from_msg).await { // Dereference Arc
                         Ok(Some(vps_record)) => {
                             if vps_record.agent_secret == *agent_secret_from_msg {
                                 auth_successful_for_msg = true;
@@ -104,7 +104,7 @@ pub async fn handle_connection(
                             // Update VPS info in the database
                             // Pass the entire handshake object
                             match services::update_vps_info_on_handshake(
-                                &pool_clone,
+                                &*pool_clone, // Dereference Arc
                                 vps_db_id_from_msg,
                                 handshake, // Pass the handshake object itself
                             ).await {
@@ -198,7 +198,7 @@ pub async fn handle_connection(
                                         // println!("[{}] Received PerformanceBatch from {} (VPS ID {}). Snapshots: {}",
                                         //     connection_id, session_id, vps_db_id_from_msg, batch.snapshots.len());
 
-                                        match services::save_performance_snapshot_batch(&pool_clone, vps_db_id_from_msg, &batch).await {
+                                        match services::save_performance_snapshot_batch(&*pool_clone, vps_db_id_from_msg, &batch).await { // Dereference Arc
                                             Ok(_) => {
                                                 // After saving metrics, trigger a full broadcast.
                                                 // This replaces the silent cache update with a full, consistent state refresh.
@@ -222,7 +222,7 @@ pub async fn handle_connection(
                                        let status = if response.success { "synced" } else { "failed" };
                                        let error_msg = if response.success { None } else { Some(response.error_message.as_str()) };
 
-                                       match services::update_vps_config_status(&pool_clone, vps_db_id_from_msg, status, error_msg).await {
+                                       match services::update_vps_config_status(&*pool_clone, vps_db_id_from_msg, status, error_msg).await { // Dereference Arc
                                            Ok(_) => {
                                                println!("[{}] Successfully updated config status for VPS ID {}. Triggering broadcast.", connection_id, vps_db_id_from_msg);
                                                // After updating config status, trigger a full broadcast.
@@ -270,7 +270,7 @@ pub async fn handle_connection(
             // Update status to "offline" and broadcast the change
             if let Some(id) = vps_db_id {
                 println!("[{}] Setting status to 'offline' for VPS ID {}", connection_id, id);
-                match services::update_vps_status(&pool_clone, id, "offline").await {
+                match services::update_vps_status(&*pool_clone, id, "offline").await { // Dereference Arc
                     Ok(rows_affected) if rows_affected > 0 => {
                         println!("[{}] Successfully set status to 'offline' for VPS ID {}. Triggering broadcast.", connection_id, id);
                         // Trigger a final broadcast to update all clients

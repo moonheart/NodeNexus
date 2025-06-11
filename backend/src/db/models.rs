@@ -1,10 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+// Removed: use sqlx::FromRow;
 
 /// Represents a user in the system.
 /// Corresponds to the `users` table.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct User {
     pub id: i32,
     pub username: String,
@@ -16,7 +16,7 @@ pub struct User {
 
 /// Represents a Virtual Private Server (VPS) monitored by the system.
 /// Corresponds to the `vps` table.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct Vps {
     pub id: i32,
     pub user_id: i32, // Foreign key to User
@@ -52,7 +52,7 @@ pub struct Vps {
 /// Represents a performance metric snapshot for a VPS.
 /// Corresponds to the `performance_metrics` hypertable.
 /// Note: `time` is the hypertable's time dimension.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct PerformanceMetric {
     pub id: i32, // Primary key, added from migration
     pub time: DateTime<Utc>,
@@ -78,7 +78,7 @@ pub struct PerformanceMetric {
 
 /// Represents a Docker container on a VPS.
 /// Corresponds to the `docker_containers` table.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct DockerContainer {
     pub id: i32, // Primary key for this table
     pub vps_id: i32,
@@ -94,7 +94,7 @@ pub struct DockerContainer {
 
 /// Represents a performance metric snapshot for a Docker container.
 /// Corresponds to the `docker_metrics` hypertable.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct DockerMetric {
     pub time: DateTime<Utc>,
     pub container_db_id: i32, // Foreign key to docker_containers.id
@@ -104,7 +104,7 @@ pub struct DockerMetric {
 
 /// Represents a defined task.
 /// Corresponds to the `tasks` table.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct Task {
     pub id: i32,
     pub user_id: i32,
@@ -123,7 +123,7 @@ pub struct Task {
 
 /// Represents an execution record of a task.
 /// Corresponds to the `task_runs` table.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct TaskRun {
     pub id: i32,
     pub task_id: i32,
@@ -135,7 +135,7 @@ pub struct TaskRun {
 
 /// Represents an alert rule defined by a user, directly mapping to `alert_rules` table columns.
 /// Used for direct database row mapping.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct AlertRuleFromDb {
     pub id: i32,
     pub user_id: i32,
@@ -174,7 +174,7 @@ pub struct AlertRule {
 
 /// Represents a triggered alert event.
 /// Corresponds to the `alert_events` table.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct AlertEvent {
     pub id: i32,
     pub rule_id: i32,
@@ -187,7 +187,7 @@ pub struct AlertEvent {
 /// Represents monthly traffic data for a VPS.
 /// Corresponds to the `vps_monthly_traffic` table.
 /// Note: `month` is part of the primary key.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct VpsMonthlyTraffic {
     pub vps_id: i32,
     pub month: chrono::NaiveDate, // DATE type
@@ -197,7 +197,7 @@ pub struct VpsMonthlyTraffic {
 
 /// Represents detailed disk usage for a specific performance metric snapshot.
 /// Corresponds to the `performance_disk_usages` table.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct PerformanceDiskUsage {
     pub id: i32,
     pub performance_metric_id: i32,
@@ -210,7 +210,7 @@ pub struct PerformanceDiskUsage {
 
 /// Represents detailed network interface statistics for a specific performance metric snapshot.
 /// Corresponds to the `performance_network_interface_stats` table.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct PerformanceNetworkInterfaceStat {
     pub id: i32,
     pub performance_metric_id: i32,
@@ -225,7 +225,7 @@ pub struct PerformanceNetworkInterfaceStat {
 
 /// Represents an aggregated performance metric, typically used for time-bucketed queries.
 /// Fields are optional because not all aggregations will produce all values (e.g., raw data might not have averages).
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct AggregatedPerformanceMetric {
     pub time: Option<DateTime<Utc>>, // Represents the start of the time bucket, made Option
     pub vps_id: i32,
@@ -238,7 +238,7 @@ pub struct AggregatedPerformanceMetric {
 }
 
 /// Represents a global setting in the `settings` table.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct Setting {
     pub key: String,
     pub value: serde_json::Value,
@@ -247,7 +247,7 @@ pub struct Setting {
 
 /// Represents a tag that can be associated with a VPS.
 /// Corresponds to the `tags` table.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct Tag {
     pub id: i32,
     pub user_id: i32,
@@ -262,7 +262,7 @@ pub struct Tag {
 
 /// Represents the association between a VPS and a Tag.
 /// Corresponds to the `vps_tags` table.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct VpsTag {
     pub vps_id: i32,
     pub tag_id: i32,
@@ -270,7 +270,7 @@ pub struct VpsTag {
 
 /// Represents a configured notification channel.
 /// Corresponds to the `notification_channels` table.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct NotificationChannel {
     pub id: i32,
     pub user_id: i32,
@@ -283,7 +283,7 @@ pub struct NotificationChannel {
 
 /// Represents the association between an AlertRule and a NotificationChannel.
 /// Corresponds to the `alert_rule_channels` table.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct AlertRuleChannel {
     pub alert_rule_id: i32,
     pub channel_id: i32,
@@ -291,7 +291,7 @@ pub struct AlertRuleChannel {
 
 /// Represents detailed renewal information for a VPS, including reminder status.
 /// Corresponds to the `vps_renewal_info` table.
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
 pub struct VpsRenewalInfo {
     pub vps_id: i32, // Primary Key, Foreign Key to vps.id
     pub renewal_cycle: Option<String>, // e.g., "monthly", "annually", "custom_days"

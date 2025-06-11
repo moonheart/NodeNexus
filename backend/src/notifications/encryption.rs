@@ -27,7 +27,7 @@ impl EncryptionService {
     pub fn new(key: &[u8]) -> Result<Self, EncryptionError> {
         Ok(Self {
             cipher: Aes256Gcm::new_from_slice(key)
-                .map_err(|e| EncryptionError::InvalidKeyLength)?,
+                .map_err(|_e| EncryptionError::InvalidKeyLength)?, // Renamed e to _e
         })
     }
 

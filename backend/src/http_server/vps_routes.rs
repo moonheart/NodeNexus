@@ -7,7 +7,12 @@ use axum::{
 use serde::{Deserialize, Serialize}; // Added Serialize
 use std::sync::Arc;
 use chrono::{DateTime, Utc}; // Added for DateTime<Utc>
-use crate::db::{models::{Vps, PerformanceMetric as DbPerformanceMetric, Tag}, services};
+use sea_orm::DbErr; // Added DbErr for error handling
+use crate::db::{
+    entities::{tag, vps}, // Changed to use entities
+    models::{PerformanceMetric as DbPerformanceMetric}, // Keep DbPerformanceMetric for now
+    services,
+};
 use super::{AppState, AppError, config_routes};
 use crate::http_server::auth_logic::AuthenticatedUser;
 use crate::server::update_service;
@@ -179,13 +184,13 @@ async fn create_vps_handler(
     Extension(authenticated_user): Extension<AuthenticatedUser>,
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<CreateVpsRequest>,
-) -> Result<(StatusCode, Json<Vps>), AppError> { // Create still returns the base Vps model
+) -> Result<(StatusCode, Json<vps::Model>), AppError> { // Changed Vps to vps::Model
     let user_id = authenticated_user.id;
     match services::create_vps(&app_state.db_pool, user_id, &payload.name).await {
-        Ok(vps) => Ok((StatusCode::CREATED, Json(vps))),
-        Err(sqlx_error) => {
-            eprintln!("Failed to create VPS: {:?}", sqlx_error);
-            Err(AppError::DatabaseError(sqlx_error.to_string()))
+        Ok(vps_model) => Ok((StatusCode::CREATED, Json(vps_model))), // Changed vps to vps_model
+        Err(db_err) => { // Changed sqlx_error to db_err
+            eprintln!("Failed to create VPS: {:?}", db_err);
+            Err(AppError::DatabaseError(db_err.to_string()))
         }
     }
 }
@@ -216,7 +221,7 @@ async fn get_vps_detail_handler(
     State(app_state): State<Arc<AppState>>,
     Path(vps_id): Path<i32>,
 ) -> Result<Json<VpsListItemResponse>, AppError> {
-    let user_id = authenticated_user.id;
+    let _user_id = authenticated_user.id; // Renamed user_id as it's not used unless auth is uncommented
     // Use the unified query that fetches everything, including tags.
     let vps_details = services::get_vps_with_details_for_cache_by_id(&app_state.db_pool, vps_id)
         .await
@@ -389,11 +394,11 @@ async fn remove_tag_from_vps_handler(
         return Err(AppError::Unauthorized("Permission denied".to_string()));
     }
 
-    let rows_affected = services::remove_tag_from_vps(&app_state.db_pool, vps_id, tag_id)
+    let delete_result = services::remove_tag_from_vps(&app_state.db_pool, vps_id, tag_id)
         .await
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
-    if rows_affected > 0 {
+    if delete_result.rows_affected > 0 {
         Ok(StatusCode::NO_CONTENT)
     } else {
         // This could also mean the tag wasn't associated in the first place
@@ -405,7 +410,7 @@ async fn get_tags_for_vps_handler(
     Extension(authenticated_user): Extension<AuthenticatedUser>,
     State(app_state): State<Arc<AppState>>,
     Path(vps_id): Path<i32>,
-) -> Result<Json<Vec<Tag>>, AppError> {
+) -> Result<Json<Vec<tag::Model>>, AppError> { // Changed Tag to tag::Model
     let user_id = authenticated_user.id;
     // Authorize: Check if user owns the VPS
     let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await.map_err(|e| AppError::DatabaseError(e.to_string()))?.ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
@@ -457,11 +462,16 @@ async fn bulk_update_vps_tags_handler(
             .await;
             Ok(StatusCode::OK)
         }
-        Err(sqlx::Error::RowNotFound) => {
-            // This custom error indicates an authorization failure (user doesn't own all VPS)
-            Err(AppError::Unauthorized("Permission denied to one or more VPS".to_string()))
+        Err(db_err) => { // Changed to handle DbErr
+            if let DbErr::RecordNotFound(_) = &db_err { // Directly match against &db_err
+                 // This specific mapping might need adjustment based on how `bulk_update_vps_tags` signals auth failure.
+                 // For now, assuming RecordNotFound might imply an issue with one of the VPS IDs not being found under user's ownership.
+                Err(AppError::Unauthorized("Permission denied to one or more VPS, or VPS not found.".to_string()))
+            } else {
+                // db_err is still available here as it was only borrowed
+                Err(AppError::DatabaseError(db_err.to_string()))
+            }
         }
-        Err(e) => Err(AppError::DatabaseError(e.to_string())),
     }
 }
 

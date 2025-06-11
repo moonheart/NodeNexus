@@ -1,46 +1,46 @@
 use chrono::Utc;
-use sqlx::{PgPool, Result};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set,
+};
 
-use crate::db::models::User;
+use crate::db::entities::user; // Changed from models::User
 
 // --- User Service Functions ---
 
 /// Creates a new user.
 pub async fn create_user(
-    pool: &PgPool,
+    db: &DatabaseConnection, // Changed from pool: &PgPool
     username: &str,
     password_hash: &str,
     email: &str,
-) -> Result<User> {
+) -> Result<user::Model, DbErr> { // Changed return type
     let now = Utc::now();
-    let user = sqlx::query_as!(
-        User,
-        r#"
-        INSERT INTO users (username, password_hash, email, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, username, password_hash, email, created_at, updated_at
-        "#,
-        username,
-        password_hash,
-        email,
-        now,
-        now
-    )
-    .fetch_one(pool)
-    .await?;
-    Ok(user)
+    let new_user = user::ActiveModel {
+        username: Set(username.to_owned()),
+        password_hash: Set(password_hash.to_owned()),
+        email: Set(email.to_owned()),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default() // id will be set by the database
+    };
+    new_user.insert(db).await
 }
 
 /// Retrieves a user by their ID.
-pub async fn get_user_by_id(pool: &PgPool, user_id: i32) -> Result<Option<User>> {
-    sqlx::query_as!(User, "SELECT * FROM users WHERE id = $1", user_id)
-        .fetch_optional(pool)
-        .await
+pub async fn get_user_by_id(
+    db: &DatabaseConnection, // Changed from pool: &PgPool
+    user_id: i32,
+) -> Result<Option<user::Model>, DbErr> { // Changed return type
+    user::Entity::find_by_id(user_id).one(db).await
 }
 
 /// Retrieves a user by their username.
-pub async fn get_user_by_username(pool: &PgPool, username: &str) -> Result<Option<User>> {
-    sqlx::query_as!(User, "SELECT * FROM users WHERE username = $1", username)
-        .fetch_optional(pool)
+pub async fn get_user_by_username(
+    db: &DatabaseConnection, // Changed from pool: &PgPool
+    username: &str,
+) -> Result<Option<user::Model>, DbErr> { // Changed return type
+    user::Entity::find()
+        .filter(user::Column::Username.eq(username))
+        .one(db)
         .await
 }

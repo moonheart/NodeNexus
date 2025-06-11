@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sea_orm::DatabaseConnection; // Replaced PgPool
 use tonic::{Request, Response, Status, Streaming};
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
@@ -12,7 +12,7 @@ use super::handlers::handle_connection;
 #[derive(Debug)]
 pub struct MyAgentCommService {
     pub connected_agents: Arc<Mutex<ConnectedAgents>>,
-    pub db_pool: Arc<PgPool>,
+    pub db_pool: Arc<DatabaseConnection>, // Changed PgPool to DatabaseConnection
     pub live_server_data_cache: LiveServerDataCache,
     pub ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
     pub update_trigger_tx: mpsc::Sender<()>,
@@ -21,7 +21,7 @@ pub struct MyAgentCommService {
 impl MyAgentCommService {
     pub fn new(
         connected_agents: Arc<Mutex<ConnectedAgents>>,
-        db_pool: Arc<PgPool>,
+        db_pool: Arc<DatabaseConnection>, // Changed PgPool to DatabaseConnection
         live_server_data_cache: LiveServerDataCache,
         ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
         update_trigger_tx: mpsc::Sender<()>,
