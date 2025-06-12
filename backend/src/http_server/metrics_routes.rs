@@ -8,8 +8,9 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 
 use crate::db::models::{
-    PerformanceMetric as DtoPerformanceMetric,
-    AggregatedPerformanceMetric as DtoAggregatedPerformanceMetric
+    // PerformanceMetric as DtoPerformanceMetric, // No longer used directly by latest-n
+    AggregatedPerformanceMetric as DtoAggregatedPerformanceMetric,
+    RawPerformanceMetricPointDto // Added for latest-n endpoint
 };
 use crate::db::entities::performance_metric; // SeaORM model
 use crate::db::services as db_services;
@@ -34,14 +35,14 @@ async fn get_latest_n_vps_metrics_handler(
     State(app_state): State<Arc<AppState>>,
     Path(vps_id): Path<i32>,
     Query(params): Query<LatestNMetricsQuery>,
-) -> Result<Json<Vec<DtoPerformanceMetric>>, AppError> { // Changed to DtoPerformanceMetric
+) -> Result<Json<Vec<RawPerformanceMetricPointDto>>, AppError> { // Changed to RawPerformanceMetricPointDto
     let models: Vec<performance_metric::Model> = db_services::get_latest_n_performance_metrics_for_vps(&app_state.db_pool, vps_id, params.count).await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?; // Changed to DatabaseError
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
     
-    let dtos: Vec<DtoPerformanceMetric> = models.into_iter().map(|model| DtoPerformanceMetric {
-        id: model.id,
+    let dtos: Vec<RawPerformanceMetricPointDto> = models.into_iter().map(|model| RawPerformanceMetricPointDto {
+        // id is not part of RawPerformanceMetricPointDto as it's not typically needed for chart points
         time: model.time,
-        vps_id: model.vps_id,
+        vps_id: model.vps_id, // This will be serialized as vpsId due to #[serde(rename_all = "camelCase")]
         cpu_usage_percent: model.cpu_usage_percent,
         memory_usage_bytes: model.memory_usage_bytes,
         memory_total_bytes: model.memory_total_bytes,
@@ -49,8 +50,7 @@ async fn get_latest_n_vps_metrics_handler(
         swap_total_bytes: model.swap_total_bytes,
         disk_io_read_bps: model.disk_io_read_bps,
         disk_io_write_bps: model.disk_io_write_bps,
-        network_rx_bps: model.network_rx_bps,
-        network_tx_bps: model.network_tx_bps,
+        // network_rx_bps and network_tx_bps (cumulative) are omitted
         network_rx_instant_bps: model.network_rx_instant_bps,
         network_tx_instant_bps: model.network_tx_instant_bps,
         uptime_seconds: model.uptime_seconds,
@@ -64,12 +64,13 @@ async fn get_latest_n_vps_metrics_handler(
 async fn get_latest_vps_metrics_handler(
     State(app_state): State<Arc<AppState>>,
     Path(vps_id): Path<i32>,
-) -> Result<Json<Option<DtoPerformanceMetric>>, AppError> { // Changed to DtoPerformanceMetric
+) -> Result<Json<Option<RawPerformanceMetricPointDto>>, AppError> { // Changed to RawPerformanceMetricPointDto for consistency if needed, or keep DtoPerformanceMetric if it's fine
     let model_option: Option<performance_metric::Model> = db_services::get_latest_performance_metric_for_vps(&app_state.db_pool, vps_id).await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?; // Changed to DatabaseError
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
-    let dto_option: Option<DtoPerformanceMetric> = model_option.map(|model| DtoPerformanceMetric {
-        id: model.id,
+    // Using RawPerformanceMetricPointDto for /latest as well for consistency in field names (camelCase)
+    // if this endpoint is also consumed by frontend expecting camelCase for these raw points.
+    let dto_option: Option<RawPerformanceMetricPointDto> = model_option.map(|model| RawPerformanceMetricPointDto {
         time: model.time,
         vps_id: model.vps_id,
         cpu_usage_percent: model.cpu_usage_percent,
@@ -79,8 +80,6 @@ async fn get_latest_vps_metrics_handler(
         swap_total_bytes: model.swap_total_bytes,
         disk_io_read_bps: model.disk_io_read_bps,
         disk_io_write_bps: model.disk_io_write_bps,
-        network_rx_bps: model.network_rx_bps,
-        network_tx_bps: model.network_tx_bps,
         network_rx_instant_bps: model.network_rx_instant_bps,
         network_tx_instant_bps: model.network_tx_instant_bps,
         uptime_seconds: model.uptime_seconds,
@@ -136,6 +135,8 @@ async fn get_vps_metrics_timeseries_handler(
             max_memory_total_bytes: sm.max_memory_total_bytes,
             avg_network_rx_instant_bps: sm.avg_network_rx_instant_bps,
             avg_network_tx_instant_bps: sm.avg_network_tx_instant_bps,
+            avg_disk_io_read_bps: sm.avg_disk_io_read_bps, // Added
+            avg_disk_io_write_bps: sm.avg_disk_io_write_bps, // Added
             // Ensure all fields from DtoAggregatedPerformanceMetric are covered
             // and that they exist in performance_service::AggregatedPerformanceMetric
         }

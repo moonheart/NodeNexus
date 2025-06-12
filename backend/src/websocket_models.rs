@@ -56,6 +56,17 @@ pub struct ServerMetricsSnapshot {
     // For example, disk usage might be relevant if it's part of the full server info
     pub disk_used_bytes: Option<u64>,
     pub disk_total_bytes: Option<u64>,
+    // Added for disk I/O rates
+    pub disk_io_read_bps: Option<u64>,
+    pub disk_io_write_bps: Option<u64>,
+    // Additional fields to align with frontend's LatestPerformanceMetric
+    pub swap_usage_bytes: Option<u64>,
+    pub swap_total_bytes: Option<u64>,
+    pub network_rx_bps: Option<u64>, // Cumulative RX bytes
+    pub network_tx_bps: Option<u64>, // Cumulative TX bytes
+    pub total_processes_count: Option<u32>,
+    pub running_processes_count: Option<u32>,
+    pub tcp_established_connection_count: Option<u32>,
 }
 
 #[derive(Serialize, Clone, Debug)]

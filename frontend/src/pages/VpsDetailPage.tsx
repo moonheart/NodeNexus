@@ -56,12 +56,12 @@ const formatPercentForTooltip = (value: ValueType) => {
 
 // Helper to calculate memory usage percentage
 const calculateMemoryUsagePercent = (dataPoint: PerformanceMetricPoint): number | null => {
-  if (dataPoint.memory_usage_bytes != null && dataPoint.memory_total_bytes != null && dataPoint.memory_total_bytes > 0) {
-    return (dataPoint.memory_usage_bytes / dataPoint.memory_total_bytes) * 100;
+  if (dataPoint.memoryUsageBytes != null && dataPoint.memoryTotalBytes != null && dataPoint.memoryTotalBytes > 0) {
+    return (dataPoint.memoryUsageBytes / dataPoint.memoryTotalBytes) * 100;
   }
   // Check aggregated fields if raw fields are not present or not sufficient
-  if (dataPoint.avg_memory_usage_bytes != null && dataPoint.max_memory_total_bytes != null && dataPoint.max_memory_total_bytes > 0) {
-    return (dataPoint.avg_memory_usage_bytes / dataPoint.max_memory_total_bytes) * 100;
+  if (dataPoint.avgMemoryUsageBytes != null && dataPoint.maxMemoryTotalBytes != null && dataPoint.maxMemoryTotalBytes > 0) {
+    return (dataPoint.avgMemoryUsageBytes / dataPoint.maxMemoryTotalBytes) * 100;
   }
   return null;
 };
@@ -204,6 +204,7 @@ const VpsDetailPage: React.FC = () => {
   const [cpuData, setCpuData] = useState<PerformanceMetricPoint[]>([]);
   const [memoryData, setMemoryData] = useState<PerformanceMetricPoint[]>([]);
   const [networkData, setNetworkData] = useState<PerformanceMetricPoint[]>([]);
+  const [diskIoData, setDiskIoData] = useState<PerformanceMetricPoint[]>([]); // New state for Disk I/O
   const [loadingChartMetrics, setLoadingChartMetrics] = useState(true);
   const [chartError, setChartError] = useState<string | null>(null);
   const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('realtime');
@@ -279,22 +280,42 @@ const VpsDetailPage: React.FC = () => {
         const cpuPoints: PerformanceMetricPoint[] = [];
         const memoryPoints: PerformanceMetricPoint[] = [];
         const networkPoints: PerformanceMetricPoint[] = [];
+        const diskIoPoints: PerformanceMetricPoint[] = []; // For Disk I/O
 
         metrics.forEach(point => {
-          const cpuValue = point.avg_cpu_usage_percent ?? point.cpu_usage_percent;
-          if (cpuValue != null) cpuPoints.push({ ...point, cpu_usage_percent: cpuValue });
-          const memoryUsagePercent = calculateMemoryUsagePercent(point);
-          if (memoryUsagePercent != null) memoryPoints.push({ ...point, memory_usage_percent: memoryUsagePercent });
+          // For data from /latest-n (realtime initial load), point will have raw fields (e.g., point.cpuUsagePercent).
+          // For data from /timeseries (historical), point will have aggregated fields (e.g., point.avgCpuUsagePercent).
+          // The chart components expect specific keys (e.g., 'cpuUsagePercent' for CPU chart).
+          // We need to ensure the correct value is passed under the expected key.
+
+          // CPU Data: Chart uses 'cpuUsagePercent'
+          const cpuValue = point.avgCpuUsagePercent ?? point.cpuUsagePercent;
+          if (cpuValue != null) cpuPoints.push({ ...point, cpuUsagePercent: cpuValue });
           
-          const rxBps = point.avg_network_rx_instant_bps ?? point.network_rx_instant_bps;
-          const txBps = point.avg_network_tx_instant_bps ?? point.network_tx_instant_bps;
+          // Memory Data: Chart uses 'memoryUsagePercent'
+          const memoryUsagePercentValue = calculateMemoryUsagePercent(point); // This helper already handles raw vs aggregated
+          if (memoryUsagePercentValue != null) memoryPoints.push({ ...point, memoryUsagePercent: memoryUsagePercentValue });
+          
+          // Network Data: Chart uses 'avgNetworkRxInstantBps' and 'avgNetworkTxInstantBps'
+          const rxBps = point.avgNetworkRxInstantBps ?? point.networkRxInstantBps;
+          const txBps = point.avgNetworkTxInstantBps ?? point.networkTxInstantBps;
           if (rxBps != null || txBps != null) {
-            networkPoints.push({ ...point, avg_network_rx_instant_bps: rxBps, avg_network_tx_instant_bps: txBps });
+            // Ensure the point pushed to networkData has the keys the chart expects
+            networkPoints.push({ ...point, avgNetworkRxInstantBps: rxBps, avgNetworkTxInstantBps: txBps });
+          }
+
+          // Disk I/O Data: Chart uses 'avgDiskIoReadBps' and 'avgDiskIoWriteBps'
+          const readBps = point.avgDiskIoReadBps ?? point.diskIoReadBps;
+          const writeBps = point.avgDiskIoWriteBps ?? point.diskIoWriteBps;
+          if (readBps != null || writeBps != null) {
+            // Ensure the point pushed to diskIoData has the keys the chart expects
+            diskIoPoints.push({ ...point, avgDiskIoReadBps: readBps, avgDiskIoWriteBps: writeBps });
           }
         });
         setCpuData(cpuPoints);
         setMemoryData(memoryPoints);
         setNetworkData(networkPoints);
+        setDiskIoData(diskIoPoints); // Set Disk I/O data
       } catch (err) {
         console.error('Failed to fetch chart metrics:', err);
         if (isMounted) setChartError('Could not load chart data.');
@@ -328,15 +349,69 @@ const VpsDetailPage: React.FC = () => {
       return combined.length > 300 ? combined.slice(combined.length - 300) : combined;
     };
 
+    // newMetrics is of type LatestPerformanceMetric (all camelCase)
     if (newMetrics.cpuUsagePercent != null) {
-      setCpuData(prev => appendAndTrim(prev, { time: newTime, vps_id: numericVpsId, cpu_usage_percent: newMetrics.cpuUsagePercent }));
+      setCpuData(prev => appendAndTrim(prev, {
+        time: newTime, vpsId: numericVpsId,
+        cpuUsagePercent: newMetrics.cpuUsagePercent, // Chart expects cpuUsagePercent
+        // Fill other PerformanceMetricPoint fields as null/undefined or with defaults
+        avgCpuUsagePercent: null, avgMemoryUsageBytes: null, maxMemoryTotalBytes: null,
+        memoryUsageBytes: null, memoryTotalBytes: null, memoryUsagePercent: null,
+        avgNetworkRxInstantBps: null, avgNetworkTxInstantBps: null, networkRxInstantBps: null, networkTxInstantBps: null,
+        avgDiskIoReadBps: null, avgDiskIoWriteBps: null, diskIoReadBps: null, diskIoWriteBps: null,
+        swapUsageBytes: null, swapTotalBytes: null,
+      }));
     }
-    const memoryUsagePercent = calculateMemoryUsagePercent({ memory_usage_bytes: newMetrics.memoryUsageBytes, memory_total_bytes: newMetrics.memoryTotalBytes } as PerformanceMetricPoint);
-    if (memoryUsagePercent != null) {
-      setMemoryData(prev => appendAndTrim(prev, { time: newTime, vps_id: numericVpsId, memory_usage_percent: memoryUsagePercent }));
+    
+    // Create a temporary PerformanceMetricPoint compatible object for calculateMemoryUsagePercent
+    const tempMemoryPoint: Partial<PerformanceMetricPoint> = {
+        memoryUsageBytes: newMetrics.memoryUsageBytes,
+        memoryTotalBytes: newMetrics.memoryTotalBytes,
+    };
+    const memoryUsagePercentValue = calculateMemoryUsagePercent(tempMemoryPoint as PerformanceMetricPoint);
+
+    if (memoryUsagePercentValue != null) {
+      setMemoryData(prev => appendAndTrim(prev, {
+        time: newTime, vpsId: numericVpsId,
+        memoryUsagePercent: memoryUsagePercentValue, // Chart expects memoryUsagePercent
+        memoryUsageBytes: newMetrics.memoryUsageBytes,
+        memoryTotalBytes: newMetrics.memoryTotalBytes,
+        // Fill other PerformanceMetricPoint fields as null/undefined
+        cpuUsagePercent: null, avgCpuUsagePercent: null, avgMemoryUsageBytes: null, maxMemoryTotalBytes: null,
+        avgNetworkRxInstantBps: null, avgNetworkTxInstantBps: null, networkRxInstantBps: null, networkTxInstantBps: null,
+        avgDiskIoReadBps: null, avgDiskIoWriteBps: null, diskIoReadBps: null, diskIoWriteBps: null,
+        swapUsageBytes: null, swapTotalBytes: null,
+      }));
     }
+
     if (newMetrics.networkRxInstantBps != null || newMetrics.networkTxInstantBps != null) {
-      setNetworkData(prev => appendAndTrim(prev, { time: newTime, vps_id: numericVpsId, avg_network_rx_instant_bps: newMetrics.networkRxInstantBps, avg_network_tx_instant_bps: newMetrics.networkTxInstantBps }));
+      setNetworkData(prev => appendAndTrim(prev, {
+        time: newTime, vpsId: numericVpsId,
+        avgNetworkRxInstantBps: newMetrics.networkRxInstantBps, // Chart expects avgNetworkRxInstantBps
+        avgNetworkTxInstantBps: newMetrics.networkTxInstantBps, // Chart expects avgNetworkTxInstantBps
+        networkRxInstantBps: newMetrics.networkRxInstantBps, // Keep raw value
+        networkTxInstantBps: newMetrics.networkTxInstantBps, // Keep raw value
+        // Fill other PerformanceMetricPoint fields as null/undefined
+        cpuUsagePercent: null, avgCpuUsagePercent: null, avgMemoryUsageBytes: null, maxMemoryTotalBytes: null,
+        memoryUsageBytes: null, memoryTotalBytes: null, memoryUsagePercent: null,
+        avgDiskIoReadBps: null, avgDiskIoWriteBps: null, diskIoReadBps: null, diskIoWriteBps: null,
+        swapUsageBytes: null, swapTotalBytes: null,
+      }));
+    }
+
+    if (newMetrics.diskIoReadBps != null || newMetrics.diskIoWriteBps != null) {
+      setDiskIoData(prev => appendAndTrim(prev, {
+        time: newTime, vpsId: numericVpsId,
+        avgDiskIoReadBps: newMetrics.diskIoReadBps,    // Chart expects avgDiskIoReadBps
+        avgDiskIoWriteBps: newMetrics.diskIoWriteBps,  // Chart expects avgDiskIoWriteBps
+        diskIoReadBps: newMetrics.diskIoReadBps,       // Keep raw value
+        diskIoWriteBps: newMetrics.diskIoWriteBps,     // Keep raw value
+        // Fill other PerformanceMetricPoint fields as null/undefined
+        cpuUsagePercent: null, avgCpuUsagePercent: null, avgMemoryUsageBytes: null, maxMemoryTotalBytes: null,
+        memoryUsageBytes: null, memoryTotalBytes: null, memoryUsagePercent: null,
+        avgNetworkRxInstantBps: null, avgNetworkTxInstantBps: null, networkRxInstantBps: null, networkTxInstantBps: null,
+        swapUsageBytes: null, swapTotalBytes: null,
+      }));
     }
   }, [vpsDetail?.latestMetrics?.time, vpsId, selectedTimeRange]);
 
@@ -487,11 +562,11 @@ const VpsDetailPage: React.FC = () => {
         {chartError && <p className="text-red-500 text-center">{chartError}</p>}
         {loadingChartMetrics ? <div className="h-72 flex justify-center items-center"><p>Loading charts...</p></div> : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-            <ChartComponent title="CPU Usage (%)" data={cpuData} dataKey="cpu_usage_percent" stroke="#8884d8" yDomain={[0, 100]} />
-            <ChartComponent title="Memory Usage (%)" data={memoryData} dataKey="memory_usage_percent" stroke="#82ca9d" yDomain={[0, 100]} />
-            <div className="lg:col-span-2">
-              <NetworkChartComponent data={networkData} />
-            </div>
+            <ChartComponent title="CPU Usage (%)" data={cpuData} dataKey="cpuUsagePercent" stroke="#8884d8" yDomain={[0, 100]} />
+            <ChartComponent title="Memory Usage (%)" data={memoryData} dataKey="memoryUsagePercent" stroke="#82ca9d" yDomain={[0, 100]} />
+            {/* Network and Disk I/O charts will now be side-by-side on lg screens */}
+            <NetworkChartComponent data={networkData} /> {/* Uses avgNetworkRxInstantBps, avgNetworkTxInstantBps internally */}
+            <DiskIoChartComponent data={diskIoData} />   {/* Uses avgDiskIoReadBps, avgDiskIoWriteBps internally */}
           </div>
         )}
       </section>
@@ -589,8 +664,27 @@ const NetworkChartComponent: React.FC<{ data: PerformanceMetricPoint[] }> = ({ d
           <YAxis tickFormatter={formatNetworkSpeed} width={80} tick={{ fontSize: 11 }} />
           <Tooltip formatter={(value: ValueType) => formatNetworkSpeed(value as number)} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(2px)', borderRadius: '0.5rem', fontSize: '0.8rem' }} />
           <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
-          <Line type="monotone" dataKey="avg_network_rx_instant_bps" stroke="#38bdf8" dot={false} name="Download" />
-          <Line type="monotone" dataKey="avg_network_tx_instant_bps" stroke="#34d399" dot={false} name="Upload" />
+          <Line type="monotone" dataKey="avgNetworkRxInstantBps" stroke="#38bdf8" dot={false} name="Download" />
+          <Line type="monotone" dataKey="avgNetworkTxInstantBps" stroke="#34d399" dot={false} name="Upload" />
+        </LineChart>
+      </ResponsiveContainer>
+    ) : <p className="text-center text-slate-500 pt-16">No data available.</p>}
+  </div>
+);
+
+const DiskIoChartComponent: React.FC<{ data: PerformanceMetricPoint[] }> = ({ data }) => (
+  <div className="h-72">
+    <h3 className="text-lg font-semibold text-slate-600 text-center mb-2">Disk I/O Speed</h3>
+    {data.length > 0 ? (
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
+          <YAxis tickFormatter={formatNetworkSpeed} width={80} tick={{ fontSize: 11 }} /> {/* Re-use formatNetworkSpeed for BPS */}
+          <Tooltip formatter={(value: ValueType) => formatNetworkSpeed(value as number)} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(2px)', borderRadius: '0.5rem', fontSize: '0.8rem' }} />
+          <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
+          <Line type="monotone" dataKey="avgDiskIoReadBps" stroke="#ff7300" dot={false} name="Read" /> {/* Orange for Read */}
+          <Line type="monotone" dataKey="avgDiskIoWriteBps" stroke="#387908" dot={false} name="Write" /> {/* Dark Green for Write */}
         </LineChart>
       </ResponsiveContainer>
     ) : <p className="text-center text-slate-500 pt-16">No data available.</p>}

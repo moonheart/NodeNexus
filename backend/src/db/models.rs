@@ -225,15 +225,18 @@ pub struct PerformanceNetworkInterfaceStat {
 
 /// Represents an aggregated performance metric, typically used for time-bucketed queries.
 /// Fields are optional because not all aggregations will produce all values (e.g., raw data might not have averages).
-#[derive(Debug, Clone, Serialize, Deserialize)] // Removed FromRow
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")] // Ensure all fields are camelCase in JSON
 pub struct AggregatedPerformanceMetric {
     pub time: Option<DateTime<Utc>>, // Represents the start of the time bucket, made Option
-    pub vps_id: i32,
+    pub vps_id: i32, // Will be serialized as vpsId
     pub avg_cpu_usage_percent: Option<f64>,
     pub avg_memory_usage_bytes: Option<f64>, // Using f64 for AVG
     pub max_memory_total_bytes: Option<i64>, // MAX might be more appropriate for total
     pub avg_network_rx_instant_bps: Option<f64>, // Average of instantaneous Rx BPS
     pub avg_network_tx_instant_bps: Option<f64>, // Average of instantaneous Tx BPS
+    pub avg_disk_io_read_bps: Option<f64>, // Added
+    pub avg_disk_io_write_bps: Option<f64>, // Added
     // Add other aggregated fields as needed
 }
 
@@ -308,4 +311,28 @@ pub struct VpsRenewalInfo {
     pub last_reminder_generated_at: Option<DateTime<Utc>>, // Tracks when the last reminder was generated
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// DTO for raw performance metric points, ensuring camelCase for API responses.
+/// Used by the /latest-n endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawPerformanceMetricPointDto {
+    pub time: DateTime<Utc>,
+    pub vps_id: i32, // Will be serialized as vpsId
+    pub cpu_usage_percent: f64,
+    pub memory_usage_bytes: i64,
+    pub memory_total_bytes: i64,
+    pub swap_usage_bytes: i64,
+    pub swap_total_bytes: i64,
+    pub disk_io_read_bps: i64,
+    pub disk_io_write_bps: i64,
+    pub network_rx_instant_bps: i64,
+    pub network_tx_instant_bps: i64,
+    pub uptime_seconds: i64,
+    pub total_processes_count: i32,
+    pub running_processes_count: i32,
+    pub tcp_established_connection_count: i32,
+    // Note: network_rx_bps and network_tx_bps (cumulative) are omitted as this DTO
+    // is for "instant" points, similar to what's used in charts.
 }

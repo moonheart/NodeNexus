@@ -33,6 +33,8 @@ pub struct AggregatedPerformanceMetric {
     pub max_memory_total_bytes: Option<i64>,
     pub avg_network_rx_instant_bps: Option<f64>,
     pub avg_network_tx_instant_bps: Option<f64>,
+    pub avg_disk_io_read_bps: Option<f64>, // Added
+    pub avg_disk_io_write_bps: Option<f64>, // Added
 }
 
 /// Retrieves performance metrics for a given VPS within a time range.
@@ -83,6 +85,18 @@ pub async fn get_performance_metrics_for_vps(
                 ))),
                 "avg_network_tx_instant_bps",
             )
+            .column_as( // Added for disk read BPS
+                Expr::expr(Func::avg(Expr::col( // Changed from AVG to MAX
+                    performance_metric::Column::DiskIoReadBps,
+                ))),
+                "avg_disk_io_read_bps",
+            )
+            .column_as( // Added for disk write BPS
+                Expr::expr(Func::avg(Expr::col( // Changed from AVG to MAX
+                    performance_metric::Column::DiskIoWriteBps,
+                ))),
+                "avg_disk_io_write_bps",
+            )
             .filter(performance_metric::Column::VpsId.eq(vps_id))
             .filter(performance_metric::Column::Time.gte(start_time))
             .filter(performance_metric::Column::Time.lte(end_time))
@@ -116,6 +130,14 @@ pub async fn get_performance_metrics_for_vps(
             .column_as(
                 Expr::col(performance_metric::Column::NetworkTxInstantBps),
                 "avg_network_tx_instant_bps",
+            )
+            .column_as( // Added for disk read BPS
+                Expr::col(performance_metric::Column::DiskIoReadBps),
+                "avg_disk_io_read_bps",
+            )
+            .column_as( // Added for disk write BPS
+                Expr::col(performance_metric::Column::DiskIoWriteBps),
+                "avg_disk_io_write_bps",
             )
             .filter(performance_metric::Column::VpsId.eq(vps_id))
             .filter(performance_metric::Column::Time.gte(start_time))

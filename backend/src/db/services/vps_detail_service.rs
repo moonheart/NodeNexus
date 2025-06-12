@@ -46,6 +46,16 @@ async fn build_server_with_details(
             uptime_seconds: Some(latest_metric.uptime_seconds as u64),
             disk_used_bytes: Some(total_disk_used_bytes as u64),
             disk_total_bytes: Some(total_disk_total_bytes as u64),
+            disk_io_read_bps: Some(latest_metric.disk_io_read_bps as u64),
+            disk_io_write_bps: Some(latest_metric.disk_io_write_bps as u64),
+            // Populate newly added fields
+            swap_usage_bytes: Some(latest_metric.swap_usage_bytes as u64),
+            swap_total_bytes: Some(latest_metric.swap_total_bytes as u64),
+            network_rx_bps: Some(latest_metric.network_rx_bps as u64), // Cumulative
+            network_tx_bps: Some(latest_metric.network_tx_bps as u64), // Cumulative
+            total_processes_count: Some(latest_metric.total_processes_count as u32),
+            running_processes_count: Some(latest_metric.running_processes_count as u32),
+            tcp_established_connection_count: Some(latest_metric.tcp_established_connection_count as u32),
         });
     }
 

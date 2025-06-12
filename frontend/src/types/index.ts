@@ -77,20 +77,25 @@ export interface LatestPerformanceMetric {
  * or the raw `PerformanceMetric` if not aggregated.
  */
 export interface PerformanceMetricPoint {
-  time: string; // Timestamp string (ISO format from backend, or from time_bucket)
-  vps_id: number; // Included for consistency, though often known from context
-  avg_cpu_usage_percent?: number | null; // From AVG(cpu_usage_percent)
-  cpu_usage_percent?: number | null; // From raw cpu_usage_percent
-  avg_memory_usage_bytes?: number | null; // From AVG(memory_usage_bytes)
-  memory_usage_bytes?: number | null; // From raw memory_usage_bytes
-  max_memory_total_bytes?: number | null; // From MAX(memory_total_bytes)
-  memory_total_bytes?: number | null; // From raw memory_total_bytes
-  memory_usage_percent?: number | null; // Calculated: (memory_usage_bytes / memory_total_bytes) * 100 or from aggregated
-  avg_network_rx_instant_bps?: number | null; // Calculated average Rx bytes per second (Matches backend AggregatedPerformanceMetric)
-  avg_network_tx_instant_bps?: number | null; // Calculated average Tx bytes per second (Matches backend AggregatedPerformanceMetric)
-  network_rx_instant_bps?: number | null; // From raw performance_metrics
-  network_tx_instant_bps?: number | null; // From raw performance_metrics
-  // Add other relevant fields that might come from backend (raw or aggregated)
+  time: string;
+  vpsId: number;
+  avgCpuUsagePercent?: number | null;
+  cpuUsagePercent?: number | null;
+  avgMemoryUsageBytes?: number | null;
+  memoryUsageBytes?: number | null;
+  maxMemoryTotalBytes?: number | null;
+  memoryTotalBytes?: number | null;
+  memoryUsagePercent?: number | null;
+  avgNetworkRxInstantBps?: number | null;
+  avgNetworkTxInstantBps?: number | null;
+  networkRxInstantBps?: number | null;
+  networkTxInstantBps?: number | null;
+  avgDiskIoReadBps?: number | null;
+  avgDiskIoWriteBps?: number | null;
+  diskIoReadBps?: number | null;
+  diskIoWriteBps?: number | null;
+  swapUsageBytes?: number | null;
+  swapTotalBytes?: number | null;
 }
 
 /**

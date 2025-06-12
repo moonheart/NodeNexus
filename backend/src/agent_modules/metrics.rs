@@ -8,21 +8,18 @@ use sysinfo::{Disks, Networks, ProcessRefreshKind, System};
 use netdev;
 use tokio::sync::mpsc;
 
-// Structure to hold previous network state for rate calculation
-#[derive(Clone, Debug)]
-struct PreviousNetworkState {
-    time: Instant,
-}
+// PreviousNetworkState struct is no longer needed
+// PreviousDiskState struct is no longer needed
 
 /// Collects a performance snapshot focusing ONLY on the default network interface
-/// for both cumulative and instantaneous network data.
+/// for both cumulative and instantaneous network data, and total disk I/O rates.
 fn collect_performance_snapshot(
     sys: &mut System,
     disks: &mut Disks, // Added Disks as a mutable reference
     networks: &mut Networks,
-    prev_net_state: &Option<PreviousNetworkState>, // Pass previous state time
+    prev_collection_time_opt: &Option<Instant>, // Changed from PreviousNetworkState
     current_time: Instant, // Pass current time for rate calculation
-) -> PerformanceSnapshot {
+) -> PerformanceSnapshot { // Return type changed back
     // Refresh relevant parts of System
     sys.refresh_cpu_all();
     sys.refresh_memory();
@@ -36,16 +33,33 @@ fn collect_performance_snapshot(
     let mem_total = sys.total_memory();
 
     // Cumulative Disk I/O (Remains the same - sums across all disks)
-    let mut total_disk_read_bytes: u64 = 0;
-    let mut total_disk_write_bytes: u64 = 0;
     // disks.refresh_list(); // Refresh the list of disks
-    disks.refresh(true); // Refresh stats for all disks in the list
+    disks.refresh(true); // Refresh stats for all disks in the list. This updates usage().read_bytes/written_bytes to be deltas.
+
+    let mut delta_total_disk_read_bytes: u64 = 0;
+    let mut delta_total_disk_written_bytes: u64 = 0;
 
     for disk_info in disks.list() {
         let disk_usage_stats = disk_info.usage();
-        total_disk_read_bytes += disk_usage_stats.total_read_bytes;
-        total_disk_write_bytes += disk_usage_stats.total_written_bytes;
+        delta_total_disk_read_bytes += disk_usage_stats.read_bytes; // Use delta directly
+        delta_total_disk_written_bytes += disk_usage_stats.written_bytes; // Use delta directly
     }
+
+    // Calculate Disk I/O BPS using deltas from sysinfo and time from prev_net_state
+    let mut disk_read_bps: u64 = 0;
+    let mut disk_write_bps: u64 = 0;
+    let mut duration_secs_for_disk: f64 = 0.0;
+
+    if let Some(prev_time) = prev_collection_time_opt {
+        let duration = current_time.duration_since(*prev_time);
+        duration_secs_for_disk = duration.as_secs_f64();
+        if duration_secs_for_disk > 0.0 {
+            disk_read_bps = (delta_total_disk_read_bytes as f64 / duration_secs_for_disk) as u64;
+            disk_write_bps = (delta_total_disk_written_bytes as f64 / duration_secs_for_disk) as u64;
+        }
+    }
+    // If prev_net_state is None (first run), BPS will remain 0, which is correct.
+    // --- End Disk I/O BPS ---
 
     // Collect detailed disk usages
     let mut collected_disk_usages = Vec::new();
@@ -110,8 +124,8 @@ fn collect_performance_snapshot(
     let mut network_rx_bps: u64 = 0;
     let mut network_tx_bps: u64 = 0;
 
-    if let Some(prev_state) = prev_net_state {
-        let duration = current_time.duration_since(prev_state.time);
+    if let Some(prev_time) = prev_collection_time_opt {
+        let duration = current_time.duration_since(*prev_time);
         let duration_secs = duration.as_secs_f64();
 
         // Only calculate if delta is non-zero and duration is positive
@@ -146,8 +160,8 @@ fn collect_performance_snapshot(
         memory_total_bytes: mem_total,
         swap_usage_bytes: sys.used_swap(),
         swap_total_bytes: sys.total_swap(),
-        disk_total_io_read_bytes_per_sec: total_disk_read_bytes, // CUMULATIVE (All Disks)
-        disk_total_io_write_bytes_per_sec: total_disk_write_bytes, // CUMULATIVE (All Disks)
+        disk_total_io_read_bytes_per_sec: disk_read_bps, // NOW ACTUAL BPS
+        disk_total_io_write_bytes_per_sec: disk_write_bps, // NOW ACTUAL BPS
         disk_usages: collected_disk_usages, // MODIFIED
         // Cumulative network data (Default Interface Only)
         network_rx_bytes_cumulative: cumulative_rx_bytes, // Field 10
@@ -200,9 +214,13 @@ pub async fn metrics_collection_loop(
         agent_id, collect_interval_duration, upload_interval_duration, batch_max_size);
 
     // Initial refresh to set the baseline for the *next* delta calculation by sysinfo
+    // Initial refresh to set the baseline for the *next* delta calculation by sysinfo
+    // for both networks and disks (disks.usage().read_bytes will be 0 after this first refresh)
     disks.refresh(true);
     networks.refresh(true);
-    let mut prev_net_state = Some(PreviousNetworkState { time: Instant::now() });
+    // prev_collection_time will be initialized with the time of the first snapshot collection.
+    // The first disk and network BPS will be 0 as expected.
+    let mut prev_collection_time: Option<Instant> = Some(Instant::now());
 
     loop {
         // --- Check for configuration changes ---
@@ -232,9 +250,15 @@ pub async fn metrics_collection_loop(
         tokio::select! {
             _ = collect_interval.tick() => {
                 let current_time = Instant::now();
-                let snapshot = collect_performance_snapshot(&mut sys, &mut disks, &mut networks, &prev_net_state, current_time);
+                let snapshot = collect_performance_snapshot(
+                    &mut sys,
+                    &mut disks,
+                    &mut networks,
+                    &prev_collection_time, // Pass the Option<Instant>
+                    current_time,
+                );
                 snapshot_batch_vec.push(snapshot.clone());
-                prev_net_state = Some(PreviousNetworkState { time: current_time });
+                prev_collection_time = Some(current_time); // Update prev_collection_time for the next iteration
 
                 if snapshot_batch_vec.len() >= batch_max_size as usize {
                     let batch_to_send_vec = std::mem::take(&mut snapshot_batch_vec);
