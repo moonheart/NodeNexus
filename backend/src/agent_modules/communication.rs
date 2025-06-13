@@ -1,10 +1,14 @@
 use crate::agent_modules::config::{self, AgentCliConfig};
 use crate::agent_modules::utils::collect_public_ip_addresses;
 use crate::agent_service::agent_communication_service_client::AgentCommunicationServiceClient;
-use crate::agent_service::message_to_server::Payload;
+use crate::agent_service::message_to_server::Payload as ServerPayload; // Renamed for clarity
+use crate::agent_service::message_to_agent::Payload as AgentPayload; // Renamed for clarity
 use crate::agent_service::{
     AgentConfig, AgentHandshake, Heartbeat, MessageToAgent, MessageToServer, OsType,
+    BatchAgentCommandRequest, BatchCommandResult, BatchCommandOutputStream, BatchTerminateCommandRequest, // Added for batch commands
+    CommandStatus, OutputType, // Enums used by batch messages
 };
+use crate::agent_modules::command_tracker::RunningCommandsTracker; // Added
 use std::error::Error;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
@@ -13,6 +17,11 @@ use sysinfo::System;
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use uuid::Uuid;
+use chrono::Utc; // For timestamps
+
+// Import the refactored helper functions
+use crate::agent_modules::agent_command_service_impl::{handle_batch_agent_command, handle_batch_terminate_command};
+
 
 pub async fn heartbeat_loop(
     tx_to_server: mpsc::Sender<MessageToServer>,
@@ -38,7 +47,7 @@ pub async fn heartbeat_loop(
         let msg_id = id_provider();
         if let Err(e) = tx_to_server.send(MessageToServer {
             client_message_id: msg_id,
-            payload: Some(Payload::Heartbeat(heartbeat_payload)),
+            payload: Some(ServerPayload::Heartbeat(heartbeat_payload)),
             vps_db_id,
             agent_secret: agent_secret.clone(),
         }).await {
@@ -52,19 +61,23 @@ pub async fn server_message_handler_loop(
     mut in_stream: tonic::Streaming<MessageToAgent>,
     tx_to_server: mpsc::Sender<MessageToServer>,
     agent_id: String,
-    mut id_provider: impl FnMut() -> u64 + Send + 'static,
+    mut id_provider: impl FnMut() -> u64 + Send + Clone + 'static, // Added Clone for spawning tasks
     vps_db_id: i32,
     agent_secret: String,
     shared_agent_config: Arc<RwLock<AgentConfig>>,
     config_path: String,
+    command_tracker: Arc<RunningCommandsTracker>,
 ) {
     println!("[Agent:{}] Listening for messages from server...", agent_id);
+    
     while let Some(message_result) = in_stream.next().await {
         match message_result {
             Ok(message_to_agent) => {
+                let server_msg_id_clone = message_to_agent.server_message_id.clone(); 
+
                 if let Some(payload) = message_to_agent.payload {
                     match payload {
-                        crate::agent_service::message_to_agent::Payload::UpdateConfigRequest(update_req) => {
+                        AgentPayload::UpdateConfigRequest(update_req) => {
                             println!("[Agent:{}] Received new AgentConfig from server.", agent_id);
                             let mut success = false;
                             let mut error_message = String::new();
@@ -72,7 +85,6 @@ pub async fn server_message_handler_loop(
                             if let Some(new_config) = update_req.new_config {
                                 match config::save_agent_config(&new_config, &config_path) {
                                     Ok(_) => {
-                                        // Now update the in-memory shared config
                                         let mut config_w = shared_agent_config.write().unwrap();
                                         *config_w = new_config;
                                         success = true;
@@ -97,27 +109,86 @@ pub async fn server_message_handler_loop(
                             let msg_id = id_provider();
                             if let Err(e) = tx_to_server.send(MessageToServer {
                                 client_message_id: msg_id,
-                                payload: Some(Payload::UpdateConfigResponse(response)),
+                                payload: Some(ServerPayload::UpdateConfigResponse(response)),
                                 vps_db_id,
                                 agent_secret: agent_secret.clone(),
                             }).await {
                                 eprintln!("[Agent:{}] Failed to send config update response: {}", agent_id, e);
                             }
                         }
-                        crate::agent_service::message_to_agent::Payload::CommandRequest(cmd_req) => {
-                            println!("[Agent:{}] Received CommandRequest: {:?}", agent_id, cmd_req);
-                            // TODO: Implement command execution logic
+                        AgentPayload::CommandRequest(cmd_req) => { 
+                            println!("[Agent:{}] Received general CommandRequest: {:?}. This is not currently handled for batch processing.", agent_id, cmd_req);
+                             let error_result = crate::agent_service::CommandResponse { 
+                                request_id: cmd_req.request_id.clone(),
+                                success: false,
+                                error_message: "General CommandRequest not implemented in batch context".to_string(),
+                                result_payload: None,
+                            };
+                            let client_msg_id = id_provider();
+                            if tx_to_server.send(MessageToServer {
+                                client_message_id: client_msg_id,
+                                payload: Some(ServerPayload::CommandResponse(error_result)),
+                                vps_db_id,
+                                agent_secret: agent_secret.clone(),
+                            }).await.is_err() {
+                                eprintln!("[Agent:{}] Failed to send error response for unhandled CommandRequest", agent_id);
+                            }
+                        }
+                        AgentPayload::BatchAgentCommandRequest(batch_cmd_req) => {
+                            println!("[Agent:{}] Received BatchAgentCommandRequest for command_id: {}", agent_id, batch_cmd_req.command_id);
+                            let tx_clone = tx_to_server.clone();
+                            let tracker_clone = command_tracker.clone();
+                            let agent_id_clone = agent_id.clone();
+                            let vps_db_id_clone = vps_db_id;
+                            let agent_secret_clone = agent_secret.clone();
+                            let id_provider_clone = id_provider.clone(); // Clone id_provider for the new task
+
+                            tokio::spawn(async move {
+                                handle_batch_agent_command(
+                                    batch_cmd_req,
+                                    tx_clone,
+                                    tracker_clone,
+                                    server_msg_id_clone, 
+                                    agent_id_clone,
+                                    vps_db_id_clone,
+                                    agent_secret_clone,
+                                    id_provider_clone, 
+                                ).await;
+                            });
+                        }
+                        AgentPayload::BatchTerminateCommandRequest(batch_term_req) => {
+                            println!("[Agent:{}] Received BatchTerminateCommandRequest for command_id: {}", agent_id, batch_term_req.command_id);
+                            let tx_clone = tx_to_server.clone();
+                            let tracker_clone = command_tracker.clone();
+                            let agent_id_clone = agent_id.clone();
+                            let vps_db_id_clone = vps_db_id;
+                            let agent_secret_clone = agent_secret.clone();
+                            let id_provider_clone = id_provider.clone(); // Clone id_provider for the new task
+
+                            tokio::spawn(async move {
+                                handle_batch_terminate_command(
+                                    batch_term_req,
+                                    tx_clone,
+                                    tracker_clone,
+                                    server_msg_id_clone,
+                                    agent_id_clone,
+                                    vps_db_id_clone,
+                                    agent_secret_clone,
+                                    id_provider_clone,
+                                ).await;
+                            });
                         }
                         _ => {
-                            // Potentially log unhandled payload types if verbose logging is enabled
-                            // println!("[Agent:{}] Received unhandled payload type from server.", agent_id);
+                             println!("[Agent:{}] Received unhandled payload type from server: {:?}", agent_id, payload);
                         }
                     }
+                } else {
+                    eprintln!("[Agent:{}] Received message from server with no payload. ServerMsgID: {}", agent_id, message_to_agent.server_message_id);
                 }
             }
             Err(status) => {
                 eprintln!("[Agent:{}] Error receiving message from server: {}. Stream broken.", agent_id, status);
-                break; // Exit loop on stream error
+                break; 
             }
         }
     }
@@ -125,13 +196,11 @@ pub async fn server_message_handler_loop(
 }
 
 pub struct ConnectionHandler {
-    // client: AgentCommunicationServiceClient<tonic::transport::Channel>, // Client is used once for stream, then not needed
     in_stream: tonic::Streaming<MessageToAgent>,
     tx_to_server: mpsc::Sender<MessageToServer>,
-    // rx_for_stream_keepalive is removed as ReceiverStream holds the receiver
     pub assigned_agent_id: String,
     pub initial_agent_config: AgentConfig,
-    client_message_id_counter: Arc<AtomicU64>, // Changed Mutex<u64> to AtomicU64
+    client_message_id_counter: Arc<AtomicU64>,
 }
 
 impl ConnectionHandler {
@@ -141,7 +210,6 @@ impl ConnectionHandler {
     ) -> Result<Self, Box<dyn Error>> {
         println!("[Agent] Attempting to connect to server: {}", agent_cli_config.server_address);
         
-        // Connect client
         let mut client = AgentCommunicationServiceClient::connect(agent_cli_config.server_address.clone()).await
             .map_err(|e| {
                 eprintln!("[Agent] Failed to connect to gRPC endpoint: {}", e);
@@ -149,8 +217,7 @@ impl ConnectionHandler {
             })?;
         println!("[Agent] Successfully connected to gRPC endpoint.");
 
-        // Establish stream
-        let (tx_to_server, rx_for_stream) = mpsc::channel(128); // Increased buffer size
+        let (tx_to_server, rx_for_stream) = mpsc::channel(128);
         let stream_response = client.establish_communication_stream(ReceiverStream::new(rx_for_stream)).await
             .map_err(|e| {
                 eprintln!("[Agent] Failed to establish communication stream: {}", e);
@@ -159,25 +226,17 @@ impl ConnectionHandler {
         let mut in_stream = stream_response.into_inner();
         println!("[Agent] Communication stream established.");
 
-        // Prepare handshake
         let os_type_proto = if cfg!(target_os = "linux") { OsType::Linux }
                           else if cfg!(target_os = "macos") { OsType::Macos }
                           else if cfg!(target_os = "windows") { OsType::Windows }
-                          else { OsType::default() }; // Should ideally be OsType::Unknown or similar
+                          else { OsType::default() }; 
         
         let (public_ips, country_opt) = collect_public_ip_addresses().await;
 
-        // Create a System instance to gather information.
-        // Most System::* functions for static info are associated functions and don't need an instance.
-        // However, to get CPU details (cpus()) and total_memory/total_swap, an instance is needed.
-        let mut sys = System::new(); // Create with RefreshKind::nothing() initially
-        // Refresh specific parts needed for static info.
-        // CPU list for brand, vendor, frequency.
+        let mut sys = System::new(); 
         sys.refresh_cpu_list(sysinfo::CpuRefreshKind::everything());
-        // Memory for total_memory and total_swap.
         sys.refresh_memory_specifics(sysinfo::MemoryRefreshKind::everything());
 
-        // Get static info for the first CPU core, if available
         let cpu_static_info_opt: Option<crate::agent_service::CpuStaticInfo> = sys.cpus().first().map(|cpu| {
             crate::agent_service::CpuStaticInfo {
                 name: cpu.name().to_string(),
@@ -206,14 +265,12 @@ impl ConnectionHandler {
             country_code: country_opt,
         };
         
-        let client_message_id_counter = Arc::new(AtomicU64::new(initial_message_id_counter_val)); // Use AtomicU64::new
-        // Use fetch_add for the first ID
-        let handshake_msg_id = client_message_id_counter.fetch_add(1, Ordering::SeqCst); // Use fetch_add
+        let client_message_id_counter = Arc::new(AtomicU64::new(initial_message_id_counter_val));
+        let handshake_msg_id = client_message_id_counter.fetch_add(1, Ordering::SeqCst);
 
-        // Send handshake
         tx_to_server.send(MessageToServer {
             client_message_id: handshake_msg_id,
-            payload: Some(Payload::AgentHandshake(handshake_payload)),
+            payload: Some(ServerPayload::AgentHandshake(handshake_payload)),
             vps_db_id: agent_cli_config.vps_id,
             agent_secret: agent_cli_config.agent_secret.clone(),
         }).await.map_err(|e| {
@@ -221,17 +278,14 @@ impl ConnectionHandler {
             Box::new(e) as Box<dyn Error>
         })?;
         
-        // Await handshake response
         match in_stream.next().await {
             Some(Ok(response_msg)) => {
-                if let Some(crate::agent_service::message_to_agent::Payload::ServerHandshakeAck(ack)) = response_msg.payload {
+                if let Some(AgentPayload::ServerHandshakeAck(ack)) = response_msg.payload {
                     if ack.authentication_successful {
                         println!("[Agent:{}] Authenticated successfully. Server assigned Agent ID.", ack.assigned_agent_id);
                         Ok(Self {
-                            // client, // Not stored as it's not used beyond stream setup
                             in_stream,
                             tx_to_server,
-                            // rx_for_stream_keepalive removed
                             assigned_agent_id: ack.assigned_agent_id,
                             initial_agent_config: ack.initial_config.unwrap_or_default(),
                             client_message_id_counter,
@@ -257,13 +311,12 @@ impl ConnectionHandler {
         }
     }
 
-    // Splits the handler into components needed for spawning tasks.
     pub fn split_for_tasks(self) -> (
-        tonic::Streaming<MessageToAgent>,    // in_stream for server_message_handler_loop
-        mpsc::Sender<MessageToServer>,        // tx_to_server for metrics and heartbeat loops
-        Arc<AtomicU64>,                       // client_message_id_counter for id_provider (Changed type)
-        String,                               // assigned_agent_id
-        AgentConfig,                          // initial_agent_config
+        tonic::Streaming<MessageToAgent>,
+        mpsc::Sender<MessageToServer>,
+        Arc<AtomicU64>, 
+        String,          
+        AgentConfig,     
     ) {
         (
             self.in_stream,
@@ -274,12 +327,10 @@ impl ConnectionHandler {
         )
     }
 
-    // Provides a closure for generating message IDs using atomic operations.
-    // This closure can be cloned and passed to tasks.
-    pub fn get_id_provider_closure(counter: Arc<AtomicU64>) -> impl FnMut() -> u64 + Send + 'static { // Changed parameter type
+    // This function now needs to ensure the returned closure is Clone
+    pub fn get_id_provider_closure(counter: Arc<AtomicU64>) -> impl FnMut() -> u64 + Send + Clone + 'static {
         move || {
-            // Use atomic fetch_add for non-blocking ID generation
-            counter.fetch_add(1, Ordering::SeqCst) // Use fetch_add, removed block_on and async block
+            counter.fetch_add(1, Ordering::SeqCst)
         }
     }
 }

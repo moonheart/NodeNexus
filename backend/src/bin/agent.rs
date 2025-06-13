@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::task::JoinHandle; // For task handles
+use tonic::transport::Server as TonicServer; // Added for gRPC server
 
 // Correct approach:
 // 1. In backend/src/lib.rs, add `pub mod agent_modules;`
@@ -12,6 +13,8 @@ use tokio::task::JoinHandle; // For task handles
 use backend::agent_modules::config::{load_cli_config, AgentCliConfig};
 use backend::agent_modules::communication::{ConnectionHandler, heartbeat_loop, server_message_handler_loop};
 use backend::agent_modules::metrics::metrics_collection_loop;
+use backend::agent_modules::command_tracker::RunningCommandsTracker;
+// Removed: use backend::agent_modules::agent_command_service_impl::create_agent_command_service;
 use backend::agent_service::AgentConfig;
 
 
@@ -24,6 +27,7 @@ async fn spawn_and_monitor_core_tasks(
     handler: ConnectionHandler,
     agent_cli_config: &AgentCliConfig,
     shared_agent_config: Arc<RwLock<AgentConfig>>,
+    command_tracker: Arc<RunningCommandsTracker>, // Added command_tracker
 ) -> Vec<JoinHandle<()>> {
     let (
         in_stream,
@@ -89,6 +93,7 @@ async fn spawn_and_monitor_core_tasks(
     let listener_id_provider = backend::agent_modules::communication::ConnectionHandler::get_id_provider_closure(listener_id_provider_counter);
     let listener_agent_config = Arc::clone(&shared_agent_config);
     let listener_config_path = "agent_config.toml".to_string();
+    let listener_command_tracker = command_tracker.clone(); // Clone command_tracker for the listener task
 
     // Note: server_message_handler_loop takes ownership of in_stream
     tasks.push(tokio::spawn(async move {
@@ -102,6 +107,7 @@ async fn spawn_and_monitor_core_tasks(
             listener_agent_secret,
             listener_agent_config,
             listener_config_path,
+            listener_command_tracker, // Pass command_tracker
         ).await;
         println!("[Agent:{}] Server message handler loop ended.", agent_id_for_log);
     }));
@@ -124,18 +130,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Ok(config) => config,
         Err(e) => {
             eprintln!("[Agent] Critical error loading configuration: {}. Exiting.", e);
-            // Consider if current_dir logic from original main is needed here for better error reporting on config load.
-            // For now, assume load_cli_config prints enough context.
             return Err(e);
         }
     };
 
+    // Create RunningCommandsTracker here, to be passed to tasks
+    let command_tracker = Arc::new(RunningCommandsTracker::new());
+
+    // --- Removed setup for Agent's own gRPC Command Service ---
+    // The agent will handle commands received over the main communication stream.
+
     let mut reconnect_delay_seconds = DEFAULT_RECONNECT_DELAY_SECONDS;
 
+    // Main loop for connecting to the primary server
     loop {
-        println!("[Agent] Main loop: Attempting connection and handshake (delay: {}s)...", reconnect_delay_seconds);
+        println!("[Agent] Main client loop: Attempting connection to server {} (delay: {}s)...", agent_cli_config.server_address, reconnect_delay_seconds);
         
-        // Attempt to connect and handshake
+        // Attempt to connect and handshake (client role)
         // Load the initial value from AtomicU64
         let initial_id = INITIAL_CLIENT_MESSAGE_ID.load(std::sync::atomic::Ordering::SeqCst);
         match ConnectionHandler::connect_and_handshake(&agent_cli_config, initial_id).await {
@@ -146,8 +157,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 // Create the shared, mutable configuration state
                 let shared_agent_config = Arc::new(RwLock::new(handler.initial_agent_config.clone()));
-
-                let task_handles = spawn_and_monitor_core_tasks(handler, &agent_cli_config, shared_agent_config).await;
+                // Pass command_tracker to spawn_and_monitor_core_tasks
+                let task_handles = spawn_and_monitor_core_tasks(handler, &agent_cli_config, shared_agent_config, command_tracker.clone()).await;
 
                 // Monitor tasks. If any of them exit, it signifies a problem, and we should attempt to reconnect.
                 if !task_handles.is_empty() {
@@ -187,4 +198,5 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Loop is infinite, so Ok(()) is effectively unreachable but satisfies function signature.
     // For a real application, you might have a shutdown signal (e.g., Ctrl-C handler)
     // that breaks the loop and allows for graceful termination.
+    // The agent_grpc_server_handle was removed as the agent no longer hosts its own gRPC service.
 }

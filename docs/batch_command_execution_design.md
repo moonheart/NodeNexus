@@ -108,9 +108,16 @@ graph TD
 ```protobuf
 syntax = "proto3";
 
-package command_service;
+package agent_service; // Corrected package name
 
-// --- Enums ---
+// Note: The actual .proto files are structured as follows:
+// - batch_command.proto: Defines BatchAgentCommandRequest, BatchTerminateCommandRequest, BatchCommandOutputStream, BatchCommandResult, and related enums (CommandType, OutputType, CommandStatus).
+// - messages.proto: Defines MessageToServer and MessageToAgent, which use a oneof payload to carry various message types, including those from batch_command.proto. It imports batch_command.proto.
+// - service.proto: Defines AgentCommunicationService and its EstablishCommunicationStream RPC, which uses MessageToServer and MessageToAgent. It imports messages.proto.
+
+// For clarity in this design document, we'll show the key batch-related messages and how they fit into the overall communication structure.
+
+// Enums (as defined in batch_command.proto, used by batch messages)
 enum CommandType {
   COMMAND_TYPE_UNSPECIFIED = 0;
   ADHOC_COMMAND = 1;
@@ -128,61 +135,74 @@ enum CommandStatus {
   SUCCESS = 1;
   FAILURE = 2;
   TERMINATED = 3;
-  // AGENT_SIDE_ERROR = 4; // 更细致的错误类型
 }
 
-// --- Server to Agent Messages ---
-message AgentCommandRequest {
-  string command_id = 1; // child_command_id
+// --- Batch Command Specific Messages (defined in batch_command.proto) ---
+// These are encapsulated within MessageToServer and MessageToAgent payloads.
+
+message BatchAgentCommandRequest {
+  string command_id = 1;        // Corresponds to child_command_id from the server's perspective
   CommandType type = 2;
-  string content = 3; // 命令字符串或脚本ID/内容
-  optional string working_directory = 4;
-  // map<string, string> environment_variables = 5; // 可选环境变量
+  string content = 3;           // Command string or script content/ID
+  string working_directory = 4; // Optional: working directory for the command
 }
 
-message TerminateCommandRequest {
-  string command_id = 1; // child_command_id
+message BatchTerminateCommandRequest {
+  string command_id = 1; // child_command_id of the command to terminate
 }
 
-// --- Agent to Server Messages ---
-message CommandOutputStream {
-  string command_id = 1; // child_command_id
+message BatchCommandOutputStream {
+  string command_id = 1;    // Corresponds to child_command_id
   OutputType stream_type = 2;
-  bytes chunk = 3; // 输出内容块
-  int64 timestamp = 4; // 可选，输出时间戳 (Unix nano or millis)
+  bytes chunk = 3;          // Chunk of output data (stdout or stderr)
+  int64 timestamp = 4;      // Optional: timestamp of when the output was generated
 }
 
-message CommandResult {
-  string command_id = 1; // child_command_id
+message BatchCommandResult {
+  string command_id = 1;    // Corresponds to child_command_id
   CommandStatus status = 2;
   int32 exit_code = 3;
-  optional string error_message = 4; // 如果失败，错误信息
-  // int64 execution_duration_millis = 5; // 可选，执行时长
+  string error_message = 4; // Optional: error message if the command failed or was terminated
 }
 
-// --- gRPC Service Definition ---
+// --- Top-Level Communication Messages (defined in messages.proto) ---
+// These messages are exchanged over the AgentCommunicationService's stream.
+// They include other payload types not detailed here for brevity (e.g., handshake, metrics).
 
-// Agent -> Server 的消息封装
-message AgentToServerMessage {
-  oneof message_type {
-    CommandOutputStream output_stream = 1;
-    CommandResult result = 2;
-    // AgentHeartbeat heartbeat = 3; // 可选心跳
+message MessageToServer { // Agent sends this to Server
+  uint64 client_message_id = 1; // Client-generated ID for the message
+  int32 vps_db_id = 9;          // The vps.id from the database (identifies the agent)
+  string agent_secret = 10;     // The secret for this specific agent/vps
+  // ... other common fields ...
+
+  oneof payload {
+    // ... other payload types like AgentHandshake, PerformanceSnapshotBatch, etc. ...
+    BatchCommandOutputStream batch_command_output_stream = 13; // Agent sends output chunks
+    BatchCommandResult batch_command_result = 14;             // Agent sends final result
+    // ... other potential payloads ...
   }
 }
 
-// Server -> Agent 的消息封装
-message ServerToAgentMessage {
-  oneof message_type {
-    AgentCommandRequest command_request = 1;
-    TerminateCommandRequest terminate_request = 2;
-    // Ack server_ack = 3; // 可选，Server确认收到消息
+message MessageToAgent { // Server sends this to Agent
+  uint64 server_message_id = 1; // Server-generated ID for the message
+  // ... other common fields ...
+
+  oneof payload {
+    // ... other payload types like ServerHandshakeAck, general CommandRequest, etc. ...
+    BatchAgentCommandRequest batch_agent_command_request = 8;       // Server sends command to execute
+    BatchTerminateCommandRequest batch_terminate_command_request = 9; // Server requests command termination
+    // ... other potential payloads ...
   }
 }
 
-service AgentCommandService {
-  // Server 发起指令给 Agent, Agent 返回实时输出和最终结果
-  rpc ExecuteCommand(stream ServerToAgentMessage) returns (stream AgentToServerMessage);
+// --- gRPC Service Definition (defined in service.proto) ---
+// This single service handles all general communication between Server and Agent.
+service AgentCommunicationService {
+  // Establishes a bi-directional stream for ongoing communication.
+  // All interactions, including batch commands (requests, output, results, termination),
+  // are performed by sending MessageToServer and MessageToAgent messages over this stream,
+  // with the specific action determined by the 'payload' oneof field.
+  rpc EstablishCommunicationStream(stream MessageToServer) returns (stream MessageToAgent);
 }
 ```
 
@@ -213,7 +233,7 @@ service AgentCommandService {
     *   `agent_started_at` (Timestamp, 可选)
     *   `agent_completed_at` (Timestamp, 可选)
 
-## 6. 核心流程
+## 6. 核心流程 (Server 端)
 
 ### 6.1. 批量任务创建与分发
 1.  Web UI 发送 `POST /api/batch_commands` 请求。
@@ -225,30 +245,30 @@ service AgentCommandService {
 6.  `CommandDispatcher` 逐个处理子任务：
     *   查询 `AgentConnectionManager` 获取目标 `vps_id` 对应的 Agent 的 gRPC 连接。
     *   如果 Agent 未连接或连接无效，更新 `ChildCommandTask` 状态为 `AGENT_UNREACHABLE`。
-    *   如果 Agent 已连接，通过 gRPC 流向 Agent 发送 `ServerToAgentMessage` (内含 `AgentCommandRequest`，其中包含 `child_command_id`)。
+    *   如果 Agent 已连接，通过 gRPC 流向 Agent 发送 `MessageToAgent` (其 payload 为 `BatchAgentCommandRequest`，其中包含 `child_command_id`)。
     *   更新 `ChildCommandTask` 状态为 `SENT_TO_AGENT`。
 7.  `BatchCommandManager` 在所有子任务初步处理（尝试发送或标记为不可达）后，更新 `BatchCommandTask` 状态为 `IN_PROGRESS` (如果至少有一个子任务成功发送或正在尝试)。如果所有子任务都 `AGENT_UNREACHABLE`，则标记为 `FAILED_TO_START`。
 
-### 6.2. Agent 执行与反馈
-1.  Agent 的 gRPC `ExecuteCommand` 方法被调用，通过流接收 `ServerToAgentMessage`。
-2.  当收到 `AgentCommandRequest`：
+### 6.2. Agent 执行与反馈 (Server 视角)
+1.  Agent 的 gRPC `EstablishCommunicationStream` 方法被调用，通过流接收 `MessageToAgent`。
+2.  当收到 `MessageToAgent` 其 payload 为 `BatchAgentCommandRequest`：
     *   Agent `CommandReceiver` 解析指令。
-    *   Agent 可以先向 Server 发送一个确认消息（例如自定义的 `AgentAcceptedMessage`，包含 `child_command_id`），Server 端可更新 `ChildCommandTask` 状态为 `AGENT_ACCEPTED`。
+    *   Agent 可以先向 Server 发送一个确认消息（例如自定义的 `AgentAcceptedMessage`，包含 `child_command_id`），Server 端可更新 `ChildCommandTask` 状态为 `AGENT_ACCEPTED`。 (或者通过 `MessageToServer` 发送一个特定的 `BatchCommandResult` 状态)
     *   Agent `CommandExecutor` 启动命令执行进程（例如，在新的线程或子进程中）。
     *   更新 `ChildCommandTask` 状态（通过 Server 反馈）为 `EXECUTING`。
 3.  实时捕获命令的标准输出 (stdout) 和标准错误 (stderr)。
-4.  `ResultSender` 将捕获到的输出分块封装成 `CommandOutputStream`，通过 gRPC 流发送回 Server (`AgentToServerMessage`)。
-5.  命令执行完毕后，获取退出码和任何错误信息，封装成 `CommandResult`，通过 gRPC 流发送回 Server。
-6.  如果 Agent 收到 `TerminateCommandRequest`：
+4.  `ResultSender` 将捕获到的输出分块封装成 `BatchCommandOutputStream`，通过 gRPC 流发送回 Server (封装在 `MessageToServer` 的 payload 中)。
+5.  命令执行完毕后，获取退出码和任何错误信息，封装成 `BatchCommandResult`，通过 gRPC 流发送回 Server (封装在 `MessageToServer` 的 payload 中)。
+6.  如果 Agent 收到 `MessageToAgent` 其 payload 为 `BatchTerminateCommandRequest`：
     *   尝试终止对应的命令执行进程 (e.g., `SIGTERM`, then `SIGKILL`)。
-    *   发送 `CommandResult` (状态为 `TERMINATED`) 回 Server。
+    *   发送 `BatchCommandResult` (状态为 `TERMINATED`) 回 Server (封装在 `MessageToServer` 的 payload 中)。
 
 ### 6.3. Server 接收与聚合
-1.  Server `CommandDispatcher` (或其 gRPC 服务实现) 通过 gRPC 流接收来自 Agent 的 `AgentToServerMessage`。
-2.  根据消息类型处理：
-    *   `CommandOutputStream`: 根据 `command_id` (即 `child_command_id`) 找到对应的 `ChildCommandTask`。将输出块追加到日志文件 (如果使用) 或临时存储，并更新 `last_output_at`。
-    *   `CommandResult`: 根据 `command_id` 更新 `ChildCommandTask` 的最终状态 (`SUCCESS`, `FAILURE`, `TERMINATED`)、`exit_code`、`error_message` 和 `agent_completed_at`。
-    *   (可选) `AgentAcceptedMessage`: 更新 `ChildCommandTask` 状态为 `AGENT_ACCEPTED` 和 `agent_started_at`。
+1.  Server `CommandDispatcher` (或其 gRPC 服务实现) 通过 gRPC 流接收来自 Agent 的 `MessageToServer`。
+2.  根据 `MessageToServer` 的 `payload` 类型处理：
+    *   `BatchCommandOutputStream`: 根据 `command_id` (即 `child_command_id`) 找到对应的 `ChildCommandTask`。将输出块追加到日志文件 (如果使用) 或临时存储，并更新 `last_output_at`。
+    *   `BatchCommandResult`: 根据 `command_id` 更新 `ChildCommandTask` 的最终状态 (`SUCCESS`, `FAILURE`, `TERMINATED`)、`exit_code`、`error_message` 和 `agent_completed_at`。
+    *   (可选) 其他类型的确认消息: 更新 `ChildCommandTask` 状态。
 3.  `BatchCommandManager` 定期或在 `ChildCommandTask` 状态更新时检查其关联的所有子任务：
     *   如果所有 `ChildCommandTask` 都已完成 (状态为 `SUCCESS`, `FAILURE`, `TERMINATED`, `AGENT_UNREACHABLE`, `AGENT_REJECTED`)，则更新 `BatchCommandTask` 的最终状态：
         *   如果所有子任务都是 `SUCCESS`，则为 `COMPLETED_SUCCESSFULLY`。
@@ -265,15 +285,121 @@ service AgentCommandService {
 *   **终止整个批量任务**:
     1.  Web UI 发送 `POST /api/batch_commands/{batch_command_id}/terminate`。
     2.  Server `BatchCommandManager` 找到该 `batch_command_id` 下所有未完成的 (`SENT_TO_AGENT`, `AGENT_ACCEPTED`, `EXECUTING`) `ChildCommandTask`。
-    3.  为每个此类子任务，通过 `CommandDispatcher` 向对应的 Agent 发送 `TerminateCommandRequest` (内含 `child_command_id`)。
+    3.  为每个此类子任务，通过 `CommandDispatcher` 向对应的 Agent 发送 `MessageToAgent` (其 payload 为 `BatchTerminateCommandRequest`，内含 `child_command_id`)。
     4.  更新这些 `ChildCommandTask` 的状态为尝试终止 (e.g., `TERMINATING`)。
     5.  `BatchCommandTask` 状态也更新为 `TERMINATING`。后续 Agent 返回 `TERMINATED` 状态后，再最终确定状态。
 *   **终止单个子任务**:
     1.  Web UI 发送 `POST /api/batch_commands/{batch_command_id}/tasks/{child_command_id}/terminate`。
-    2.  Server `BatchCommandManager` 找到指定的 `child_command_id`，如果其未完成，则向对应 Agent 发送 `TerminateCommandRequest`。
+    2.  Server `BatchCommandManager` 找到指定的 `child_command_id`，如果其未完成，则向对应 Agent 发送 `MessageToAgent` (其 payload 为 `BatchTerminateCommandRequest`)。
     3.  更新该 `ChildCommandTask` 状态。
 
-## 7. 关键组件职责
+## 7. Agent 端批量命令处理设计方案
+
+### 7.1. 核心目标 (Agent)
+
+Agent 需要能够可靠地执行 Server 通过 gRPC 双向流发送的命令，并满足以下要求：
+*   **接收与解析**: 正确接收并解析来自 Server 的 `MessageToAgent` (payload 为 `BatchAgentCommandRequest`)。
+*   **异步执行**: 以非阻塞方式执行命令。
+*   **实时输出**: 将命令的 `stdout` 和 `stderr` 实时流式传输回 Server (通过 `MessageToServer` 封装 `BatchCommandOutputStream`)。
+*   **状态报告**: 命令执行完成后，向 Server 报告最终状态（成功、失败、退出码、错误信息）(通过 `MessageToServer` 封装 `BatchCommandResult`)。
+*   **命令终止**: 响应 Server 发送的 `MessageToAgent` (payload 为 `BatchTerminateCommandRequest`)，并尝试终止正在执行的命令。
+
+### 7.2. 关键组件与数据结构 (Agent 端)
+
+*   **gRPC 服务实现 (`AgentCommunicationService` 的 `EstablishCommunicationStream` 方法)**:
+    *   处理与 Server 的双向流连接。
+    *   循环接收 `MessageToAgent` 消息，并根据 `payload` 类型（`BatchAgentCommandRequest` 或 `BatchTerminateCommandRequest` 等）分发处理。
+*   **`CommandExecutor` (逻辑模块/任务)**:
+    *   每个 `BatchAgentCommandRequest` 会触发一个独立的异步任务 (`tokio::spawn`)。
+    *   负责使用 `tokio::process::Command` 启动和管理子进程。
+    *   捕获子进程的 `stdout` 和 `stderr`。
+    *   监控子进程的退出状态和超时（如果 Server 请求中指定）。
+*   **`RunningCommandsTracker` (状态管理)**:
+    *   一个线程安全的数据结构 (例如 `Arc<Mutex<HashMap<String, ChildProcessHandle>>>`)，用于跟踪当前正在执行的命令。
+    *   `String` 是 `child_command_id`。
+    *   `ChildProcessHandle` 结构体包含：
+        ```rust
+        struct ChildProcessHandle {
+            child: tokio::process::Child, // Tokio 的子进程句柄
+            // kill_signal_tx: Option<tokio::sync::oneshot::Sender<()>>, // 可选：用于更优雅的终止信号
+        }
+        ```
+
+### 7.3. 核心流程 (Agent 端)
+
+#### 7.3.1. 处理 `BatchAgentCommandRequest` (命令执行)
+
+```mermaid
+graph TD
+    A["Server 发送 MessageToAgent<BatchAgentCommandRequest>"] --> B{"Agent: gRPC 流处理器接收"};
+    B --> C{"解析请求 (child_id, command, server_msg_id)"};
+    C --> D["(可选) 向 Server 发送 MessageToServer<BatchCommandResult - AGENT_ACCEPTED>"];
+    C --> E{"为命令启动新的 Tokio 任务 (CommandExecutor)"};
+    E --> F["CommandExecutor: 使用 tokio::process::Command 启动子进程"];
+    F --> G{"将子进程句柄存入 RunningCommandsTracker"};
+    F --> H{"CommandExecutor: 异步读取子进程 stdout/stderr"};
+    H -- "数据块" --> I["构造 MessageToServer<BatchCommandOutputStream>"];
+    I --> J["通过 gRPC 流发送输出块到 Server"];
+    H -- "持续进行" --> I;
+    F -- "子进程退出" --> K{"CommandExecutor: 获取退出状态"};
+    K --> L["构造 MessageToServer<BatchCommandResult - SUCCESS/FAILURE>"];
+    L --> M["通过 gRPC 流发送最终结果到 Server"];
+    M --> N{"从 RunningCommandsTracker 中移除子进程句柄"};
+    E -- "超时 (如果 Server 请求中指定)" --> O{"尝试终止子进程"};
+    O --> K;
+    E -- "启动失败" --> P["构造 MessageToServer<BatchCommandResult - FAILURE (Agent Error)>"];
+    P --> M;
+```
+
+**详细步骤:**
+1.  **接收与确认**: Agent 的 gRPC 流处理器接收到 `MessageToAgent`，其 `payload` 为 `BatchAgentCommandRequest`。
+2.  Agent 可以选择立即向 Server 发送一个表示“已接受”的 `MessageToServer` (其 `payload` 为 `BatchCommandResult`，例如，使用一个自定义的 `CommandStatus` 或在 Server 端定义 `AGENT_ACCEPTED` 状态)。
+3.  **异步执行**: 为该命令启动一个新的 Tokio 任务。
+    *   使用 `tokio::process::Command` 配置并启动子进程。
+    *   将 `tokio::process::Child` 实例存入 `RunningCommandsTracker`，与 `child_command_id` 关联。
+4.  **输出流式传输**:
+    *   在执行任务中，异步读取子进程的 `stdout` 和 `stderr`。
+    *   每当读取到数据块，构造 `BatchCommandOutputStream` 消息，封装在 `MessageToServer` 的 `payload` 中并发送回 Server。
+5.  **超时处理**: 如果 `BatchAgentCommandRequest` 中包含超时信息，启动一个计时器。若超时，则尝试终止命令并发送 `MessageToServer` (其 `payload` 为 `BatchCommandResult`，状态为 `FAILURE`，可附带超时错误信息)。
+6.  **完成处理**:
+    *   当子进程退出时，获取退出码。
+    *   构造 `BatchCommandResult`（`status` 为 `SUCCESS` 或 `FAILURE`），包含 `exit_code` 和错误信息（如果有）。
+    *   封装在 `MessageToServer` 的 `payload` 中并发送最终结果给 Server。
+7.  **清理**: 命令完成后，从 `RunningCommandsTracker` 中移除该命令的记录。
+8.  **Agent 内部错误**: 若在启动或执行过程中 Agent 自身发生错误，发送 `MessageToServer` (其 `payload` 为 `BatchCommandResult`，状态为 `FAILURE`，并附带 Agent 内部错误信息)。
+
+#### 7.3.2. 处理 `BatchTerminateCommandRequest` (命令终止)
+
+```mermaid
+graph TD
+    A["Server 发送 MessageToAgent<BatchTerminateCommandRequest>"] --> B{"Agent: gRPC 流处理器接收"};
+    B --> C{"解析请求 (child_id_to_terminate, server_msg_id)"};
+    C --> D{"在 RunningCommandsTracker 中查找 child_id"};
+    D -- "找到" --> E{"获取 ChildProcessHandle"};
+    E --> F["调用 child.kill().await"];
+    F --> G["向 Server 发送 MessageToServer<BatchCommandResult - TERMINATED>"];
+    G --> H{"从 RunningCommandsTracker 中移除子进程句柄"};
+    D -- "未找到" --> I["向 Server 发送 MessageToServer<BatchCommandResult - FAILURE (Not Found)>"];
+```
+**详细步骤:**
+1.  **接收请求**: Agent 的 gRPC 流处理器接收到 `MessageToAgent`，其 `payload` 为 `BatchTerminateCommandRequest`。
+2.  **查找命令**: 使用 `command_id` (即 `child_command_id`) 在 `RunningCommandsTracker` 中查找对应的 `ChildProcessHandle`。
+3.  **执行终止**:
+    *   如果找到，调用 `child.kill().await` 来终止子进程。
+4.  **状态报告**:
+    *   向 Server 发送 `MessageToServer` (其 `payload` 为 `BatchCommandResult`，状态为 `TERMINATED`)。
+    *   如果命令未找到（可能已完成或从未启动），也应向 Server 报告 (例如，`MessageToServer` 的 `payload` 为 `BatchCommandResult`，状态为 `FAILURE`，并附带“未找到待终止任务”的错误信息)。
+5.  **清理**: 从 `RunningCommandsTracker` 中移除该命令的记录。
+
+### 7.4. 关键考量点 (Agent 端)
+
+*   **并发安全**: `RunningCommandsTracker` 必须是线程安全的。
+*   **资源管理**: 确保子进程和相关资源在命令完成或 Agent 关闭时得到妥善清理。
+*   **错误处理**: 对各种潜在错误（进程启动失败、管道读取错误、gRPC 通信错误等）进行健壮处理，并向 Server 提供有意义的错误信息。
+*   **配置性**: 考虑 Agent 端是否需要某些配置，例如默认的命令执行路径、环境变量等。
+*   **安全性**: Agent 执行来自 Server 的命令，需要考虑潜在的安全风险。例如，限制命令执行的权限、验证命令内容等（这部分可能更多在 Server 端进行初步过滤）。
+
+## 8. Server 端组件职责 (回顾)
 
 *   **Web UI**: 用户交互界面，发起请求，展示结果。
 *   **API Gateway/Router (Server)**: 接收 HTTP 请求，路由到相应服务。
@@ -282,12 +408,8 @@ service AgentCommandService {
 *   **AgentConnectionManager (Server)**: 维护 Server 与所有已连接 Agent 的 gRPC 连接状态和通信句柄/流。
 *   **TaskStateStore (Server)**: 数据库接口，用于持久化 `BatchCommandTask` 和 `ChildCommandTask` 的状态。
 *   **ResultBroadcaster (Server)**: 负责将任务进展和结果有效地推送给前端 (e.g., WebSocket 管理器)。
-*   **AgentCommandService (Agent)**: gRPC 服务实现，处理来自 Server 的指令流。
-*   **CommandReceiver (Agent)**: 从 gRPC 流中解析指令。
-*   **CommandExecutor (Agent)**: 实际执行命令，管理子进程，捕获输出。
-*   **ResultSender (Agent)**: 将执行结果和实时输出通过 gRPC 流发送回 Server。
 
-## 8. 错误处理与边界情况
+## 9. 错误处理与边界情况 (整体)
 
 *   **Agent 不可达/连接断开**: `AgentConnectionManager` 和 `CommandDispatcher` 在尝试发送或在流交互中断时，应将对应的 `ChildCommandTask` 标记为 `AGENT_UNREACHABLE`。gRPC 提供了连接状态回调。
 *   **指令发送失败**: 网络问题导致指令未能成功发送给 Agent。
@@ -304,7 +426,7 @@ service AgentCommandService {
 *   **gRPC 流错误**: gRPC 本身会处理流级别的错误，双方需要正确处理这些错误状态。
 *   **数据库操作失败**: Server 端在更新任务状态时需处理数据库事务和可能的失败。
 
-## 9. (可选) 未来可扩展功能
+## 10. (可选) 未来可扩展功能
 
 *   **失败重试机制**: 对标记为 `AGENT_UNREACHABLE` 或特定类型 `FAILURE` 的子任务，允许用户手动或配置自动重试策略。
 *   **任务队列与优先级**: 如果并发任务过多，引入持久化任务队列 (e.g., Redis, RabbitMQ)，并允许设置任务优先级。

@@ -7,6 +7,7 @@ pub struct AgentCliConfig {
     pub server_address: String,
     pub vps_id: i32,
     pub agent_secret: String,
+    pub agent_grpc_listen_address: Option<String>, // Address for the agent's own gRPC service
 }
 
 pub fn load_cli_config(config_path_str: &str) -> Result<AgentCliConfig, Box<dyn Error>> {
