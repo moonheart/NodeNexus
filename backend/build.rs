@@ -13,7 +13,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "./proto/pty.proto",
         "./proto/heartbeat.proto",
         "./proto/messages.proto",
-        "./proto/service.proto"
+        "./proto/service.proto",
+        "./proto/batch_command.proto"
     ];
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
 

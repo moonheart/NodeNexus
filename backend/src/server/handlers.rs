@@ -14,7 +14,9 @@ use crate::agent_service::{
     AgentConfig, MessageToAgent, MessageToServer, ServerHandshakeAck, // Added OsType
     message_to_server::Payload as ServerPayload,
     message_to_agent::Payload as AgentPayload,
+    CommandStatus as GrpcCommandStatus, OutputType as GrpcOutputType, // For batch command results
 };
+use crate::db::enums::ChildCommandStatus; // For converting GrpcCommandStatus
 use crate::server::agent_state::{AgentState, ConnectedAgents};
 // use crate::db::models::PerformanceMetric; // No longer directly used here
 use crate::db::services; // Will be used later for db operations
@@ -30,6 +32,7 @@ pub async fn handle_connection(
     live_server_data_cache: LiveServerDataCache,
     ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
     update_trigger_tx: mpsc::Sender<()>,
+    batch_command_manager: Arc<crate::db::services::BatchCommandManager>, // Added BatchCommandManager
 ) -> Result<Response<ReceiverStream<Result<MessageToAgent, Status>>>, Status> {
     let (tx_to_agent, rx_from_server) = mpsc::channel(128);
     let connection_id = Uuid::new_v4().to_string();
@@ -40,6 +43,7 @@ pub async fn handle_connection(
     let _cache_clone = live_server_data_cache.clone(); // Renamed, Not used directly for broadcast anymore
     let _broadcaster_clone = ws_data_broadcaster_tx.clone(); // Renamed, Not used directly for broadcast anymore
     let trigger_clone = update_trigger_tx.clone();
+    let batch_command_manager_clone = batch_command_manager.clone(); // Clone BatchCommandManager
 
     tokio::spawn(async move {
         let mut current_session_agent_id: Option<String> = None; // Server-generated session ID
@@ -218,27 +222,74 @@ pub async fn handle_connection(
                                     ServerPayload::UpdateConfigResponse(response) => {
                                        println!("[{}] Received UpdateConfigResponse from {} (VPS ID {}): success={}, version_id={}",
                                            connection_id, session_id, vps_db_id_from_msg, response.success, response.config_version_id);
-                                       
+
                                        let status = if response.success { "synced" } else { "failed" };
                                        let error_msg = if response.success { None } else { Some(response.error_message.as_str()) };
 
                                        match services::update_vps_config_status(&*pool_clone, vps_db_id_from_msg, status, error_msg).await { // Dereference Arc
                                            Ok(_) => {
                                                println!("[{}] Successfully updated config status for VPS ID {}. Triggering broadcast.", connection_id, vps_db_id_from_msg);
-                                               // After updating config status, trigger a full broadcast.
                                                if trigger_clone.send(()).await.is_err() {
                                                    eprintln!("[{}] Failed to send update trigger after config update.", connection_id);
                                                }
                                            }
                                            Err(e) => eprintln!("[{}] Failed to update config status for VPS ID {}: {}", connection_id, vps_db_id_from_msg, e),
                                        }
-                                    }
-                                    _ => {
-                                        println!("[{}] Received unhandled message type from {} (VPS ID {}): client_msg_id={}, payload_type: {:?}",
-                                            connection_id, session_id, vps_db_id_from_msg, msg_to_server.client_message_id, payload);
-                                    }
-                                }
-                            } else {
+                                   }
+                                   ServerPayload::BatchCommandOutputStream(output_stream) => {
+                                       println!("[{}] Received BatchCommandOutputStream from {} (VPS ID {}) for command_id: {}",
+                                           connection_id, session_id, vps_db_id_from_msg, output_stream.command_id);
+                                       match Uuid::parse_str(&output_stream.command_id) {
+                                           Ok(child_task_id) => {
+                                               let stream_type = GrpcOutputType::try_from(output_stream.stream_type)
+                                                   .unwrap_or(GrpcOutputType::Unspecified); // Assuming strip_enum_prefix might be true
+                                               if let Err(e) = batch_command_manager_clone.record_child_task_output(
+                                                   child_task_id,
+                                                   stream_type,
+                                                   output_stream.chunk,
+                                                   Some(output_stream.timestamp),
+                                               ).await {
+                                                   eprintln!("[{}] Error recording child task output for {}: {:?}", connection_id, child_task_id, e);
+                                               }
+                                           }
+                                           Err(e) => {
+                                               eprintln!("[{}] Failed to parse command_id from BatchCommandOutputStream: {}. Error: {}", connection_id, output_stream.command_id, e);
+                                           }
+                                       }
+                                   }
+                                   ServerPayload::BatchCommandResult(command_result) => {
+                                       println!("[{}] Received BatchCommandResult from {} (VPS ID {}) for command_id: {}, status: {:?}, exit_code: {}",
+                                           connection_id, session_id, vps_db_id_from_msg, command_result.command_id, command_result.status, command_result.exit_code);
+                                       match Uuid::parse_str(&command_result.command_id) {
+                                           Ok(child_task_id) => {
+                                               let new_status = match GrpcCommandStatus::try_from(command_result.status) {
+                                                   Ok(GrpcCommandStatus::Success) => ChildCommandStatus::CompletedSuccessfully,
+                                                   Ok(GrpcCommandStatus::Failure) => ChildCommandStatus::CompletedWithFailure,
+                                                   Ok(GrpcCommandStatus::Terminated) => ChildCommandStatus::Terminated,
+                                                   _ => ChildCommandStatus::AgentError, // Default or map other statuses appropriately
+                                               };
+                                               let error_message = if command_result.error_message.is_empty() { None } else { Some(command_result.error_message) };
+
+                                               if let Err(e) = batch_command_manager_clone.update_child_task_status(
+                                                   child_task_id,
+                                                   new_status,
+                                                   Some(command_result.exit_code),
+                                                   error_message,
+                                               ).await {
+                                                   eprintln!("[{}] Error updating child task status for {}: {:?}", connection_id, child_task_id, e);
+                                               }
+                                           }
+                                           Err(e) => {
+                                               eprintln!("[{}] Failed to parse command_id from BatchCommandResult: {}. Error: {}", connection_id, command_result.command_id, e);
+                                           }
+                                       }
+                                   }
+                                   _ => {
+                                       println!("[{}] Received unhandled message type from {} (VPS ID {}): client_msg_id={}, payload_type: {:?}",
+                                           connection_id, session_id, vps_db_id_from_msg, msg_to_server.client_message_id, payload);
+                                   }
+                               }
+                           } else {
                                  println!("[{}] Received message with no payload from VPS ID {}: client_msg_id={}",
                                     connection_id, vps_db_id_from_msg, msg_to_server.client_message_id);
                             }

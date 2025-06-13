@@ -22,6 +22,8 @@ pub mod vps_tag;
 pub mod notification_channel;
 pub mod alert_rule_channel;
 pub mod vps_renewal_info;
+pub mod batch_command_task;
+pub mod child_command_task;
 // ... add other entity modules as they are created
 
 // Prelude module for easy importing of all entities and their related types
@@ -115,6 +117,16 @@ pub mod prelude {
     pub use super::vps_renewal_info::Model as VpsRenewalInfoModel;
     pub use super::vps_renewal_info::ActiveModel as VpsRenewalInfoActiveModel;
     pub use super::vps_renewal_info::Column as VpsRenewalInfoColumn;
+
+    pub use super::batch_command_task::Entity as BatchCommandTask;
+    pub use super::batch_command_task::Model as BatchCommandTaskModel;
+    pub use super::batch_command_task::ActiveModel as BatchCommandTaskActiveModel;
+    pub use super::batch_command_task::Column as BatchCommandTaskColumn;
+
+    pub use super::child_command_task::Entity as ChildCommandTask;
+    pub use super::child_command_task::Model as ChildCommandTaskModel;
+    pub use super::child_command_task::ActiveModel as ChildCommandTaskActiveModel;
+    pub use super::child_command_task::Column as ChildCommandTaskColumn;
 }
 
 // Optional: Keep direct re-exports if some parts of the code already use them,

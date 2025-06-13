@@ -5,8 +5,9 @@ use backend::websocket_models::{FullServerListPush, ServerWithDetails}; // Added
 use backend::db::services as db_services;
 use backend::server::update_service; // Added for cache population
 use backend::notifications::{encryption::EncryptionService, service::NotificationService};
-use backend::db::services::AlertService; // Added AlertService
+use backend::db::services::{AlertService, BatchCommandManager}; // Added BatchCommandManager
 use backend::alerting::evaluation_service::EvaluationService; // Added EvaluationService
+use backend::server::result_broadcaster::{ResultBroadcaster, BatchCommandUpdateMsg}; // Added ResultBroadcaster
 use tonic::transport::Server as TonicServer;
 use backend::agent_service::agent_communication_service_server::AgentCommunicationServiceServer;
 use backend::http_server;
@@ -49,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     // --- Shared State Initialization for WebSocket and gRPC ---
     // Initialize the broadcast channel for WebSocket updates
     let (ws_data_broadcaster_tx, _) = broadcast::channel::<Arc<FullServerListPush>>(100); // Capacity can be configured
+    let (batch_command_updates_tx, _) = broadcast::channel::<BatchCommandUpdateMsg>(100); // Channel for batch command updates
 
     // Initialize the live server data cache
     let initial_cache_data_result = db_services::get_all_vps_with_details_for_cache(&db_pool).await;
@@ -72,6 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     let encryption_service = Arc::new(EncryptionService::new(&key_bytes).expect("Failed to create encryption service."));
     let notification_service = Arc::new(NotificationService::new(db_pool.clone(), encryption_service.clone()));
     let alert_service = Arc::new(AlertService::new(Arc::new(db_pool.clone()))); // Initialize AlertService
+    let result_broadcaster = Arc::new(ResultBroadcaster::new(batch_command_updates_tx.clone())); // Create ResultBroadcaster
+    let batch_command_manager = Arc::new(BatchCommandManager::new(Arc::new(db_pool.clone()), result_broadcaster.clone())); // Create BatchCommandManager
 
     // --- gRPC Server Setup (continued) ---
     let agent_comm_service = MyAgentCommService::new(
@@ -80,8 +84,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         live_server_data_cache.clone(), // Pass cache to gRPC service
         ws_data_broadcaster_tx.clone(), // Pass broadcaster to gRPC service
         update_trigger_tx.clone(),      // Pass update trigger to gRPC service
+        batch_command_manager.clone(),  // Pass BatchCommandManager to gRPC service
     );
-    
+
     let grpc_service = AgentCommunicationServiceServer::new(agent_comm_service);
     let grpc_server_future = TonicServer::builder()
         .add_service(grpc_service)
@@ -152,6 +157,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         update_trigger_tx.clone(),      // Pass update trigger to HTTP service
         notification_service.clone(),
         alert_service.clone(), // Pass AlertService to HTTP server
+        batch_command_manager.clone(), // Pass BatchCommandManager to HTTP server
+        batch_command_updates_tx.clone(), // Pass batch_command_updates_tx to HTTP server
+        result_broadcaster.clone(), // Pass result_broadcaster to HTTP server
     );
 
     // --- Debounced Broadcast Task ---

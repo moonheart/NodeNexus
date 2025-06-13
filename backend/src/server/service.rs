@@ -8,6 +8,7 @@ use super::agent_state::{ConnectedAgents, LiveServerDataCache};
 use crate::websocket_models::FullServerListPush;
 use tokio::sync::broadcast;
 use super::handlers::handle_connection;
+use crate::db::services::BatchCommandManager; // Added BatchCommandManager
 
 #[derive(Debug)]
 pub struct MyAgentCommService {
@@ -16,6 +17,7 @@ pub struct MyAgentCommService {
     pub live_server_data_cache: LiveServerDataCache,
     pub ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
     pub update_trigger_tx: mpsc::Sender<()>,
+    pub batch_command_manager: Arc<BatchCommandManager>, // Added BatchCommandManager
 }
 
 impl MyAgentCommService {
@@ -25,6 +27,7 @@ impl MyAgentCommService {
         live_server_data_cache: LiveServerDataCache,
         ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
         update_trigger_tx: mpsc::Sender<()>,
+        batch_command_manager: Arc<BatchCommandManager>, // Added BatchCommandManager
     ) -> Self {
         Self {
             connected_agents,
@@ -32,6 +35,7 @@ impl MyAgentCommService {
             live_server_data_cache,
             ws_data_broadcaster_tx,
             update_trigger_tx,
+            batch_command_manager, // Store BatchCommandManager
         }
     }
 }
@@ -51,6 +55,7 @@ impl crate::agent_service::agent_communication_service_server::AgentCommunicatio
             self.live_server_data_cache.clone(),
             self.ws_data_broadcaster_tx.clone(),
             self.update_trigger_tx.clone(),
+            self.batch_command_manager.clone(), // Pass BatchCommandManager
         )
         .await
     }

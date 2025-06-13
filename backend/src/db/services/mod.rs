@@ -19,6 +19,7 @@ pub mod vps_renewal_service; // Added vps_renewal_service module
 pub mod vps_traffic_service; // Added vps_traffic_service module
 pub mod vps_service; // This now re-exports from the above vps_* modules
 pub mod alert_service; // Added alert_service module
+pub mod batch_command_service;
 
 // Re-export all public functions and structs from the sub-modules
 // to make them accessible directly under `crate::db::services::*`.
@@ -28,3 +29,4 @@ pub use tag_service::*;
 pub use user_service::*;
 pub use vps_service::*;
 pub use alert_service::*; // Re-export alert_service
+pub use batch_command_service::*;

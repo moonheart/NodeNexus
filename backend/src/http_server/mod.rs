@@ -18,7 +18,9 @@ use crate::websocket_models::FullServerListPush; // Added import
 use tower_http::cors::{CorsLayer, Any}; // Added CorsLayer and Any
 use self::auth_logic::{LoginRequest, RegisterRequest};
 use crate::notifications::service::NotificationService;
-use crate::db::services::AlertService; // Added AlertService
+use crate::db::services::{AlertService, BatchCommandManager}; // Added BatchCommandManager
+use crate::server::command_dispatcher::CommandDispatcher; // Added CommandDispatcher
+use crate::server::result_broadcaster::{ResultBroadcaster, BatchCommandUpdateMsg}; // Added ResultBroadcaster
 
 pub mod auth_logic;
 pub mod metrics_routes;
@@ -29,6 +31,8 @@ pub mod tag_routes;
 pub mod notification_routes;
 pub mod models; // Added models module
 pub mod alert_routes; // Added alert_routes module
+pub mod batch_command_routes;
+pub mod ws_batch_command_handler; // Added WebSocket handler for batch commands
 
 // Application state to share PgPool
 #[derive(Clone)]
@@ -40,6 +44,10 @@ pub struct AppState {
     pub update_trigger_tx: mpsc::Sender<()>,
     pub notification_service: Arc<NotificationService>,
     pub alert_service: Arc<AlertService>, // Added AlertService to AppState
+    pub batch_command_manager: Arc<BatchCommandManager>,
+    pub command_dispatcher: Arc<CommandDispatcher>, // Added CommandDispatcher
+    pub batch_command_updates_tx: broadcast::Sender<BatchCommandUpdateMsg>, // For batch command WS updates
+    pub result_broadcaster: Arc<ResultBroadcaster>, // For broadcasting batch command events
 }
 
 async fn register_handler(
@@ -130,7 +138,17 @@ pub async fn run_http_server(
     update_trigger_tx: mpsc::Sender<()>,
     notification_service: Arc<NotificationService>,
     alert_service: Arc<AlertService>, // Added alert_service parameter
+    batch_command_manager: Arc<BatchCommandManager>, // Added batch_command_manager parameter
+    batch_command_updates_tx: broadcast::Sender<BatchCommandUpdateMsg>, // Added sender for batch updates
+    result_broadcaster: Arc<ResultBroadcaster>, // Added ResultBroadcaster instance
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // batch_command_manager is now passed in
+    let command_dispatcher = Arc::new(CommandDispatcher::new(
+        connected_agents.clone(), // Assuming connected_agents is Arc<Mutex<ConnectedAgents>>
+        batch_command_manager.clone(), // Use the passed-in batch_command_manager
+    ));
+    // result_broadcaster is now passed in
+
     let app_state = Arc::new(AppState {
         db_pool,
         live_server_data_cache,
@@ -139,6 +157,10 @@ pub async fn run_http_server(
         update_trigger_tx,
         notification_service,
         alert_service, // Initialize alert_service in AppState
+        batch_command_manager, // Add BatchCommandManager to AppState
+        command_dispatcher, // Add CommandDispatcher to AppState
+        batch_command_updates_tx, // Add batch_command_updates_tx to AppState
+        result_broadcaster, // Add result_broadcaster to AppState
     });
 
     // Configure CORS
@@ -176,6 +198,12 @@ pub async fn run_http_server(
             "/api/alerts",
             alert_routes::create_alert_router().route_layer(middleware::from_fn(auth_logic::auth)),
         )
+        .nest(
+            "/api/batch_commands",
+            batch_command_routes::batch_command_routes() // Removed argument
+                .route_layer(middleware::from_fn(auth_logic::auth)),
+        )
+        .route("/ws/batch_updates", get(ws_batch_command_handler::batch_command_ws_handler)) // Added WebSocket route for batch command updates
         .with_state(app_state.clone())
         .layer(cors);
 

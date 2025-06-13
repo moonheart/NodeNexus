@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package agent_service; // Changed package name
+
+// --- Enums ---
+enum CommandType {
+  COMMAND_TYPE_UNSPECIFIED = 0;
+  ADHOC_COMMAND = 1;
+  SAVED_SCRIPT = 2;
+}
+
+enum OutputType {
+  OUTPUT_TYPE_UNSPECIFIED = 0;
+  STDOUT = 1;
+  STDERR = 2;
+}
+
+enum CommandStatus {
+  COMMAND_STATUS_UNSPECIFIED = 0;
+  SUCCESS = 1;
+  FAILURE = 2;
+  TERMINATED = 3;
+}
+
+// --- Specific Messages for Batch Command Logic ---
+// These will be included in the main MessageToServer and MessageToAgent
+
+message BatchAgentCommandRequest { // Renamed from AgentCommandRequest
+  string command_id = 1; // child_command_id
+  CommandType type = 2;
+  string content = 3; // 命令字符串或脚本ID/内容
+  string working_directory = 4; // Optional: working directory for the command. Defaults to empty string if not set.
+}
+
+message BatchTerminateCommandRequest { // Renamed from TerminateCommandRequest
+  string command_id = 1; // child_command_id
+}
+
+message BatchCommandOutputStream { // Renamed from CommandOutputStream
+  string command_id = 1; // child_command_id
+  OutputType stream_type = 2;
+  bytes chunk = 3; // 输出内容块
+  int64 timestamp = 4; // Optional: output timestamp (Unix nano or millis). Defaults to 0 if not set.
+}
+
+message BatchCommandResult { // Renamed from CommandResult
+  string command_id = 1; // child_command_id
+  CommandStatus status = 2;
+  int32 exit_code = 3;
+  string error_message = 4; // Optional: error message if command failed. Defaults to empty string if not set.
+}
+
+// Removed AgentToServerMessage, ServerToAgentMessage, and AgentCommandService
+// as these will be handled by the existing messages.proto and service.proto
