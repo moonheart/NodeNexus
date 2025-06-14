@@ -14,6 +14,7 @@ use backend::agent_modules::config::{load_cli_config, AgentCliConfig};
 use backend::agent_modules::communication::{ConnectionHandler, heartbeat_loop, server_message_handler_loop};
 use backend::agent_modules::metrics::metrics_collection_loop;
 use backend::agent_modules::command_tracker::RunningCommandsTracker;
+use backend::agent_modules::service_monitor::ServiceMonitorManager;
 // Removed: use backend::agent_modules::agent_command_service_impl::create_agent_command_service;
 use backend::agent_service::AgentConfig;
 
@@ -112,6 +113,29 @@ async fn spawn_and_monitor_core_tasks(
         println!("[Agent:{}] Server message handler loop ended.", agent_id_for_log);
     }));
 
+// Service Monitor Task
+    let monitor_tx = tx_to_server.clone();
+    let monitor_agent_config = Arc::clone(&shared_agent_config);
+    let monitor_agent_id = assigned_agent_id.clone();
+    let monitor_vps_id = agent_cli_config.vps_id;
+    let monitor_agent_secret = agent_cli_config.agent_secret.clone();
+    let monitor_id_provider =
+        backend::agent_modules::communication::ConnectionHandler::get_id_provider_closure(
+            client_message_id_counter.clone(),
+        );
+    tasks.push(tokio::spawn(async move {
+        let mut monitor_manager = ServiceMonitorManager::new();
+        monitor_manager
+            .service_monitor_loop(
+                monitor_agent_config,
+                monitor_tx,
+                monitor_vps_id,
+                monitor_agent_secret,
+                monitor_id_provider,
+            )
+            .await;
+        println!("[Agent:{}] Service monitor loop ended.", monitor_agent_id);
+    }));
     println!("[Agent:{}] All core tasks spawned.", assigned_agent_id);
     tasks
 }
@@ -164,7 +188,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 if !task_handles.is_empty() {
                     // futures::future::select_all waits for the first task to complete.
                     // The result includes the completed task's output, its index, and the remaining futures.
-                    let (first_task_result, _index, _remaining_futures) = futures::future::select_all(task_handles).await;
+                    let (first_task_result, _index, remaining_handles) = futures::future::select_all(task_handles).await;
                     
                     match first_task_result {
                         Ok(_) => { // Task completed without panic
@@ -175,6 +199,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             eprintln!("[Agent:{}] A core task panicked: {:?}. This is a critical issue.", assigned_agent_id_log, join_error);
                             // Depending on the error, might want a longer backoff or specific error handling.
                         }
+                    }
+
+                    // Abort all other running tasks to ensure a clean state before reconnecting.
+                    println!("[Agent:{}] Aborting remaining tasks before reconnecting...", assigned_agent_id_log);
+                    for handle in remaining_handles {
+                        handle.abort();
                     }
                 } else {
                      eprintln!("[Agent:{}] No tasks were spawned, which is unexpected after successful handshake. This should not happen.", assigned_agent_id_log);

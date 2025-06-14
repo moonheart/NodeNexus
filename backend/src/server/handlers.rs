@@ -86,6 +86,18 @@ pub async fn handle_connection(
                             let assigned_agent_id = Uuid::new_v4().to_string();
                             current_session_agent_id = Some(assigned_agent_id.clone());
 
+                            // Fetch service monitoring tasks for this agent
+                            let tasks = match services::service_monitor_service::get_tasks_for_agent(&*pool_clone, vps_db_id_from_msg).await {
+                                Ok(tasks) => {
+                                    println!("[{}] Found {} service monitor tasks for agent (VPS ID {})", connection_id, tasks.len(), vps_db_id_from_msg);
+                                    tasks
+                                }
+                                Err(e) => {
+                                    eprintln!("[{}] Error fetching service monitor tasks for agent (VPS ID {}): {}. Defaulting to empty list.", connection_id, vps_db_id_from_msg, e);
+                                    vec![]
+                                }
+                            };
+
                             let initial_config = AgentConfig {
                                 metrics_collect_interval_seconds: 1, // TODO: Load from DB or config file per VPS/User
                                 metrics_upload_batch_max_size: 50,
@@ -97,6 +109,7 @@ pub async fn handle_connection(
                                 feature_flags: std::collections::HashMap::new(),
                                 log_level: "INFO".to_string(),
                                 heartbeat_interval_seconds: 30,
+                                service_monitor_tasks: tasks,
                             };
                             
                             // Convert OsType from i32 to String
@@ -284,12 +297,19 @@ pub async fn handle_connection(
                                            }
                                        }
                                    }
+                                   ServerPayload::ServiceMonitorResult(result) => {
+                                       // println!("[{}] Received ServiceMonitorResult from {} for monitor #{}: success={}",
+                                       //     connection_id, session_id, result.monitor_id, result.successful);
+                                       if let Err(e) = services::service_monitor_service::record_monitor_result(&*pool_clone, vps_db_id_from_msg, &result).await {
+                                           eprintln!("[{}] Failed to record monitor result for monitor #{}: {}", connection_id, result.monitor_id, e);
+                                       }
+                                   }
                                    _ => {
                                        println!("[{}] Received unhandled message type from {} (VPS ID {}): client_msg_id={}, payload_type: {:?}",
                                            connection_id, session_id, vps_db_id_from_msg, msg_to_server.client_message_id, payload);
                                    }
                                }
-                           } else {
+                          } else {
                                  println!("[{}] Received message with no payload from VPS ID {}: client_msg_id={}",
                                     connection_id, vps_db_id_from_msg, msg_to_server.client_message_id);
                             }

@@ -33,8 +33,9 @@ pub mod models; // Added models module
 pub mod alert_routes; // Added alert_routes module
 pub mod batch_command_routes;
 pub mod ws_batch_command_handler; // Added WebSocket handler for batch commands
-
-// Application state to share PgPool
+pub mod service_monitor_routes;
+ 
+ // Application state to share PgPool
 #[derive(Clone)]
 pub struct AppState {
     pub db_pool: DatabaseConnection, // Changed PgPool to DatabaseConnection
@@ -116,6 +117,11 @@ impl IntoResponse for AppError {
            AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
         };
         (status, Json(serde_json::json!({ "error": error_message }))).into_response()
+    }
+}
+impl From<sea_orm::DbErr> for AppError {
+    fn from(err: sea_orm::DbErr) -> Self {
+        AppError::DatabaseError(err.to_string())
     }
 }
 
@@ -202,6 +208,10 @@ pub async fn run_http_server(
             "/api/batch_commands",
             batch_command_routes::batch_command_routes() // Removed argument
                 .route_layer(middleware::from_fn(auth_logic::auth)),
+        )
+        .nest(
+            "/api/monitors",
+            service_monitor_routes::create_service_monitor_router().route_layer(middleware::from_fn(auth_logic::auth)),
         )
         .route("/ws/batch-command/{batch_command_id}", get(ws_batch_command_handler::batch_command_ws_handler)) // Corrected WebSocket route for batch command updates
         .with_state(app_state.clone())

@@ -11,6 +11,8 @@ import SettingsPage from './pages/SettingsPage';
 import TagManagementPage from './pages/TagManagementPage';
 import BatchCommandPage from './pages/BatchCommandPage'; // Import the new page
 import NotificationsPage from './pages/NotificationsPage'; // Import the new page
+import ServiceMonitoringPage from './pages/ServiceMonitoringPage'; // Import the new page
+import ServiceMonitorDetailPage from './pages/ServiceMonitorDetailPage'; // Import the new page
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout'; // Import the new Layout component
 import { useAuthStore } from './store/authStore';
@@ -48,6 +50,8 @@ function App() {
             <Route path="/tags" element={<TagManagementPage />} />
             <Route path="/batch-command" element={<BatchCommandPage />} /> {/* Add new route */}
             <Route path="/notifications" element={<NotificationsPage />} /> {/* Add new route */}
+            <Route path="/monitors" element={<ServiceMonitoringPage />} />
+            <Route path="/monitors/:monitorId" element={<ServiceMonitorDetailPage />} />
             {/* Add other protected routes that need the layout here */}
           </Route>
         </Route>

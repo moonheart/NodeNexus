@@ -187,7 +187,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
             }
 
             // Now that the stream of updates has settled, perform the actual broadcast.
-            println!("Debounce window finished. Triggering broadcast.");
+            // println!("Debounce window finished. Triggering broadcast.");
             update_service::broadcast_full_state_update(
                 &pool_for_debounce,
                 &cache_for_debounce,

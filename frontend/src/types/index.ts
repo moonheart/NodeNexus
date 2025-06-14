@@ -166,16 +166,31 @@ export type ViewMode = 'card' | 'list';
  * This should match the structure of the `AgentConfig` message in `backend/proto/config.proto`.
  */
 export interface AgentConfig {
-  metrics_collect_interval_seconds: number;
-  metrics_upload_batch_max_size: number;
-  metrics_upload_interval_seconds: number;
-  docker_info_collect_interval_seconds: number;
-  docker_info_upload_interval_seconds: number;
-  generic_metrics_upload_batch_max_size: number;
-  generic_metrics_upload_interval_seconds: number;
-  feature_flags: Record<string, string>;
-  log_level: string;
-  heartbeat_interval_seconds: number;
+  metricsCollectIntervalSeconds: number;
+  metricsUploadBatchMaxSize: number;
+  metricsUploadIntervalSeconds: number;
+  dockerInfoCollectIntervalSeconds: number;
+  dockerInfoUploadIntervalSeconds: number;
+  genericMetricsUploadBatchMaxSize: number;
+  genericMetricsUploadIntervalSeconds: number;
+  featureFlags: Record<string, string>;
+  logLevel: string;
+  heartbeatIntervalSeconds: number;
+  serviceMonitorTasks: ServiceMonitorTask[];
+}
+
+/**
+ * Represents a single service monitoring task as defined in `config.proto`.
+ * This is part of the AgentConfig.
+ */
+export interface ServiceMonitorTask {
+  monitorId: number;
+  name: string;
+  monitorType: string;
+  target: string;
+  frequencySeconds: number;
+  monitorConfigJson: string;
+  timeoutSeconds: number;
 }
 
 /**
@@ -326,4 +341,83 @@ export interface VpsMetadata {
   // Add any other known metadata fields that might be present
   // Ensure keys match exactly what's sent from the backend (e.g., snake_case or camelCase)
   // Based on backend vps_service.rs, keys are snake_case
+}
+
+// --- Service Monitoring Types ---
+
+/**
+ * Represents the detailed configuration for a specific monitor type.
+ * Matches the `monitor_config` JSON blob in the database.
+ */
+export interface HttpMonitorConfig {
+  method?: string;
+  expected_status_codes?: number[];
+  request_headers?: Record<string, string>;
+  request_body?: string;
+  response_body_match?: string;
+  ignore_tls_errors?: boolean;
+}
+
+export interface PingMonitorConfig {
+    packet_count?: number;
+}
+
+export type TcpMonitorConfig = Record<string, never>;
+
+export type MonitorConfig = HttpMonitorConfig | PingMonitorConfig | TcpMonitorConfig;
+
+
+/**
+ * Represents a service monitor task.
+ * This should match the `ServiceMonitorResponse` struct from the backend.
+ */
+export interface ServiceMonitor {
+  id: number;
+  userId: number;
+  name: string;
+  monitorType: 'http' | 'ping' | 'tcp';
+  target: string;
+  frequencySeconds: number;
+  timeoutSeconds: number;
+  isActive: boolean;
+  monitorConfig: MonitorConfig;
+  createdAt: string;
+  updatedAt: string;
+  agentIds: number[];
+  tagIds: number[];
+}
+
+/**
+ * Represents the payload for creating or updating a service monitor.
+ * This should match the `CreateMonitorRequest` and `UpdateMonitorRequest` structs from the backend.
+ */
+export interface ServiceMonitorInput {
+  name: string;
+  monitorType: 'http' | 'ping' | 'tcp';
+  target: string;
+  frequencySeconds?: number;
+  timeoutSeconds?: number;
+  isActive?: boolean;
+  monitorConfig?: MonitorConfig;
+  assignments?: {
+    agentIds?: number[];
+    tagIds?: number[];
+  };
+}
+
+/**
+ * Represents a single result from a service monitor check.
+ * This should match the `service_monitor_results` table schema.
+ */
+export interface ServiceMonitorResult {
+  time: string; // TIMESTAMPTZ
+  monitorId: number;
+  agentId: number;
+  isUp: boolean;
+  latencyMs: number | null;
+  details?: {
+    status_code?: number;
+    error?: string;
+    message?: string;
+  };
 }

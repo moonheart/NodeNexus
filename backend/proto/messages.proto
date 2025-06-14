@@ -27,6 +27,7 @@ message MessageToServer {
     UpdateConfigResponse update_config_response = 12;
     BatchCommandOutputStream batch_command_output_stream = 13; // Added for batch command
     BatchCommandResult batch_command_result = 14;             // Added for batch command
+    ServiceMonitorResult service_monitor_result = 15;
   }
 }
 
@@ -69,4 +70,15 @@ message MessageToAgent {
     BatchAgentCommandRequest batch_agent_command_request = 8;       // Added for batch command
     BatchTerminateCommandRequest batch_terminate_command_request = 9; // Added for batch command
   }
+}
+
+// Message for reporting the result of a single service monitor check
+message ServiceMonitorResult {
+  int32 monitor_id = 1;
+  int64 timestamp_unix_ms = 2;
+  bool successful = 3;
+  // Time taken for the check in milliseconds
+  optional int32 response_time_ms = 4;
+  // Error message if not successful, or other details (e.g., status code)
+  string details = 5;
 }

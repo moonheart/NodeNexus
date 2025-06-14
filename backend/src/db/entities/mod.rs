@@ -24,6 +24,10 @@ pub mod alert_rule_channel;
 pub mod vps_renewal_info;
 pub mod batch_command_task;
 pub mod child_command_task;
+pub mod service_monitor;
+pub mod service_monitor_agent;
+pub mod service_monitor_tag;
+pub mod service_monitor_result;
 // ... add other entity modules as they are created
 
 // Prelude module for easy importing of all entities and their related types
@@ -127,6 +131,26 @@ pub mod prelude {
     pub use super::child_command_task::Model as ChildCommandTaskModel;
     pub use super::child_command_task::ActiveModel as ChildCommandTaskActiveModel;
     pub use super::child_command_task::Column as ChildCommandTaskColumn;
+
+    pub use super::service_monitor::Entity as ServiceMonitor;
+    pub use super::service_monitor::Model as ServiceMonitorModel;
+    pub use super::service_monitor::ActiveModel as ServiceMonitorActiveModel;
+    pub use super::service_monitor::Column as ServiceMonitorColumn;
+
+    pub use super::service_monitor_agent::Entity as ServiceMonitorAgent;
+    pub use super::service_monitor_agent::Model as ServiceMonitorAgentModel;
+    pub use super::service_monitor_agent::ActiveModel as ServiceMonitorAgentActiveModel;
+    pub use super::service_monitor_agent::Column as ServiceMonitorAgentColumn;
+
+    pub use super::service_monitor_tag::Entity as ServiceMonitorTag;
+    pub use super::service_monitor_tag::Model as ServiceMonitorTagModel;
+    pub use super::service_monitor_tag::ActiveModel as ServiceMonitorTagActiveModel;
+    pub use super::service_monitor_tag::Column as ServiceMonitorTagColumn;
+
+    pub use super::service_monitor_result::Entity as ServiceMonitorResult;
+    pub use super::service_monitor_result::Model as ServiceMonitorResultModel;
+    pub use super::service_monitor_result::ActiveModel as ServiceMonitorResultActiveModel;
+    pub use super::service_monitor_result::Column as ServiceMonitorResultColumn;
 }
 
 // Optional: Keep direct re-exports if some parts of the code already use them,

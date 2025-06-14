@@ -101,7 +101,7 @@ async fn retry_config_push(
 }
 
 /// Gets the effective config for a VPS and pushes it to the agent if connected.
-async fn push_config_to_vps(
+pub async fn push_config_to_vps(
     app_state: Arc<AppState>,
     vps_id: i32,
 ) -> Result<(), AppError> { // Changed return type
@@ -138,7 +138,14 @@ async fn push_config_to_vps(
         effective_config.feature_flags.extend(override_config.feature_flags);
     }
 
-    // 3. Find agent and send message
+    // 3. Get service monitor tasks for this agent
+    let tasks = db_services::service_monitor_service::get_tasks_for_agent(&app_state.db_pool, vps_id)
+        .await
+        .map_err(|e| AppError::DatabaseError(format!("Failed to get monitor tasks for agent {}: {}", vps_id, e)))?;
+    effective_config.service_monitor_tasks = tasks;
+
+
+    // 4. Find agent and send message
     let agent_state = {
         let agents_guard = app_state.connected_agents.lock().await;
         agents_guard.find_by_vps_id(vps_id)

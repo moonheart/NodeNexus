@@ -12,4 +12,16 @@ message AgentConfig {
   map<string, string> feature_flags = 8;
   string log_level = 9;
   uint32 heartbeat_interval_seconds = 10;
+  repeated ServiceMonitorTask service_monitor_tasks = 11;
+}
+
+// New message definition for service monitoring tasks
+message ServiceMonitorTask {
+  int32 monitor_id = 1;
+  string name = 2;
+  string monitor_type = 3;
+  string target = 4;
+  int32 frequency_seconds = 5;
+  string monitor_config_json = 6; // Specific config as a JSON string
+  int32 timeout_seconds = 7;
 }
