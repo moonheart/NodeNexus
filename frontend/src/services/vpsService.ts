@@ -17,7 +17,7 @@ export interface CreateVpsPayload {
 // For create, the backend still returns the basic Vps model.
 export const createVps = async (payload: CreateVpsPayload): Promise<Vps> => {
   try {
-    const response = await apiClient.post<Vps>('/api/vps', payload);
+    const response = await apiClient.post<Vps>('/vps', payload);
     return response.data;
   } catch (error) {
     console.error('Error creating VPS:', error);
@@ -31,7 +31,7 @@ export const createVps = async (payload: CreateVpsPayload): Promise<Vps> => {
  */
 export const getVpsDetail = async (vpsId: string): Promise<VpsListItemResponse> => {
   try {
-    const response = await apiClient.get<VpsListItemResponse>(`/api/vps/${vpsId}`);
+    const response = await apiClient.get<VpsListItemResponse>(`/vps/${vpsId}`);
     return response.data;
   } catch (error) {
     console.error(`Error fetching VPS detail for ID ${vpsId}:`, error);
@@ -70,7 +70,7 @@ export interface UpdateVpsPayload {
  */
 export const updateVps = async (vpsId: number, payload: UpdateVpsPayload): Promise<void> => {
   try {
-    await apiClient.put(`/api/vps/${vpsId}`, payload);
+    await apiClient.put(`/vps/${vpsId}`, payload);
   } catch (error) {
     console.error(`Error updating VPS with ID ${vpsId}:`, error);
     throw error;
@@ -83,7 +83,7 @@ export const updateVps = async (vpsId: number, payload: UpdateVpsPayload): Promi
  */
 export const getAllVpsListItems = async (): Promise<VpsListItemResponse[]> => {
   try {
-    const response = await apiClient.get<VpsListItemResponse[]>('/api/vps'); // Assuming '/api/vps' endpoint returns the list
+    const response = await apiClient.get<VpsListItemResponse[]>('/vps'); // Assuming '/vps' endpoint returns the list
     return response.data;
   } catch (error) {
     console.error('Error fetching all VPS list items:', error);
@@ -96,7 +96,7 @@ export const getAllVpsListItems = async (): Promise<VpsListItemResponse[]> => {
  */
 export const dismissVpsRenewalReminder = async (vpsId: number): Promise<void> => {
   try {
-    await apiClient.post(`/api/vps/${vpsId}/renewal/dismiss-reminder`);
+    await apiClient.post(`/vps/${vpsId}/renewal/dismiss-reminder`);
   } catch (error) {
     console.error(`Error dismissing renewal reminder for VPS ID ${vpsId}:`, error);
     throw error;

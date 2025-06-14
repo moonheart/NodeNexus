@@ -27,7 +27,7 @@ pub async fn heartbeat_loop(
     tx_to_server: mpsc::Sender<MessageToServer>,
     shared_agent_config: Arc<RwLock<AgentConfig>>,
     agent_id: String,
-    mut id_provider: impl FnMut() -> u64 + Send + 'static,
+    id_provider: impl Fn() -> u64 + Send + Sync + 'static,
     vps_db_id: i32,
     agent_secret: String,
 ) {
@@ -61,7 +61,7 @@ pub async fn server_message_handler_loop(
     mut in_stream: tonic::Streaming<MessageToAgent>,
     tx_to_server: mpsc::Sender<MessageToServer>,
     agent_id: String,
-    mut id_provider: impl FnMut() -> u64 + Send + Clone + 'static, // Added Clone for spawning tasks
+    id_provider: impl Fn() -> u64 + Send + Sync + Clone + 'static, // Added Clone for spawning tasks
     vps_db_id: i32,
     agent_secret: String,
     shared_agent_config: Arc<RwLock<AgentConfig>>,
@@ -328,7 +328,7 @@ impl ConnectionHandler {
     }
 
     // This function now needs to ensure the returned closure is Clone
-    pub fn get_id_provider_closure(counter: Arc<AtomicU64>) -> impl FnMut() -> u64 + Send + Clone + 'static {
+    pub fn get_id_provider_closure(counter: Arc<AtomicU64>) -> impl Fn() -> u64 + Send + Sync + Clone + 'static {
         move || {
             counter.fetch_add(1, Ordering::SeqCst)
         }

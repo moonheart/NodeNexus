@@ -43,7 +43,7 @@ export interface LoginResponse {
 export const registerUser = async (data: RegisterRequest): Promise<UserResponse> => {
     console.log('authService.ts: registerUser called with', data);
     try {
-        const response = await apiClient.post<UserResponse>('/api/auth/register', data);
+        const response = await apiClient.post<UserResponse>('/auth/register', data);
         return response.data;
     } catch (error: unknown) {
         console.error('Registration failed:', error);
@@ -70,7 +70,7 @@ export const registerUser = async (data: RegisterRequest): Promise<UserResponse>
 export const loginUser = async (data: LoginRequest): Promise<LoginResponse> => {
     console.log('authService.ts: loginUser called with', data);
     try {
-        const response = await apiClient.post<LoginResponse>('/api/auth/login', data);
+        const response = await apiClient.post<LoginResponse>('/auth/login', data);
         return response.data;
     } catch (error: unknown) {
         console.error('Login failed:', error);

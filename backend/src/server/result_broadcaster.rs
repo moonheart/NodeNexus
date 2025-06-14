@@ -15,6 +15,9 @@ impl ResultBroadcaster {
     pub fn new(batch_updates_tx: broadcast::Sender<BatchCommandUpdateMsg>) -> Self {
         Self { batch_updates_tx }
     }
+pub fn subscribe(&self) -> broadcast::Receiver<BatchCommandUpdateMsg> {
+        self.batch_updates_tx.subscribe()
+    }
 
     // Placeholder: In a real implementation, these would serialize specific event DTOs.
     fn send_message(&self, message_type: &str, payload: serde_json::Value) {
@@ -27,7 +30,8 @@ impl ResultBroadcaster {
                 if let Err(e) = self.batch_updates_tx.send(json_string.clone()) {
                     eprintln!("Failed to broadcast batch command update ({}): {}. Message: {}", message_type, e, json_string);
                 } else {
-                    println!("Successfully broadcasted batch command update ({}): {}", message_type, json_string);
+                    // Successfully sent, no need to log here as it can be noisy.
+                    // Or, use a lower log level like debug! or trace!
                 }
             }
             Err(e) => {
@@ -40,7 +44,7 @@ impl ResultBroadcaster {
         &self,
         batch_command_id: Uuid,
         child_task_id: Uuid,
-        vps_id: String,
+        vps_id: i32,
         status: String,
         exit_code: Option<i32>,
     ) {
@@ -80,7 +84,7 @@ impl ResultBroadcaster {
         &self,
         batch_command_id: Uuid,
         child_task_id: Uuid,
-        vps_id: String,
+        vps_id: i32,
         log_line: String,
         stream_type: String, // "stdout" or "stderr"
         timestamp: String, // Assuming DateTimeUtc to string

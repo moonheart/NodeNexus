@@ -13,7 +13,7 @@ export interface BulkUpdateVpsTagsPayload {
  * Corresponds to GET /api/tags
  */
 export const getTags = async (): Promise<Tag[]> => {
-  const response = await apiClient.get<Tag[]>('/api/tags');
+  const response = await apiClient.get<Tag[]>('/tags');
   return response.data;
 };
 
@@ -22,7 +22,7 @@ export const getTags = async (): Promise<Tag[]> => {
  * Corresponds to POST /api/tags
  */
 export const createTag = async (payload: CreateTagPayload): Promise<Tag> => {
-  const response = await apiClient.post<Tag>('/api/tags', payload);
+  const response = await apiClient.post<Tag>('/tags', payload);
   return response.data;
 };
 
@@ -31,7 +31,7 @@ export const createTag = async (payload: CreateTagPayload): Promise<Tag> => {
  * Corresponds to PUT /api/tags/:tagId
  */
 export const updateTag = async (tagId: number, payload: UpdateTagPayload): Promise<void> => {
-  await apiClient.put(`/api/tags/${tagId}`, payload);
+  await apiClient.put(`/tags/${tagId}`, payload);
 };
 
 /**
@@ -39,7 +39,7 @@ export const updateTag = async (tagId: number, payload: UpdateTagPayload): Promi
  * Corresponds to DELETE /api/tags/:tagId
  */
 export const deleteTag = async (tagId: number): Promise<void> => {
-  await apiClient.delete(`/api/tags/${tagId}`);
+  await apiClient.delete(`/tags/${tagId}`);
 };
 
 /**
@@ -47,7 +47,7 @@ export const deleteTag = async (tagId: number): Promise<void> => {
  * Corresponds to POST /api/vps/:vpsId/tags
  */
 export const addTagToVps = async (vpsId: number, tagId: number): Promise<void> => {
-  await apiClient.post(`/api/vps/${vpsId}/tags`, { tag_id: tagId });
+  await apiClient.post(`/vps/${vpsId}/tags`, { tag_id: tagId });
 };
 
 /**
@@ -55,7 +55,7 @@ export const addTagToVps = async (vpsId: number, tagId: number): Promise<void> =
  * Corresponds to DELETE /api/vps/:vpsId/tags/:tagId
  */
 export const removeTagFromVps = async (vpsId: number, tagId: number): Promise<void> => {
-  await apiClient.delete(`/api/vps/${vpsId}/tags/${tagId}`);
+  await apiClient.delete(`/vps/${vpsId}/tags/${tagId}`);
 };
 
 /**
@@ -63,5 +63,5 @@ export const removeTagFromVps = async (vpsId: number, tagId: number): Promise<vo
  * Corresponds to POST /api/vps/bulk-actions
  */
 export const bulkUpdateVpsTags = async (payload: BulkUpdateVpsTagsPayload): Promise<void> => {
-    await apiClient.post('/api/vps/bulk-actions', payload);
+    await apiClient.post('/vps/bulk-actions', payload);
 };

@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     // --- Shared State Initialization for WebSocket and gRPC ---
     // Initialize the broadcast channel for WebSocket updates
     let (ws_data_broadcaster_tx, _) = broadcast::channel::<Arc<FullServerListPush>>(100); // Capacity can be configured
-    let (batch_command_updates_tx, _) = broadcast::channel::<BatchCommandUpdateMsg>(100); // Channel for batch command updates
+    let (batch_command_updates_tx, _rx) = broadcast::channel::<BatchCommandUpdateMsg>(100); // Channel for batch command updates
 
     // Initialize the live server data cache
     let initial_cache_data_result = db_services::get_all_vps_with_details_for_cache(&db_pool).await;

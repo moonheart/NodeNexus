@@ -7,7 +7,7 @@ import type { AlertRule, CreateAlertRulePayload, UpdateAlertRulePayload } from '
  * Fetches all alert rules for the current user.
  */
 export const getAllAlertRules = async (): Promise<AlertRule[]> => {
-  const response = await apiClient.get<AlertRule[]>('/api/alerts');
+  const response = await apiClient.get<AlertRule[]>('/alerts');
   return response.data;
 };
 
@@ -16,7 +16,7 @@ export const getAllAlertRules = async (): Promise<AlertRule[]> => {
  * @param id - The ID of the alert rule.
  */
 export const getAlertRuleById = async (id: number): Promise<AlertRule> => {
-  const response = await apiClient.get<AlertRule>(`/api/alerts/${id}`);
+  const response = await apiClient.get<AlertRule>(`/alerts/${id}`);
   return response.data;
 };
 
@@ -25,7 +25,7 @@ export const getAlertRuleById = async (id: number): Promise<AlertRule> => {
  * @param ruleData - The data for the new alert rule.
  */
 export const createAlertRule = async (ruleData: CreateAlertRulePayload): Promise<AlertRule> => {
-  const response = await apiClient.post<AlertRule>('/api/alerts', ruleData);
+  const response = await apiClient.post<AlertRule>('/alerts', ruleData);
   return response.data;
 };
 
@@ -35,7 +35,7 @@ export const createAlertRule = async (ruleData: CreateAlertRulePayload): Promise
  * @param ruleData - The data to update.
  */
 export const updateAlertRule = async (id: number, ruleData: UpdateAlertRulePayload): Promise<AlertRule> => {
-  const response = await apiClient.put<AlertRule>(`/api/alerts/${id}`, ruleData);
+  const response = await apiClient.put<AlertRule>(`/alerts/${id}`, ruleData);
   return response.data;
 };
 
@@ -44,7 +44,7 @@ export const updateAlertRule = async (id: number, ruleData: UpdateAlertRulePaylo
  * @param id - The ID of the alert rule to delete.
  */
 export const deleteAlertRule = async (id: number): Promise<void> => {
-  await apiClient.delete(`/api/alerts/${id}`);
+  await apiClient.delete(`/alerts/${id}`);
 };
 
 /**
@@ -53,6 +53,6 @@ export const deleteAlertRule = async (id: number): Promise<void> => {
  * @param isActive - The new status for the alert rule.
  */
 export const updateAlertRuleStatus = async (id: number, isActive: boolean): Promise<AlertRule> => {
-  const response = await apiClient.put<AlertRule>(`/api/alerts/${id}/status`, { isActive });
+  const response = await apiClient.put<AlertRule>(`/alerts/${id}/status`, { isActive });
   return response.data;
 };

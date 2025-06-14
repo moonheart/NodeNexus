@@ -203,7 +203,7 @@ pub async fn run_http_server(
             batch_command_routes::batch_command_routes() // Removed argument
                 .route_layer(middleware::from_fn(auth_logic::auth)),
         )
-        .route("/ws/batch_updates", get(ws_batch_command_handler::batch_command_ws_handler)) // Added WebSocket route for batch command updates
+        .route("/ws/batch-command/{batch_command_id}", get(ws_batch_command_handler::batch_command_ws_handler)) // Corrected WebSocket route for batch command updates
         .with_state(app_state.clone())
         .layer(cors);
 

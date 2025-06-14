@@ -26,6 +26,12 @@ const Navbar: React.FC = () => {
             {isAuthenticated ? (
               <>
                 <Link
+                  to="/batch-command"
+                  className="px-3 py-2 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+                >
+                  批量命令
+                </Link>
+                <Link
                   to="/tags"
                   className="px-3 py-2 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
                 >

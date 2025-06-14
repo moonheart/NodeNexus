@@ -1,19 +1,12 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tokio::process::Child;
-// Potentially, if using Uuid for internal tracking before converting to string for map:
-// use uuid::Uuid;
+use tokio::sync::oneshot;
 
-#[derive(Debug)]
-pub struct ChildProcessHandle {
-    pub child: Option<Child>, // Changed to Option to allow taking ownership
-    pub pid: Option<u32>,     // Store PID for logging/reference
-}
-
-// Key is child_command_id (String) as per protobuf
+// The tracker now holds a sender part of a one-shot channel.
+// Sending a message on this channel signals the command's managing task to terminate it.
 #[derive(Debug, Clone)]
 pub struct RunningCommandsTracker {
-    commands: Arc<Mutex<HashMap<String, Arc<Mutex<ChildProcessHandle>>>>>,
+    commands: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
 }
 
 impl RunningCommandsTracker {
@@ -23,64 +16,41 @@ impl RunningCommandsTracker {
         }
     }
 
-    pub fn add_command(&self, command_id: String, handle: ChildProcessHandle) -> Result<(), String> {
+    pub fn add_command(&self, command_id: String, term_tx: oneshot::Sender<()>) {
         let mut commands_guard = self.commands.lock().unwrap();
-        if commands_guard.contains_key(&command_id) {
-            return Err(format!("Command ID {} already exists in tracker.", command_id));
+        if commands_guard.insert(command_id.clone(), term_tx).is_some() {
+            // This case (replacing an existing command) should ideally not happen
+            // if command IDs are unique.
+            eprintln!("[Tracker] Warning: Replaced an existing command with ID: {}", command_id);
         }
-        commands_guard.insert(command_id.clone(), Arc::new(Mutex::new(handle)));
         println!("[Tracker] Added command: {}", command_id);
-        Ok(())
     }
 
-    pub async fn remove_command(&self, command_id: &str) -> Option<Arc<Mutex<ChildProcessHandle>>> {
+    // This function is called by the command's managing task upon completion.
+    pub fn remove_command(&self, command_id: &str) {
         let mut commands_guard = self.commands.lock().unwrap();
-        let removed = commands_guard.remove(command_id);
-        if removed.is_some() {
-            println!("[Tracker] Removed command: {}", command_id);
-        } else {
-            println!("[Tracker] Attempted to remove non-existent command: {}", command_id);
+        if commands_guard.remove(command_id).is_some() {
+            println!("[Tracker] Removed command on completion: {}", command_id);
         }
-        removed
     }
 
-    pub fn get_command_handle(&self, command_id: &str) -> Option<Arc<Mutex<ChildProcessHandle>>> {
-        let commands_guard = self.commands.lock().unwrap();
-        commands_guard.get(command_id).cloned()
-    }
-
-    // Optional: A method to try to kill a command
-    pub async fn kill_command(&self, command_id: &str) -> Result<String, String> {
-        let handle_arc = match self.get_command_handle(command_id) {
-            Some(h) => h,
-            None => {
-                eprintln!("[Tracker] Command {} not found for killing.", command_id);
-                return Err(format!("Command {} not found for killing.", command_id));
+    // This function is called by the termination handler.
+    pub fn signal_termination(&self, command_id: &str) -> Result<(), &'static str> {
+        // Remove the sender from the map to prevent multiple signals.
+        // The receiving end of the oneshot channel will be dropped when the command task finishes,
+        // so sending might fail if the command has already completed. This is expected.
+        if let Some(term_tx) = self.commands.lock().unwrap().remove(command_id) {
+            if term_tx.send(()).is_ok() {
+                println!("[Tracker] Termination signal sent for command: {}", command_id);
+            } else {
+                println!("[Tracker] Command {} already finished, no termination signal needed.", command_id);
             }
-        };
-
-        // Take the child from the handle to release the MutexGuard before .await
-        let mut child_to_kill = {
-            let mut guard = handle_arc.lock().unwrap();
-            guard.child.take()
-        }; // MutexGuard is dropped here
-
-        if let Some(mut child) = child_to_kill {
-            match child.kill().await {
-                Ok(_) => {
-                    println!("[Tracker] Kill signal sent to command: {}", command_id);
-                    Ok(format!("Kill signal sent to command {}", command_id))
-                }
-                Err(e) => {
-                    eprintln!("[Tracker] Failed to send kill signal to command {}: {}", command_id, e);
-                    Err(format!("Failed to kill command {}: {}", command_id, e))
-                }
-            }
+            Ok(())
         } else {
-            let msg = format!("Command {} was already terminated or handle was empty.", command_id);
-            eprintln!("[Tracker] {}", msg);
-            // Arguably, this could be a success if the goal is "make sure it's not running"
-            Ok(msg)
+            // This can happen if a termination signal is sent for a command that has already completed
+            // and been removed from the tracker, or was already terminated.
+            println!("[Tracker] Command {} not found for termination (already terminated or completed).", command_id);
+            Err("Command not found or already terminated.")
         }
     }
 }

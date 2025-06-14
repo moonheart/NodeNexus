@@ -7,7 +7,7 @@ pub struct CreateBatchCommandRequest {
     pub command_content: Option<String>,
     pub script_id: Option<String>,
     pub working_directory: Option<String>,
-    pub target_vps_ids: Vec<String>, // Assuming vps_id is String, adjust if it's Uuid or i32
+    pub target_vps_ids: Vec<i32>, // Assuming vps_id is String, adjust if it's Uuid or i32
     pub execution_alias: Option<String>,
 }
 
@@ -21,7 +21,7 @@ pub struct BatchCommandAcceptedResponse {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChildCommandTaskDetail {
     pub child_command_id: Uuid,
-    pub vps_id: String,
+    pub vps_id: i32,
     // pub vps_name: Option<String>, // Consider adding this for better UI display
     pub status: String,
     pub exit_code: Option<i32>,

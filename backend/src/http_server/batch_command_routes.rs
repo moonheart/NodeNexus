@@ -23,8 +23,7 @@ pub fn batch_command_routes() -> Router<Arc<AppState>> { // Expects AppState
         .route("/", post(create_batch_command))
         .route("/{batch_command_id}", get(get_batch_command_detail))
         .route("/{batch_command_id}/terminate", post(terminate_batch_command))
-        // .route("/:batch_command_id/tasks/:child_command_id/terminate", post(terminate_child_command)) // More granular control
-        // .with_state(db) // State will be provided by the parent router
+        .route("/{batch_id}/tasks/{child_id}/terminate", post(terminate_child_command)) // More granular control
 }
 
 #[axum::debug_handler]
@@ -35,16 +34,17 @@ async fn create_batch_command(
 ) -> Result<Json<BatchCommandAcceptedResponse>, AppError> {
     let command_manager = app_state.batch_command_manager.clone();
     let dispatcher = app_state.command_dispatcher.clone();
-    let user_id_str = authenticated_user.id.to_string();
+    let user_id = authenticated_user.id; // No longer converting to string
 
     match command_manager
-        .create_batch_command(user_id_str, payload.clone()) // Clone payload for later use
+        .create_batch_command(user_id, payload.clone()) // Pass i32 directly
         .await
     {
         Ok((batch_task_model, child_tasks)) => {
             // Asynchronously dispatch commands for each child task
             for child_task in child_tasks {
                 let dispatcher_clone = dispatcher.clone();
+                let command_manager_clone = command_manager.clone(); // Clone for status updates
                 let payload_clone = payload.clone(); // Clone for the spawned task
                 tokio::spawn(async move {
                     let command_content = payload_clone.command_content.unwrap_or_default(); // Assuming script_id implies content is elsewhere
@@ -77,19 +77,34 @@ async fn create_batch_command(
                     };
 
 
-                    if let Err(e) = dispatcher_clone.dispatch_command_to_agent(
+                    let dispatch_result = dispatcher_clone.dispatch_command_to_agent(
                         child_task.child_command_id,
-                        &child_task.vps_id, // vps_id is String in ChildCommandTask model
+                        child_task.vps_id, // vps_id is String in ChildCommandTask model
                         &effective_command_content,
                         command_type,
                         working_directory,
-                    ).await {
+                    ).await;
+
+                    let (new_status, error_message) = if let Err(e) = dispatch_result {
                         eprintln!(
                             "Failed to dispatch command for child_task_id {}: {:?}",
                             child_task.child_command_id, e
                         );
-                        // Optionally, update child task status to a dispatch failure state here
-                        // This might require another call to batch_command_manager.update_child_task_status
+                        (crate::db::enums::ChildCommandStatus::AgentUnreachable, Some(e.to_string()))
+                    } else {
+                        (crate::db::enums::ChildCommandStatus::SentToAgent, None)
+                    };
+
+                    if let Err(update_err) = command_manager_clone.update_child_task_status(
+                        child_task.child_command_id,
+                        new_status,
+                        None, // No exit code at this stage
+                        error_message,
+                    ).await {
+                        eprintln!(
+                            "Failed to update status after dispatch for child_task_id {}: {:?}",
+                            child_task.child_command_id, update_err
+                        );
                     }
                 });
             }
@@ -118,7 +133,7 @@ async fn get_batch_command_detail(
 ) -> Result<Json<BatchCommandTaskDetailResponse>, AppError> {
     match app_state
         .batch_command_manager
-        .get_batch_command_detail_dto(batch_command_id, &authenticated_user.id.to_string())
+        .get_batch_command_detail_dto(batch_command_id, authenticated_user.id)
         .await
     {
         Ok(Some(detail_response)) => Ok(Json(detail_response)),
@@ -159,10 +174,10 @@ async fn terminate_batch_command(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let batch_manager = app_state.batch_command_manager.clone();
     let dispatcher = app_state.command_dispatcher.clone();
-    let user_id_str = authenticated_user.id.to_string();
+    let user_id = authenticated_user.id; // No longer converting to string
 
     match batch_manager
-        .terminate_batch_command(batch_command_id, &user_id_str)
+        .terminate_batch_command(batch_command_id, user_id) // Pass i32 directly
         .await
     {
         Ok(child_tasks_to_terminate) => {
@@ -171,7 +186,7 @@ async fn terminate_batch_command(
                     for child_task in child_tasks_to_terminate {
                         if let Err(e) = dispatcher.terminate_command_on_agent(
                             child_task.child_command_id,
-                            &child_task.vps_id,
+                            child_task.vps_id,
                         ).await {
                             eprintln!(
                                 "Failed to dispatch terminate command for child_task_id {}: {:?}",
@@ -210,11 +225,61 @@ async fn terminate_batch_command(
     }
 }
 
-// async fn terminate_child_command(
-//     claims: Claims,
-//     State(app_state): State<Arc<AppState>>, // Use AppState
-//     Path((batch_command_id, child_command_id)): Path<(Uuid, Uuid)>,
-// ) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-//     // TODO: Terminate a specific child task
-//     Err((axum::http::StatusCode::NOT_IMPLEMENTED, "Not yet implemented".to_string()))
-// }
+#[axum::debug_handler]
+async fn terminate_child_command(
+    Extension(authenticated_user): Extension<AuthenticatedUser>,
+    State(app_state): State<Arc<AppState>>,
+    Path((_batch_id, child_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let batch_manager = app_state.batch_command_manager.clone();
+    let dispatcher = app_state.command_dispatcher.clone();
+    let user_id = authenticated_user.id;
+
+    match batch_manager
+        .terminate_single_child_task(child_id, user_id)
+        .await
+    {
+        Ok(child_task_to_terminate) => {
+            // Spawn a task to send the termination signal without blocking the response
+            tokio::spawn(async move {
+                if let Err(e) = dispatcher.terminate_command_on_agent(
+                    child_task_to_terminate.child_command_id,
+                    child_task_to_terminate.vps_id,
+                ).await {
+                    eprintln!(
+                        "Failed to dispatch terminate command for child_task_id {}: {:?}",
+                        child_task_to_terminate.child_command_id, e
+                    );
+                }
+            });
+
+            Ok(Json(serde_json::json!({
+                "message": format!("Child command task {} marked for termination. Termination signal sent to agent.", child_id)
+            })))
+        }
+        Err(service_err) => {
+            eprintln!(
+                "Error terminating child command for ID {}: {:?}",
+                child_id, service_err
+            );
+            match service_err {
+                crate::db::services::batch_command_service::BatchCommandServiceError::Unauthorized => {
+                    Err(AppError::Unauthorized("You are not authorized to terminate this task.".to_string()))
+                }
+                crate::db::services::batch_command_service::BatchCommandServiceError::NotFound(_) => {
+                     Err(AppError::NotFound(format!(
+                        "Child command task with ID {} not found.",
+                        child_id
+                    )))
+                }
+                crate::db::services::batch_command_service::BatchCommandServiceError::TaskNotTerminable => {
+                    Err(AppError::Conflict("Task is already completed or in a non-terminable state.".to_string()))
+                }
+                _ => Err(AppError::InternalServerError(format!(
+                    "Failed to terminate child command: {}",
+                    service_err
+                ))),
+            }
+        }
+    }
+}

@@ -20,7 +20,7 @@ export const getVpsMetricsTimeseries = async (
 try {
   // Backend now returns fields that directly map to PerformanceMetricPoint (all camelCase)
   const response = await apiClient.get<PerformanceMetricPoint[]>(
-    `/api/vps/${vpsId}/metrics/timeseries`,
+    `/vps/${vpsId}/metrics/timeseries`,
     {
       params: {
         start_time: startTime,
@@ -58,7 +58,7 @@ export const getLatestVpsMetrics = async (
 ): Promise<import('../types').LatestPerformanceMetric | null> => {
   try {
     const response = await apiClient.get<import('../types').LatestPerformanceMetric>(
-      `/api/vps/${vpsId}/metrics/latest`
+      `/vps/${vpsId}/metrics/latest`
     );
     return response.data; // The backend returns the metric object directly, or null/404 if not found
   } catch (error: unknown) {
@@ -87,7 +87,7 @@ export const getLatestNMetrics = async (
   try {
     // Backend (RawPerformanceMetricPointDto) now returns fields that directly map to PerformanceMetricPoint (all camelCase)
     const response = await apiClient.get<PerformanceMetricPoint[]>(
-      `/api/vps/${vpsId}/metrics/latest-n`,
+      `/vps/${vpsId}/metrics/latest-n`,
       {
         params: {
           count: count,

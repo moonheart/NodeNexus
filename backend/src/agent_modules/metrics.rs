@@ -274,7 +274,7 @@ pub async fn metrics_collection_loop(
                         }).await {
                             eprintln!("[Agent:{}] Failed to send metrics batch (size trigger): {}", agent_id, e);
                         } else {
-                            println!("[Agent:{}] Sent metrics batch (size trigger). Msg ID: {}. Actual batch size: {}", agent_id, msg_id, batch_len);
+                            // println!("[Agent:{}] Sent metrics batch (size trigger). Msg ID: {}. Actual batch size: {}", agent_id, msg_id, batch_len);
                         }
                     }
                 }
@@ -293,7 +293,7 @@ pub async fn metrics_collection_loop(
                     }).await {
                         eprintln!("[Agent:{}] Failed to send metrics batch (interval trigger): {}", agent_id, e);
                     } else {
-                        println!("[Agent:{}] Sent metrics batch (interval trigger). Msg ID: {}. Actual batch size: {}", agent_id, msg_id, batch_len);
+                        // println!("[Agent:{}] Sent metrics batch (interval trigger). Msg ID: {}. Actual batch size: {}", agent_id, msg_id, batch_len);
                     }
                 }
             }

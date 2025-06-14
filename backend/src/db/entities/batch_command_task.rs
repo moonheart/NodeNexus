@@ -12,7 +12,7 @@ pub struct Model {
     pub status: BatchCommandStatus, // Changed type from String
     pub execution_alias: Option<String>,
     #[sea_orm(indexed)]
-    pub user_id: String, // Assuming user_id is a string, adjust if it's a Uuid or other type
+    pub user_id: i32,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
     pub completed_at: Option<DateTimeUtc>,

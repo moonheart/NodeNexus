@@ -47,6 +47,8 @@ pub enum BatchCommandServiceError {
     NotFound(Uuid),
     #[error("Unauthorized to access this resource")]
     Unauthorized,
+    #[error("Child task is not in an active state and cannot be terminated")]
+    TaskNotTerminable,
 }
 
 #[derive(Clone, Debug)] // Added Debug
@@ -62,7 +64,7 @@ impl BatchCommandManager {
 
     pub async fn create_batch_command(
         &self,
-        user_id: String, // Assuming user_id is String from Claims
+        user_id: i32, // Change to i32
         request: CreateBatchCommandRequest,
     ) -> Result<(batch_command_task::Model, Vec<child_command_task::Model>), BatchCommandServiceError> {
         // Validate request
@@ -143,7 +145,7 @@ impl BatchCommandManager {
     pub async fn get_batch_command_detail_dto(
         &self,
         batch_command_id: Uuid,
-        requesting_user_id: &str, // Changed to &str for direct comparison
+        requesting_user_id: i32, // Change to i32
     ) -> Result<Option<BatchCommandTaskDetailResponse>, BatchCommandServiceError> {
         let batch_task_model = BatchTaskEntity::find_by_id(batch_command_id)
             .one(self.db.as_ref())
@@ -180,7 +182,7 @@ impl BatchCommandManager {
                     batch_command_id: task.batch_command_id,
                     overall_status: task.status.to_string(), // Now Display is implemented
                     execution_alias: task.execution_alias,
-                    user_id: task.user_id, // Already checked for authorization
+                    user_id: task.user_id.to_string(),
                     original_request_payload: task.original_request_payload,
                     tasks: child_task_details,
                     created_at: task.created_at,
@@ -196,7 +198,7 @@ impl BatchCommandManager {
     pub async fn terminate_batch_command(
         &self,
         batch_command_id: Uuid,
-        requesting_user_id: &str,
+        requesting_user_id: i32,
     ) -> Result<Vec<child_command_task::Model>, BatchCommandServiceError> {
         let txn = self.db.begin().await?;
 
@@ -236,29 +238,75 @@ impl BatchCommandManager {
             ChildCommandStatus::Executing,
         ];
 
-        ChildTaskEntity::update_many()
-            .col_expr(child_command_task::Column::Status, sea_orm::sea_query::Expr::value(ChildCommandStatus::Terminating)) // Pass enum directly
-            .col_expr(child_command_task::Column::UpdatedAt, sea_orm::sea_query::Expr::value(Utc::now()))
+        // Step 1: Find all active child tasks that need to be terminated.
+        let child_tasks_to_terminate = ChildTaskEntity::find()
             .filter(child_command_task::Column::BatchCommandId.eq(batch_command_id))
-            .filter(child_command_task::Column::Status.is_in(active_child_statuses.clone()))
-            .exec(&txn)
-            .await?;
-
-        // Fetch the child tasks that were targeted for termination (i.e., were in active_child_statuses)
-        // and are now (or should be) in Terminating status.
-        // It's important to fetch them within the transaction to see the changes.
-        let child_tasks_to_terminate_actively = ChildTaskEntity::find()
-            .filter(child_command_task::Column::BatchCommandId.eq(batch_command_id))
-            .filter(child_command_task::Column::Status.is_in(active_child_statuses)) // These are the ones we *attempted* to update
+            .filter(child_command_task::Column::Status.is_in(active_child_statuses))
             .all(&txn)
             .await?;
-        
-        // After the update_many, their status should be Terminating.
-        // We return these so the caller can attempt to send Terminate RPC calls.
+
+        if !child_tasks_to_terminate.is_empty() {
+            let child_task_ids_to_update: Vec<Uuid> = child_tasks_to_terminate
+                .iter()
+                .map(|t| t.child_command_id)
+                .collect();
+
+            // Step 2: Update their status to Terminating.
+            ChildTaskEntity::update_many()
+                .col_expr(child_command_task::Column::Status, sea_orm::sea_query::Expr::value(ChildCommandStatus::Terminating))
+                .col_expr(child_command_task::Column::UpdatedAt, sea_orm::sea_query::Expr::value(Utc::now()))
+                .filter(child_command_task::Column::ChildCommandId.is_in(child_task_ids_to_update))
+                .exec(&txn)
+                .await?;
+        }
 
         txn.commit().await?;
 
-        Ok(child_tasks_to_terminate_actively)
+        // Step 3: Return the list of tasks we found in Step 1, so the caller can dispatch termination signals.
+        Ok(child_tasks_to_terminate)
+    }
+
+    pub async fn terminate_single_child_task(
+        &self,
+        child_command_id: Uuid,
+        requesting_user_id: i32,
+    ) -> Result<child_command_task::Model, BatchCommandServiceError> {
+        let txn = self.db.begin().await?;
+
+        let child_task = ChildTaskEntity::find_by_id(child_command_id)
+            .one(&txn)
+            .await?
+            .ok_or_else(|| BatchCommandServiceError::NotFound(child_command_id))?;
+
+        let parent_batch_task = child_task.find_related(BatchTaskEntity)
+            .one(&txn)
+            .await?
+            .ok_or_else(|| BatchCommandServiceError::NotFound(child_task.batch_command_id))?;
+
+        if parent_batch_task.user_id != requesting_user_id {
+            return Err(BatchCommandServiceError::Unauthorized);
+        }
+
+        let active_child_statuses = vec![
+            ChildCommandStatus::Pending,
+            ChildCommandStatus::SentToAgent,
+            ChildCommandStatus::AgentAccepted,
+            ChildCommandStatus::Executing,
+        ];
+
+        if !active_child_statuses.contains(&child_task.status) {
+            return Err(BatchCommandServiceError::TaskNotTerminable);
+        }
+
+        let mut active_child_task: child_command_task::ActiveModel = child_task.clone().into();
+        active_child_task.status = Set(ChildCommandStatus::Terminating);
+        active_child_task.updated_at = Set(Utc::now());
+        active_child_task.update(&txn).await?;
+
+        txn.commit().await?;
+
+        // Return the original model, which contains all the info needed by the caller
+        Ok(child_task)
     }
 
     pub async fn update_child_task_status(

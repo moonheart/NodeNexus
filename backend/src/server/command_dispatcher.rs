@@ -61,13 +61,11 @@ impl CommandDispatcher {
     pub async fn dispatch_command_to_agent(
         &self,
         child_task_id: Uuid,
-        vps_id_str: &str, // Renamed to avoid confusion
+        vps_id: i32, // Renamed to avoid confusion
         command_content: &str,
         command_type: GrpcCommandType,
         working_directory: Option<String>,
     ) -> Result<(), DispatcherError> {
-        let vps_id = vps_id_str.parse::<i32>().map_err(|_| DispatcherError::InvalidVpsId(vps_id_str.to_string()))?;
-
         let agent_sender = { // Scope to release the lock quickly
             let agents_guard = self.connected_agents.lock().await;
             agents_guard.find_by_vps_id(vps_id).map(|state| state.sender)
@@ -106,7 +104,7 @@ let message_to_agent = MessageToAgent {
                     return Err(DispatcherError::MpscSendError(e.to_string()));
                 }
                 
-                println!("Successfully dispatched command for child_task_id {} to VPS ID {}", child_task_id, vps_id_str);
+                println!("Successfully dispatched command for child_task_id {} to VPS ID {}", child_task_id, vps_id);
                 // TODO: Spawn a task to handle the response stream (AgentToServerMessage)
                 // This task would listen on a channel associated with this agent's communication stream
                 // and process BatchCommandOutputStream and BatchCommandResult messages.
@@ -119,7 +117,7 @@ let message_to_agent = MessageToAgent {
                     None,
                     Some("Agent not connected or found.".to_string()),
                 ).await.map_err(|e| DispatcherError::DbUpdateError(e.to_string()))?;
-                return Err(DispatcherError::AgentNotFound(vps_id_str.to_string()));
+                return Err(DispatcherError::AgentNotFound(vps_id.to_string()));
             }
         }
         Ok(())
@@ -128,10 +126,8 @@ let message_to_agent = MessageToAgent {
     pub async fn terminate_command_on_agent(
         &self,
         child_task_id: Uuid,
-        vps_id_str: &str,
+        vps_id: i32,
     ) -> Result<(), DispatcherError> {
-        let vps_id = vps_id_str.parse::<i32>().map_err(|_| DispatcherError::InvalidVpsId(vps_id_str.to_string()))?;
-
         let agent_sender = {
             let agents_guard = self.connected_agents.lock().await;
             agents_guard.find_by_vps_id(vps_id).map(|state| state.sender)
@@ -154,14 +150,14 @@ let message_to_agent = MessageToAgent {
                     // The primary responsibility here is to attempt sending the termination signal.
                     eprintln!(
                         "Failed to send terminate command for child_task_id {} to VPS ID {} via mpsc: {}",
-                        child_task_id, vps_id_str, e
+                        child_task_id, vps_id, e
                     );
                     // We might not want to return an error that stops processing other terminations.
                     // The status in DB is already 'Terminating'.
                     // Consider if this should return an error or just log. For now, let's log and continue.
                     // return Err(DispatcherError::MpscSendError(e.to_string()));
                 } else {
-                    println!("Successfully dispatched terminate command for child_task_id {} to VPS ID {}", child_task_id, vps_id_str);
+                    println!("Successfully dispatched terminate command for child_task_id {} to VPS ID {}", child_task_id, vps_id);
                 }
             }
             None => {
@@ -169,7 +165,7 @@ let message_to_agent = MessageToAgent {
                 // Log this, but it's not necessarily an error for the dispatcher's attempt.
                 println!(
                     "Agent not found for VPS ID {} when trying to send terminate for child_task_id {}. Task already marked Terminating.",
-                    vps_id_str, child_task_id
+                    vps_id, child_task_id
                 );
                 // return Err(DispatcherError::AgentNotFound(vps_id_str.to_string()));
             }

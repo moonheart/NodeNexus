@@ -10,7 +10,7 @@ pub struct Model {
     #[sea_orm(indexed)]
     pub batch_command_id: Uuid,
     #[sea_orm(indexed)]
-    pub vps_id: String, // Assuming vps_id is a string, adjust if it's a Uuid or other type
+    pub vps_id: i32,
     #[sea_orm(indexed)]
     pub status: ChildCommandStatus, // Changed type from String
     pub exit_code: Option<i32>,
