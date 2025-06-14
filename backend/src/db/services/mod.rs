@@ -20,6 +20,7 @@ pub mod vps_traffic_service; // Added vps_traffic_service module
 pub mod vps_service; // This now re-exports from the above vps_* modules
 pub mod alert_service; // Added alert_service module
 pub mod batch_command_service;
+pub mod command_script_service;
 pub mod service_monitor_service;
 
 // Re-export all public functions and structs from the sub-modules
@@ -31,4 +32,5 @@ pub use user_service::*;
 pub use vps_service::*;
 pub use alert_service::*; // Re-export alert_service
 pub use batch_command_service::*;
+pub use command_script_service::*;
 pub use service_monitor_service::*;

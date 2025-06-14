@@ -34,6 +34,7 @@ pub mod alert_routes; // Added alert_routes module
 pub mod batch_command_routes;
 pub mod ws_batch_command_handler; // Added WebSocket handler for batch commands
 pub mod service_monitor_routes;
+pub mod command_script_routes;
  
  // Application state to share PgPool
 #[derive(Clone)]
@@ -212,6 +213,10 @@ pub async fn run_http_server(
         .nest(
             "/api/monitors",
             service_monitor_routes::create_service_monitor_router().route_layer(middleware::from_fn(auth_logic::auth)),
+        )
+        .nest(
+            "/api/command-scripts",
+            command_script_routes::command_script_routes().route_layer(middleware::from_fn(auth_logic::auth)),
         )
         .route("/ws/batch-command/{batch_command_id}", get(ws_batch_command_handler::batch_command_ws_handler)) // Corrected WebSocket route for batch command updates
         .with_state(app_state.clone())

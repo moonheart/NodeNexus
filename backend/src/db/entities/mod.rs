@@ -24,6 +24,7 @@ pub mod alert_rule_channel;
 pub mod vps_renewal_info;
 pub mod batch_command_task;
 pub mod child_command_task;
+pub mod command_script;
 pub mod service_monitor;
 pub mod service_monitor_agent;
 pub mod service_monitor_tag;
@@ -131,6 +132,11 @@ pub mod prelude {
     pub use super::child_command_task::Model as ChildCommandTaskModel;
     pub use super::child_command_task::ActiveModel as ChildCommandTaskActiveModel;
     pub use super::child_command_task::Column as ChildCommandTaskColumn;
+
+    pub use super::command_script::Entity as CommandScript;
+    pub use super::command_script::Model as CommandScriptModel;
+    pub use super::command_script::ActiveModel as CommandScriptActiveModel;
+    pub use super::command_script::Column as CommandScriptColumn;
 
     pub use super::service_monitor::Entity as ServiceMonitor;
     pub use super::service_monitor::Model as ServiceMonitorModel;

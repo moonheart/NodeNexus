@@ -418,8 +418,46 @@ export interface ServiceMonitorResult {
   isUp: boolean;
   latencyMs: number | null;
   details?: {
-    status_code?: number;
-    error?: string;
-    message?: string;
+      status_code?: number;
+      error?: string;
+      message?: string;
   };
+}
+
+// --- Batch Command & Scripting Types ---
+
+export interface ChildCommandTaskDetail {
+  child_command_id: string;
+  vps_id: number;
+  status: string;
+  exit_code: number | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  agent_started_at: string | null;
+  agent_completed_at: string | null;
+  last_output_at: string | null;
+}
+
+export interface BatchCommandTaskDetailResponse {
+  batch_command_id: string;
+  overall_status: string;
+  execution_alias: string | null;
+  user_id: string;
+  original_request_payload: Record<string, unknown>;
+  tasks: ChildCommandTaskDetail[];
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+export interface CommandScript {
+  id: number;
+  user_id: number;
+  name: string;
+  description: string | null;
+  script_content: string;
+  working_directory: string;
+  created_at: string;
+  updated_at: string;
 }
