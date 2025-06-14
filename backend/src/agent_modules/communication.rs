@@ -18,10 +18,10 @@ use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use uuid::Uuid;
 use chrono::Utc; // For timestamps
+use tracing::{info, error, warn, debug};
 
 // Import the refactored helper functions
 use crate::agent_modules::agent_command_service_impl::{handle_batch_agent_command, handle_batch_terminate_command};
-
 
 pub async fn heartbeat_loop(
     tx_to_server: mpsc::Sender<MessageToServer>,
@@ -38,7 +38,7 @@ pub async fn heartbeat_loop(
             if seconds > 0 { seconds } else { 30 }
         };
 
-        println!("[Agent:{}] Heartbeat task tick. Next heartbeat in {}s", agent_id, interval_duration);
+        debug!(interval_seconds = interval_duration, "Heartbeat task tick.");
         tokio::time::sleep(Duration::from_secs(interval_duration as u64)).await;
 
         let heartbeat_payload = Heartbeat {
@@ -51,7 +51,7 @@ pub async fn heartbeat_loop(
             vps_db_id,
             agent_secret: agent_secret.clone(),
         }).await {
-            eprintln!("[Agent:{}] Failed to send heartbeat: {}. Exiting heartbeat task.", agent_id, e);
+            error!(error = %e, "Failed to send heartbeat. Exiting heartbeat task.");
             break;
         }
     }
@@ -68,17 +68,18 @@ pub async fn server_message_handler_loop(
     config_path: String,
     command_tracker: Arc<RunningCommandsTracker>,
 ) {
-    println!("[Agent:{}] Listening for messages from server...", agent_id);
+    info!("Listening for messages from server...");
     
     while let Some(message_result) = in_stream.next().await {
         match message_result {
             Ok(message_to_agent) => {
-                let server_msg_id_clone = message_to_agent.server_message_id.clone(); 
+                let server_msg_id_clone = message_to_agent.server_message_id.clone();
+                let server_msg_id = message_to_agent.server_message_id;
 
                 if let Some(payload) = message_to_agent.payload {
                     match payload {
                         AgentPayload::UpdateConfigRequest(update_req) => {
-                            println!("[Agent:{}] Received new AgentConfig from server.", agent_id);
+                            info!(config_version_id = %update_req.config_version_id, "Received new AgentConfig from server.");
                             let mut success = false;
                             let mut error_message = String::new();
 
@@ -88,16 +89,16 @@ pub async fn server_message_handler_loop(
                                         let mut config_w = shared_agent_config.write().unwrap();
                                         *config_w = new_config;
                                         success = true;
-                                        println!("[Agent:{}] Successfully updated and saved new config.", agent_id);
+                                        info!("Successfully updated and saved new config.");
                                     }
                                     Err(e) => {
                                         error_message = format!("Failed to save config file: {}", e);
-                                        eprintln!("[Agent:{}] {}", agent_id, error_message);
+                                        error!(error = %error_message);
                                     }
                                 }
                             } else {
                                 error_message = "Received UpdateConfigRequest with no config payload.".to_string();
-                                eprintln!("[Agent:{}] {}", agent_id, error_message);
+                                error!(error = %error_message);
                             }
 
                             let response = crate::agent_service::UpdateConfigResponse {
@@ -113,12 +114,12 @@ pub async fn server_message_handler_loop(
                                 vps_db_id,
                                 agent_secret: agent_secret.clone(),
                             }).await {
-                                eprintln!("[Agent:{}] Failed to send config update response: {}", agent_id, e);
+                                error!(error = %e, "Failed to send config update response.");
                             }
                         }
-                        AgentPayload::CommandRequest(cmd_req) => { 
-                            println!("[Agent:{}] Received general CommandRequest: {:?}. This is not currently handled for batch processing.", agent_id, cmd_req);
-                             let error_result = crate::agent_service::CommandResponse { 
+                        AgentPayload::CommandRequest(cmd_req) => {
+                            warn!(request = ?cmd_req, "Received general CommandRequest. This is not currently handled for batch processing.");
+                             let error_result = crate::agent_service::CommandResponse {
                                 request_id: cmd_req.request_id.clone(),
                                 success: false,
                                 error_message: "General CommandRequest not implemented in batch context".to_string(),
@@ -131,11 +132,11 @@ pub async fn server_message_handler_loop(
                                 vps_db_id,
                                 agent_secret: agent_secret.clone(),
                             }).await.is_err() {
-                                eprintln!("[Agent:{}] Failed to send error response for unhandled CommandRequest", agent_id);
+                                error!("Failed to send error response for unhandled CommandRequest");
                             }
                         }
                         AgentPayload::BatchAgentCommandRequest(batch_cmd_req) => {
-                            println!("[Agent:{}] Received BatchAgentCommandRequest for command_id: {}", agent_id, batch_cmd_req.command_id);
+                            info!(command_id = %batch_cmd_req.command_id, "Received BatchAgentCommandRequest.");
                             let tx_clone = tx_to_server.clone();
                             let tracker_clone = command_tracker.clone();
                             let agent_id_clone = agent_id.clone();
@@ -148,16 +149,16 @@ pub async fn server_message_handler_loop(
                                     batch_cmd_req,
                                     tx_clone,
                                     tracker_clone,
-                                    server_msg_id_clone, 
+                                    server_msg_id_clone,
                                     agent_id_clone,
                                     vps_db_id_clone,
                                     agent_secret_clone,
-                                    id_provider_clone, 
+                                    id_provider_clone,
                                 ).await;
                             });
                         }
                         AgentPayload::BatchTerminateCommandRequest(batch_term_req) => {
-                            println!("[Agent:{}] Received BatchTerminateCommandRequest for command_id: {}", agent_id, batch_term_req.command_id);
+                            info!(command_id = %batch_term_req.command_id, "Received BatchTerminateCommandRequest.");
                             let tx_clone = tx_to_server.clone();
                             let tracker_clone = command_tracker.clone();
                             let agent_id_clone = agent_id.clone();
@@ -179,20 +180,20 @@ pub async fn server_message_handler_loop(
                             });
                         }
                         _ => {
-                             println!("[Agent:{}] Received unhandled payload type from server: {:?}", agent_id, payload);
+                             warn!(?payload, "Received unhandled payload type from server.");
                         }
                     }
                 } else {
-                    eprintln!("[Agent:{}] Received message from server with no payload. ServerMsgID: {}", agent_id, message_to_agent.server_message_id);
+                    warn!(server_msg_id = server_msg_id, "Received message from server with no payload.");
                 }
             }
             Err(status) => {
-                eprintln!("[Agent:{}] Error receiving message from server: {}. Stream broken.", agent_id, status);
-                break; 
+                error!(?status, "Error receiving message from server. Stream broken.");
+                break;
             }
         }
     }
-    println!("[Agent:{}] Server message stream ended.", agent_id);
+    info!("Server message stream ended.");
 }
 
 pub struct ConnectionHandler {
@@ -208,23 +209,23 @@ impl ConnectionHandler {
         agent_cli_config: &AgentCliConfig,
         initial_message_id_counter_val: u64,
     ) -> Result<Self, Box<dyn Error>> {
-        println!("[Agent] Attempting to connect to server: {}", agent_cli_config.server_address);
+        info!("Attempting to connect to server");
         
         let mut client = AgentCommunicationServiceClient::connect(agent_cli_config.server_address.clone()).await
             .map_err(|e| {
-                eprintln!("[Agent] Failed to connect to gRPC endpoint: {}", e);
+                error!(error = %e, "Failed to connect to gRPC endpoint.");
                 e
             })?;
-        println!("[Agent] Successfully connected to gRPC endpoint.");
+        info!("Successfully connected to gRPC endpoint.");
 
         let (tx_to_server, rx_for_stream) = mpsc::channel(128);
         let stream_response = client.establish_communication_stream(ReceiverStream::new(rx_for_stream)).await
             .map_err(|e| {
-                eprintln!("[Agent] Failed to establish communication stream: {}", e);
+                error!(error = %e, "Failed to establish communication stream.");
                 e
             })?;
         let mut in_stream = stream_response.into_inner();
-        println!("[Agent] Communication stream established.");
+        info!("Communication stream established.");
 
         let os_type_proto = if cfg!(target_os = "linux") { OsType::Linux }
                           else if cfg!(target_os = "macos") { OsType::Macos }
@@ -274,7 +275,7 @@ impl ConnectionHandler {
             vps_db_id: agent_cli_config.vps_id,
             agent_secret: agent_cli_config.agent_secret.clone(),
         }).await.map_err(|e| {
-            eprintln!("[Agent] Failed to send handshake message: {}", e);
+            error!(error = %e, "Failed to send handshake message.");
             Box::new(e) as Box<dyn Error>
         })?;
         
@@ -282,7 +283,7 @@ impl ConnectionHandler {
             Some(Ok(response_msg)) => {
                 if let Some(AgentPayload::ServerHandshakeAck(ack)) = response_msg.payload {
                     if ack.authentication_successful {
-                        println!("[Agent:{}] Authenticated successfully. Server assigned Agent ID.", ack.assigned_agent_id);
+                        info!(agent_id = %ack.assigned_agent_id, "Authenticated successfully. Server assigned Agent ID.");
                         Ok(Self {
                             in_stream,
                             tx_to_server,
@@ -292,20 +293,20 @@ impl ConnectionHandler {
                         })
                     } else {
                         let err_msg = format!("Authentication failed: {}. This is a critical error. Agent will not retry automatically for auth failures.", ack.error_message);
-                        eprintln!("[Agent] {}", err_msg);
+                        error!(error_message = %err_msg, "Handshake authentication failed.");
                         Err(Box::new(std::io::Error::new(std::io::ErrorKind::PermissionDenied, ack.error_message)) as Box<dyn Error>)
                     }
                 } else {
-                    eprintln!("[Agent] Unexpected first message from server (not HandshakeAck).");
+                    error!("Unexpected first message from server (not HandshakeAck).");
                     Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Unexpected first message from server")) as Box<dyn Error>)
                 }
             }
             Some(Err(status)) => {
-                eprintln!("[Agent] Error receiving handshake response: {}", status);
+                error!(?status, "Error receiving handshake response.");
                 Err(Box::new(status) as Box<dyn Error>)
             }
             None => {
-                eprintln!("[Agent] Server closed stream during handshake.");
+                error!("Server closed stream during handshake.");
                 Err(Box::new(std::io::Error::new(std::io::ErrorKind::ConnectionAborted, "Server closed stream during handshake")) as Box<dyn Error>)
             }
         }

@@ -22,8 +22,40 @@ use tokio::sync::{broadcast, Mutex}; // Added Mutex for LiveServerDataCache and 
 use tokio::time::{interval, Duration}; // For the periodic push task
 use chrono::Utc;
 use tokio::sync::mpsc;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, fmt};
+use tracing_appender::rolling;
+use tracing::{info, error, warn, debug};
+
+fn init_logging() {
+    // Log to a file: JSON format, daily rotation
+    let file_appender = rolling::daily("logs", "server.log");
+    let file_layer = fmt::layer()
+        .with_writer(file_appender)
+        .with_ansi(false) // No ANSI colors in file
+        .json(); // Log as JSON
+
+    // Log to stdout: human-readable format
+    let stdout_layer = fmt::layer()
+        .with_writer(std::io::stdout);
+
+    // Combine layers and filter based on RUST_LOG
+    // Default to `info,sea_orm=warn` level if RUST_LOG is not set.
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info,sea_orm=warn,sqlx::query=warn"));
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(file_layer)
+        .with(stdout_layer)
+        .init();
+    
+    // This allows libraries using the `log` crate to work with `tracing`
+    // tracing_log::LogTracer::init().expect("Failed to set logger");
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Added Send + Sync for tokio::spawn
+    init_logging(); // Initialize logging first
     dotenv().ok(); // Load .env file
 
     // --- Debounce Update Trigger Channel ---
@@ -56,11 +88,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     let initial_cache_data_result = db_services::get_all_vps_with_details_for_cache(&db_pool).await;
     let initial_cache_map: HashMap<i32, ServerWithDetails> = match initial_cache_data_result {
         Ok(servers) => {
-            println!("Successfully fetched {} servers for initial cache.", servers.len());
+            info!(server_count = servers.len(), "Successfully fetched servers for initial cache.");
             servers.into_iter().map(|s| (s.basic_info.id, s)).collect()
         }
         Err(e) => {
-            eprintln!("Failed to fetch initial server data for cache: {}. Initializing with empty cache.", e);
+            error!(error = %e, "Failed to fetch initial server data for cache. Initializing with empty cache.");
             HashMap::new()
         }
     };
@@ -92,7 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         .add_service(grpc_service)
         .serve(grpc_addr);
 
-    println!("gRPC AgentCommunicationService listening on {}", grpc_addr);
+    info!(address = %grpc_addr, "gRPC AgentCommunicationService listening");
     
     // --- Agent Heartbeat Check Task ---
     let connected_agents_for_check = connected_agents.clone();
@@ -101,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
 
     tokio::spawn(async move {
         let mut interval = interval(Duration::from_secs(60)); // Check every 60 seconds
-        println!("Agent heartbeat check task started.");
+        info!("Agent heartbeat check task started.");
 
         loop {
             interval.tick().await;
@@ -112,7 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
             agents_guard.agents.retain(|_agent_id, state| {
                 let is_alive = (Utc::now().timestamp_millis() - state.last_heartbeat_ms) < 90_000; // 90-second threshold
                 if !is_alive {
-                    println!("Agent for VPS ID {} is considered disconnected.", state.vps_db_id);
+                    warn!(vps_id = state.vps_db_id, "Agent is considered disconnected due to heartbeat timeout.");
                     disconnected_vps_ids.push(state.vps_db_id);
                 }
                 is_alive
@@ -121,7 +153,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
             drop(agents_guard); // Release the lock before async operations
 
             if !disconnected_vps_ids.is_empty() {
-                println!("Found {} disconnected agents. Updating status to 'offline'.", disconnected_vps_ids.len());
+                warn!(count = disconnected_vps_ids.len(), "Found disconnected agents. Updating status to 'offline'.");
                 let mut needs_broadcast = false;
                 for vps_id in disconnected_vps_ids {
                     match db_services::update_vps_status(&*pool_for_check, vps_id, "offline").await { // Dereference Arc
@@ -130,15 +162,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
                         }
                         Ok(_) => {} // No rows affected, maybe already offline
                         Err(e) => {
-                            eprintln!("Failed to update status to 'offline' for VPS ID {}: {}", vps_id, e);
+                            error!(vps_id = vps_id, error = %e, "Failed to update status to 'offline'.");
                         }
                     }
                 }
 
                 if needs_broadcast {
-                    println!("Triggering broadcast after updating offline status.");
+                    info!("Triggering broadcast after updating offline status.");
                     if trigger_for_check.send(()).await.is_err() {
-                        eprintln!("Failed to send update trigger from heartbeat check task.");
+                        error!("Failed to send update trigger from heartbeat check task.");
                     }
                 }
             }
@@ -187,7 +219,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
             }
 
             // Now that the stream of updates has settled, perform the actual broadcast.
-            // println!("Debounce window finished. Triggering broadcast.");
+            debug!("Debounce window finished. Triggering broadcast.");
             update_service::broadcast_full_state_update(
                 &pool_for_debounce,
                 &cache_for_debounce,
@@ -214,43 +246,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     let traffic_reset_task = tokio::spawn(async move {
         // Check every 5 minutes, for example. This can be configurable.
         let mut interval = interval(Duration::from_secs(5 * 60));
-        println!("Traffic reset check task started. Interval: 5 minutes.");
+        info!("Traffic reset check task started. Interval: 5 minutes.");
 
         loop {
             interval.tick().await;
-            println!("Performing scheduled VPS traffic reset check...");
+            info!("Performing scheduled VPS traffic reset check...");
             match db_services::get_vps_due_for_traffic_reset(&pool_for_traffic_reset).await {
                 Ok(vps_ids) => {
                     if vps_ids.is_empty() {
-                        // println!("No VPS due for traffic reset at this time.");
+                        debug!("No VPS due for traffic reset at this time.");
                         continue;
                     }
-                    println!("Found {} VPS(s) due for traffic reset: {:?}", vps_ids.len(), vps_ids);
+                    info!(count = vps_ids.len(), vps_ids = ?vps_ids, "Found VPS(s) due for traffic reset.");
                     let mut reset_performed_for_any_vps = false;
                     for vps_id in vps_ids {
                         match db_services::process_vps_traffic_reset(&pool_for_traffic_reset, vps_id).await {
                             Ok(reset_performed) => {
                                 if reset_performed {
-                                    println!("Traffic reset successfully processed for VPS ID: {}", vps_id);
+                                    info!(vps_id = vps_id, "Traffic reset successfully processed.");
                                     reset_performed_for_any_vps = true;
                                 } else {
-                                    // println!("Traffic reset not performed for VPS ID: {} (either not due or already handled).", vps_id);
+                                    debug!(vps_id = vps_id, "Traffic reset not performed (either not due or already handled).");
                                 }
                             }
                             Err(e) => {
-                                eprintln!("Error processing traffic reset for VPS ID {}: {}", vps_id, e);
+                                error!(vps_id = vps_id, error = %e, "Error processing traffic reset.");
                             }
                         }
                     }
                     if reset_performed_for_any_vps {
-                        println!("Traffic reset performed for one or more VPS. Triggering state update broadcast.");
+                        info!("Traffic reset performed for one or more VPS. Triggering state update broadcast.");
                         if trigger_for_traffic_reset.send(()).await.is_err() {
-                            eprintln!("Failed to send update trigger from traffic reset task.");
+                            error!("Failed to send update trigger from traffic reset task.");
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("Error fetching VPS due for traffic reset: {}", e);
+                    error!(error = %e, "Error fetching VPS due for traffic reset.");
                 }
             }
         }
@@ -264,27 +296,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
 
     tokio::spawn(async move {
         let mut interval = interval(Duration::from_secs(RENEWAL_REMINDER_CHECK_INTERVAL_SECONDS));
-        println!(
-            "Renewal reminder check task started. Interval: {} seconds, Threshold: {} days.",
-            RENEWAL_REMINDER_CHECK_INTERVAL_SECONDS, REMINDER_THRESHOLD_DAYS
+        info!(
+            interval_seconds = RENEWAL_REMINDER_CHECK_INTERVAL_SECONDS,
+            threshold_days = REMINDER_THRESHOLD_DAYS,
+            "Renewal reminder check task started."
         );
 
         loop {
             interval.tick().await;
-            println!("Performing scheduled renewal reminder check...");
+            info!("Performing scheduled renewal reminder check...");
             match db_services::check_and_generate_reminders(&pool_for_renewal_reminder, REMINDER_THRESHOLD_DAYS).await {
                 Ok(reminders_generated) => {
                     if reminders_generated > 0 {
-                        println!("{} renewal reminders were generated/updated. Triggering state update.", reminders_generated);
+                        info!(count = reminders_generated, "Renewal reminders were generated/updated. Triggering state update.");
                         if trigger_for_renewal_reminder.send(()).await.is_err() {
-                            eprintln!("Failed to send update trigger from renewal reminder task.");
+                            error!("Failed to send update trigger from renewal reminder task.");
                         }
                     } else {
-                        // println!("No new renewal reminders generated at this time.");
+                        debug!("No new renewal reminders generated at this time.");
                     }
                 }
                 Err(e) => {
-                    eprintln!("Error checking/generating renewal reminders: {}", e);
+                    error!(error = %e, "Error checking/generating renewal reminders.");
                 }
             }
         }
@@ -297,27 +330,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
 
     tokio::spawn(async move {
         let mut interval = interval(Duration::from_secs(AUTO_RENEWAL_CHECK_INTERVAL_SECONDS));
-        println!(
-            "Automatic renewal processing task started. Interval: {} seconds.",
-            AUTO_RENEWAL_CHECK_INTERVAL_SECONDS
+        info!(
+            interval_seconds = AUTO_RENEWAL_CHECK_INTERVAL_SECONDS,
+            "Automatic renewal processing task started."
         );
 
         loop {
             interval.tick().await;
-            println!("Performing scheduled automatic renewal processing...");
+            info!("Performing scheduled automatic renewal processing...");
             match db_services::process_all_automatic_renewals(&pool_for_auto_renewal).await {
                 Ok(renewed_count) => {
                     if renewed_count > 0 {
-                        println!("{} VPS were automatically renewed. Triggering state update.", renewed_count);
+                        info!(count = renewed_count, "VPS were automatically renewed. Triggering state update.");
                         if trigger_for_auto_renewal.send(()).await.is_err() {
-                            eprintln!("Failed to send update trigger from automatic renewal task.");
+                            error!("Failed to send update trigger from automatic renewal task.");
                         }
                     } else {
-                        // println!("No VPS were automatically renewed at this time.");
+                        debug!("No VPS were automatically renewed at this time.");
                     }
                 }
                 Err(e) => {
-                    eprintln!("Error processing automatic renewals: {}", e);
+                    error!(error = %e, "Error processing automatic renewals.");
                 }
             }
         }
@@ -332,10 +365,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     let (grpc_res, http_res) = tokio::try_join!(grpc_handle, http_handle)?;
 
     if let Err(e) = grpc_res {
-        eprintln!("gRPC server error: {}", e);
+        error!(error = %e, "gRPC server exited with an error.");
     }
     if let Err(e) = http_res {
-        eprintln!("HTTP server error: {}", e);
+        error!(error = %e, "HTTP server exited with an error.");
     }
 
     // The debouncer_task will be aborted when main exits. For a graceful shutdown,

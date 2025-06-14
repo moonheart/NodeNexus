@@ -9,6 +9,7 @@ use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
+use tracing::{info, error, warn, debug};
 
 use crate::http_server::AppState;
 
@@ -38,10 +39,7 @@ async fn handle_batch_socket(
     batch_command_id: Uuid,
 ) {
     let mut rx = app_state.result_broadcaster.subscribe();
-    println!(
-        "[WS Batch] New client connected for batch_command_id: {}",
-        batch_command_id
-    );
+    info!("New client connected.");
 
     loop {
         tokio::select! {
@@ -54,41 +52,41 @@ async fn handle_batch_socket(
                         // If it matches, send the message to the WebSocket client
                         if socket.send(Message::Text(Utf8Bytes::from(msg.clone()))).await.is_err() {
                             // Client disconnected or error sending
-                            println!("[WS Batch] Client for {} disconnected or error sending message.", batch_command_id);
+                            warn!("Client disconnected or error sending message.");
                             break;
                         }
                     }
                     // If the ID does not match, we simply do nothing, effectively filtering the message out.
                 } else {
                     // This could happen if a message is broadcast that doesn't fit the expected structure.
-                    println!("[WS Batch] Failed to parse broadcast message: {}", msg);
+                    warn!(message = %msg, "Failed to parse broadcast message.");
                 }
             }
             // Receive message from WebSocket client (optional, for ping/pong or client commands)
             Some(Ok(msg)) = socket.next() => {
                 match msg {
                     Message::Text(t) => {
-                        println!("[WS Batch] Received text from client: {:?}", t);
+                        debug!(message = ?t, "Received text from client.");
                         // Here you could handle client messages, e.g., specific subscriptions if needed
                     }
                     Message::Binary(b) => {
-                        println!("[WS Batch] Received binary from client: {:?}", b);
+                        debug!(bytes_len = b.len(), "Received binary from client.");
                     }
                     Message::Ping(p) => {
-                        println!("[WS Batch] Received ping from client: {:?}", p);
+                        debug!("Received ping from client.");
                         if socket.send(Message::Pong(p)).await.is_err() {
-                            println!("[WS Batch] Error sending pong to client.");
+                            warn!("Error sending pong to client.");
                             break;
                         }
                     }
-                    Message::Pong(p) => {
-                        println!("[WS Batch] Received pong from client: {:?}", p);
+                    Message::Pong(_) => {
+                        debug!("Received pong from client.");
                     }
                     Message::Close(c) => {
                         if let Some(cf) = c {
-                            println!("[WS Batch] Client closed connection: code={}, reason={}", cf.code, cf.reason);
+                            info!(code = cf.code, reason = %cf.reason, "Client closed connection.");
                         } else {
-                            println!("[WS Batch] Client closed connection without close frame.");
+                            info!("Client closed connection without close frame.");
                         }
                         break;
                     }
@@ -96,10 +94,10 @@ async fn handle_batch_socket(
             }
             else => {
                 // All other arms are closed, client disconnected or error
-                println!("[WS Batch] Client disconnected or channel closed for {}.", batch_command_id);
+                info!("Client disconnected or channel closed.");
                 break;
             }
         }
     }
-    println!("[WS Batch] Connection handler for {} finished.", batch_command_id);
+    info!("Connection handler finished.");
 }

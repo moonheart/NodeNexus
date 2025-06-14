@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use rand::random;
+use tracing::{info, error, warn, debug};
 
 use crate::agent_service::{
     message_to_server::Payload as ServerPayload, AgentConfig, MessageToServer,
@@ -56,7 +57,7 @@ impl ServiceMonitorManager {
             // 1. Stop tasks that are no longer in the desired configuration
             for monitor_id in running_ids.difference(&desired_ids) {
                 if let Some((handle, _)) = self.running_tasks.remove(monitor_id) {
-                    println!("[ServiceMonitor] Stopping task for monitor #{}", monitor_id);
+                    info!(monitor_id = monitor_id, "Stopping task for monitor.");
                     handle.abort();
                 }
             }
@@ -73,7 +74,7 @@ impl ServiceMonitorManager {
                        existing_task.timeout_seconds != desired_task.timeout_seconds ||
                        existing_task.monitor_config_json != desired_task.monitor_config_json {
                         
-                        println!("[ServiceMonitor] Updating task for monitor #{}", monitor_id);
+                        info!(monitor_id = monitor_id, "Updating task for monitor.");
                         existing_handle.abort(); // Stop the old task
 
                         // Spawn the new task with updated config
@@ -89,7 +90,7 @@ impl ServiceMonitorManager {
                     }
                 } else {
                     // Task is new, start it.
-                    println!("[ServiceMonitor] Starting new task for monitor #{}", monitor_id);
+                    info!(monitor_id = monitor_id, "Starting new task for monitor.");
                     let (new_handle, _) = spawn_checker_task(
                         desired_task.clone(),
                         tx_to_server.clone(),
@@ -117,7 +118,7 @@ where
 {
     let monitor_id = task.monitor_id;
     let handle = tokio::spawn(async move {
-        println!("[ServiceMonitor] Started task for monitor #{}", monitor_id);
+        info!("Started checker task.");
         let id_provider_clone = id_provider.clone();
         match task.monitor_type.as_str() {
             "http" | "https" => {
@@ -130,19 +131,15 @@ where
                 run_tcp_check(task, tx_to_server, vps_db_id, agent_secret, id_provider_clone).await
             }
             _ => {
-                eprintln!(
-                    "[ServiceMonitor] Unknown monitor type '{}' for monitor #{}. Task will not run.",
-                    task.monitor_type, monitor_id
-                );
+                error!("Unknown monitor type. Task will not run.");
             }
         }
-        println!("[ServiceMonitor] Task for monitor #{} finished.", monitor_id);
+        info!("Checker task finished.");
     });
     (handle, monitor_id)
 }
 
 // --- Placeholder Implementations for Checkers ---
-
 async fn run_http_check<F>(
     task: ServiceMonitorTask,
     tx: mpsc::Sender<MessageToServer>,
@@ -195,10 +192,7 @@ async fn run_http_check<F>(
         };
 
         if let Err(e) = tx.send(msg).await {
-            eprintln!(
-                "[HTTP Check #{}] Failed to send result to server: {}. Terminating task.",
-                task.monitor_id, e
-            );
+            error!(error = %e, "Failed to send result to server. Terminating task.");
             break;
         }
 
@@ -227,18 +221,12 @@ async fn run_ping_check<F: Fn() -> u64 + Send + Sync + 'static>(
             if let Some(addr) = addrs.next() {
                 addr.ip()
             } else {
-                eprintln!(
-                    "[Ping Check #{}] DNS resolution for '{}' returned no addresses. Terminating task.",
-                    task.monitor_id, task.target
-                );
+                error!("DNS resolution returned no addresses. Terminating task.");
                 return;
             }
         },
         _ => {
-            eprintln!(
-                "[Ping Check #{}] Failed to resolve target host: '{}'. Terminating task.",
-                task.monitor_id, task.target
-            );
+            error!("Failed to resolve target host. Terminating task.");
             return;
         }
     };
@@ -272,10 +260,7 @@ async fn run_ping_check<F: Fn() -> u64 + Send + Sync + 'static>(
         };
 
         if let Err(e) = tx.send(msg).await {
-            eprintln!(
-                "[Ping Check #{}] Failed to send result to server: {}. Terminating task.",
-                task.monitor_id, e
-            );
+            error!(error = %e, "Failed to send result to server. Terminating task.");
             break;
         }
 
@@ -322,10 +307,7 @@ async fn run_tcp_check<F: Fn() -> u64 + Send + Sync + 'static>(
         };
 
         if let Err(e) = tx.send(msg).await {
-            eprintln!(
-                "[TCP Check #{}] Failed to send result to server: {}. Terminating task.",
-                task.monitor_id, e
-            );
+            error!(error = %e, "Failed to send result to server. Terminating task.");
             break;
         }
 

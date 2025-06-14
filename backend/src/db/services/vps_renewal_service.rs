@@ -3,6 +3,7 @@ use sea_orm::{
     prelude::Expr, ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel, NotSet, QueryFilter, Set, TransactionTrait // Removed ActiveValue
 };
 use crate::db::entities::vps_renewal_info; // Changed
+use tracing::{info, error, warn, debug};
 
 // --- Vps Renewal Service Functions ---
 
@@ -219,9 +220,9 @@ pub async fn process_all_automatic_renewals(
 
     for candidate_model in candidates_to_renew {
         if candidate_model.renewal_cycle.is_none() {
-            eprintln!(
-                "Skipping auto-renewal for VPS ID {}: renewal_cycle is not set.",
-                candidate_model.vps_id
+            warn!(
+                vps_id = candidate_model.vps_id,
+                "Skipping auto-renewal: renewal_cycle is not set."
             );
             continue;
         }
@@ -230,7 +231,7 @@ pub async fn process_all_automatic_renewals(
         let current_next_renewal_date = match candidate_model.next_renewal_date {
             Some(date) => date,
             None => {
-                 eprintln!("Skipping auto-renewal for VPS ID {}: current_next_renewal_date is None unexpectedly.", candidate_model.vps_id);
+                 warn!(vps_id = candidate_model.vps_id, "Skipping auto-renewal: current_next_renewal_date is None unexpectedly.");
                  continue;
             }
         };
@@ -243,9 +244,9 @@ pub async fn process_all_automatic_renewals(
         );
 
         if new_next_renewal_date_opt.is_none() {
-            eprintln!(
-                "Skipping auto-renewal for VPS ID {}: Could not calculate new next_renewal_date.",
-                candidate_model.vps_id
+            warn!(
+                vps_id = candidate_model.vps_id,
+                "Skipping auto-renewal: Could not calculate new next_renewal_date."
             );
             continue;
         }
@@ -279,21 +280,18 @@ pub async fn process_all_automatic_renewals(
                 match txn.commit().await {
                     Ok(_) => {
                         renewed_count += 1;
-                        println!("Successfully auto-renewed VPS ID: {}", updated_model.vps_id);
+                        info!(vps_id = updated_model.vps_id, "Successfully auto-renewed VPS.");
                     }
                     Err(commit_err) => {
-                        eprintln!("Error committing transaction for auto-renewal of VPS ID {}: {}",
-                                  candidate_model.vps_id, commit_err);
+                        error!(vps_id = candidate_model.vps_id, error = %commit_err, "Error committing transaction for auto-renewal.");
                     }
                 }
             }
             Err(e) => {
                 if let Err(rollback_err) = txn.rollback().await {
-                    eprintln!("Error rolling back transaction for auto-renewal of VPS ID {} (query error): {}",
-                              candidate_model.vps_id, rollback_err);
+                    error!(vps_id = candidate_model.vps_id, error = %rollback_err, "Error rolling back transaction for auto-renewal (query error).");
                 }
-                eprintln!("Error during SQL execution for auto-renewal of VPS ID {}: {}",
-                          candidate_model.vps_id, e);
+                error!(vps_id = candidate_model.vps_id, error = %e, "Error during SQL execution for auto-renewal.");
             }
         }
     }

@@ -7,6 +7,7 @@ use futures_util::stream::StreamExt;
 use std::sync::Arc;
 use serde::Deserialize;
 use jsonwebtoken::{decode, DecodingKey, Validation}; // Added for JWT decoding
+use tracing::{info, error, warn, debug};
 
 use crate::http_server::auth_logic::{AuthenticatedUser, Claims, get_jwt_secret}; // Import Claims and get_jwt_secret
 use crate::http_server::AppState;
@@ -24,7 +25,7 @@ async fn authenticate_ws_connection(
     token_option: Option<String>,
 ) -> Result<AuthenticatedUser, AppError> {
     let token_str = token_option.ok_or_else(|| {
-        eprintln!("WebSocket Auth: Missing authentication token in query.");
+        warn!("WebSocket Auth: Missing authentication token in query.");
         AppError::Unauthorized("Missing authentication token".to_string())
     })?;
 
@@ -47,7 +48,7 @@ async fn authenticate_ws_connection(
             })
         }
         Err(e) => {
-            eprintln!("WebSocket Auth: JWT decoding error: {:?}", e);
+            warn!(error = ?e, "WebSocket Auth: JWT decoding error.");
             // Map jsonwebtoken::errors::Error to AppError
             // Consider more specific error mapping based on e.kind()
             match e.kind() {
@@ -72,13 +73,13 @@ pub async fn websocket_handler(
         Err(e) => return e.into_response(), // Return error if authentication fails
     };
     
-    println!("User {} (ID: {}) authenticated for WebSocket connection.", user.username, user.id);
+    info!(user_id = user.id, username = %user.username, "User authenticated for WebSocket connection.");
 
     ws.on_upgrade(move |socket| handle_socket(socket, app_state, user))
 }
 
 async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, user: AuthenticatedUser) { // Changed parameter type
-    println!("WebSocket connection established for user: {} (ID: {})", user.username, user.id);
+    info!("WebSocket connection established.");
 
     // 1. Send initial data snapshot
     let initial_data_message = {
@@ -89,12 +90,12 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, user: Au
 
     if let Ok(json_data) = serde_json::to_string(&initial_data_message) {
         if socket.send(Message::Text(Utf8Bytes::from(json_data))).await.is_err() {
-            eprintln!("[User: {}] Error sending initial WebSocket data. Closing connection.", user.username);
+            error!("Error sending initial WebSocket data. Closing connection.");
             return;
         }
-        println!("[User: {}] Sent initial data snapshot.", user.username);
+        info!("Sent initial data snapshot.");
     } else {
-        eprintln!("[User: {}] Failed to serialize initial data. Closing connection.", user.username);
+        error!("Failed to serialize initial data. Closing connection.");
         return;
     }
 
@@ -108,45 +109,44 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, user: Au
             Ok(ws_message) = rx.recv() => {
                 if let Ok(json_data) = serde_json::to_string(&ws_message) {
                     if socket.send(Message::Text(Utf8Bytes::from(json_data))).await.is_err() {
-                        eprintln!("[User: {}] Error sending WebSocket data update. Breaking loop.", user.username);
+                        warn!("Error sending WebSocket data update. Breaking loop.");
                         break; // Error sending, client might have disconnected
                     }
-                     // println!("[User: {}] Sent data update via broadcast.", user.username);
+                     // debug!("Sent data update via broadcast.");
                 } else {
-                    eprintln!("[User: {}] Failed to serialize broadcast data.", user.username);
+                    error!("Failed to serialize broadcast data.");
                 }
             }
             // Receive messages from the client (e.g., ping, commands)
             Some(Ok(msg)) = socket.next() => {
                 match msg {
                     Message::Text(t) => {
-                        println!("[User: {}] Received text message: {:?}", user.username, t);
+                        debug!(message = ?t, "Received text message.");
                         if t == "ping" {
                             if socket.send(Message::Text(Utf8Bytes::from("pong"))).await.is_err() {
-                                eprintln!("[User: {}] Error sending pong. Breaking loop.", user.username);
+                                warn!("Error sending pong. Breaking loop.");
                                 break;
                             }
                         }
                     }
                     Message::Binary(b) => {
-                        println!("[User: {}] Received binary message: {:?}", user.username, b);
+                        debug!(bytes_len = b.len(), "Received binary message.");
                     }
                     Message::Ping(p) => {
-                         println!("[User: {}] Received ping, sending pong.", user.username);
+                         debug!("Received ping, sending pong.");
                         if socket.send(Message::Pong(p)).await.is_err() {
-                             eprintln!("[User: {}] Error sending pong. Breaking loop.", user.username);
+                             warn!("Error sending pong. Breaking loop.");
                             break;
                         }
                     }
                     Message::Pong(_) => {
-                        // println!("[User: {}] Received pong.", user.username);
-                        // Usually, you don't need to do anything with pong messages from client
+                        debug!("Received pong.");
                     }
                     Message::Close(c) => {
                         if let Some(cf) = c {
-                            println!("[User: {}] Received close message with code {} and reason `{}`. Closing connection.", user.username, cf.code, cf.reason);
+                            info!(code = cf.code, reason = %cf.reason, "Received close message. Closing connection.");
                         } else {
-                            println!("[User: {}] Received close message. Closing connection.", user.username);
+                            info!("Received close message. Closing connection.");
                         }
                         break;
                     }
@@ -154,10 +154,10 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, user: Au
             }
             // Client disconnected without sending a close message
             else => {
-                println!("[User: {}] Client disconnected. Breaking loop.", user.username);
+                info!("Client disconnected. Breaking loop.");
                 break;
             }
         }
     }
-    println!("[User: {}] WebSocket connection closed.", user.username);
+    info!("WebSocket connection closed.");
 }

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set}; // Added SeaORM imports
 use thiserror::Error;
+use tracing::{info, error, warn};
 
 use super::encryption::{EncryptionService, EncryptionError};
 use super::models::{ChannelConfig, ChannelTemplate, ChannelTemplateField};
@@ -257,7 +258,7 @@ impl NotificationService {
             .await?;
 
         if linked_channel_models.is_empty() {
-            println!("No notification channels linked to alert rule ID: {}. No notifications sent.", rule_id);
+            info!(rule_id = rule_id, "No notification channels linked to alert rule. No notifications sent.");
             return Ok(());
         }
 
@@ -271,12 +272,14 @@ impl NotificationService {
             // user_id is not directly passed to it but is available here if needed for other logic.
             match self.send_notification(linked_channel_model.channel_id, alert_message, &context).await {
                 Ok(_) => {
-                    println!("Successfully sent alert notification via channel ID: {} for rule ID: {}", linked_channel_model.channel_id, rule_id);
+                    info!(channel_id = linked_channel_model.channel_id, rule_id = rule_id, "Successfully sent alert notification.");
                 }
                 Err(e) => {
-                    eprintln!(
-                        "Failed to send alert notification via channel ID {}: {} for rule ID: {}",
-                        linked_channel_model.channel_id, e, rule_id
+                    error!(
+                        channel_id = linked_channel_model.channel_id,
+                        rule_id = rule_id,
+                        error = ?e,
+                        "Failed to send alert notification."
                     );
                     last_error = Some(e); // Store the last error, but continue trying other channels
                 }

@@ -4,6 +4,7 @@ use sea_orm::{
     TransactionTrait, IntoActiveModel, QuerySelect, // Added QuerySelect
     // Removed commented out Select and sea_query::LockType
 };
+use tracing::{info, error, warn, debug};
 
 use crate::db::entities::vps;
 
@@ -135,11 +136,11 @@ pub async fn process_vps_traffic_reset(
                     new_next_reset_at = Some(DateTime::<Utc>::from_naive_utc_and_offset(naive_datetime_next, Utc));
                 } else {
                     new_next_reset_at = None;
-                    eprintln!("Error calculating next reset date for monthly_day_of_month for VPS ID {}: Could not form NaiveDate from y/m/d: {}/{}/{}", vps_id, next_month_year, next_month_month, actual_day);
+                    error!(vps_id = vps_id, year = next_month_year, month = next_month_month, day = actual_day, "Error calculating next reset date for monthly_day_of_month: Could not form NaiveDate");
                 }
             } else {
                 new_next_reset_at = None;
-                eprintln!("Invalid traffic_reset_config_value (missing day) for monthly_day_of_month for VPS ID {}", vps_id);
+                error!(vps_id = vps_id, "Invalid traffic_reset_config_value (missing day) for monthly_day_of_month");
             }
         }
         (Some("fixed_days"), Some(value_str)) => {
@@ -148,16 +149,16 @@ pub async fn process_vps_traffic_reset(
                     new_next_reset_at = Some(last_reset_time + Duration::days(days));
                 } else {
                     new_next_reset_at = None;
-                    eprintln!("Invalid traffic_reset_config_value (days <= 0) for fixed_days for VPS ID {}", vps_id);
+                    error!(vps_id = vps_id, "Invalid traffic_reset_config_value (days <= 0) for fixed_days");
                 }
             } else {
                 new_next_reset_at = None;
-                eprintln!("Invalid traffic_reset_config_value (not a number) for fixed_days for VPS ID {}", vps_id);
+                error!(vps_id = vps_id, "Invalid traffic_reset_config_value (not a number) for fixed_days");
             }
         }
         _ => {
             new_next_reset_at = None;
-            eprintln!("Missing or unknown traffic_reset_config_type or _value for VPS ID {}. Cannot calculate next reset.", vps_id);
+            error!(vps_id = vps_id, "Missing or unknown traffic_reset_config_type or _value. Cannot calculate next reset.");
         }
     }
 

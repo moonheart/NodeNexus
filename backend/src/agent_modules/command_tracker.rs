@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
+use tracing::{info, warn, debug};
 
 // The tracker now holds a sender part of a one-shot channel.
 // Sending a message on this channel signals the command's managing task to terminate it.
@@ -21,16 +22,16 @@ impl RunningCommandsTracker {
         if commands_guard.insert(command_id.clone(), term_tx).is_some() {
             // This case (replacing an existing command) should ideally not happen
             // if command IDs are unique.
-            eprintln!("[Tracker] Warning: Replaced an existing command with ID: {}", command_id);
+            warn!(command_id = %command_id, "Replaced an existing command in tracker. This may indicate a command ID collision.");
         }
-        println!("[Tracker] Added command: {}", command_id);
+        info!(command_id = %command_id, "Added command to tracker.");
     }
 
     // This function is called by the command's managing task upon completion.
     pub fn remove_command(&self, command_id: &str) {
         let mut commands_guard = self.commands.lock().unwrap();
         if commands_guard.remove(command_id).is_some() {
-            println!("[Tracker] Removed command on completion: {}", command_id);
+            info!(command_id = %command_id, "Removed command from tracker on completion.");
         }
     }
 
@@ -41,15 +42,15 @@ impl RunningCommandsTracker {
         // so sending might fail if the command has already completed. This is expected.
         if let Some(term_tx) = self.commands.lock().unwrap().remove(command_id) {
             if term_tx.send(()).is_ok() {
-                println!("[Tracker] Termination signal sent for command: {}", command_id);
+                info!(command_id = %command_id, "Termination signal sent.");
             } else {
-                println!("[Tracker] Command {} already finished, no termination signal needed.", command_id);
+                debug!(command_id = %command_id, "Command already finished, no termination signal needed.");
             }
             Ok(())
         } else {
             // This can happen if a termination signal is sent for a command that has already completed
             // and been removed from the tracker, or was already terminated.
-            println!("[Tracker] Command {} not found for termination (already terminated or completed).", command_id);
+            debug!(command_id = %command_id, "Command not found for termination (already terminated or completed).");
             Err("Command not found or already terminated.")
         }
     }

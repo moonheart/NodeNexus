@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use sea_orm::DatabaseConnection; // Replaced PgPool
+use tracing::{info, error, debug};
 
 use crate::db::services;
 use crate::server::agent_state::LiveServerDataCache;
@@ -42,15 +43,19 @@ pub async fn broadcast_full_state_update(
             };
             let message = WsMessage::FullServerList(full_list_push);
 
-            if broadcaster.send(message).is_err() {
-                // This is not a critical error, it just means no web clients are currently listening.
-                // println!("No web clients listening, skipping broadcast.");
+            if broadcaster.receiver_count() > 0 {
+                if broadcaster.send(message).is_err() {
+                    // This can happen if all subscribers have disconnected between the check and the send.
+                    debug!("Broadcast failed: No clients were listening.");
+                } else {
+                    debug!(clients = broadcaster.receiver_count(), "Successfully broadcasted full state update.");
+                }
             } else {
-                // println!("Successfully broadcasted full state update.");
+                debug!("No web clients listening, skipping broadcast.");
             }
         }
         Err(e) => {
-            eprintln!("CRITICAL: Failed to fetch full server details for broadcast: {}. Cache and clients may be stale.", e);
+            error!(error = %e, "CRITICAL: Failed to fetch full server details for broadcast. Cache and clients may be stale.");
         }
     }
 }

@@ -7,6 +7,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sysinfo::{Disks, Networks, ProcessRefreshKind, System};
 use netdev;
 use tokio::sync::mpsc;
+use tracing::{info, error, warn, debug};
 
 // PreviousNetworkState struct is no longer needed
 // PreviousDiskState struct is no longer needed
@@ -104,18 +105,24 @@ fn collect_performance_snapshot(
                     delta_rx_bytes_for_rate = data.received();
                     delta_tx_bytes_for_rate = data.transmitted();
                     found_default = true;
-                    // println!("[Debug] Using default interface '{}'. Cumulative RX: {}, TX: {}. Delta RX: {}, TX: {}",
-                    //          if_name, cumulative_rx_bytes, cumulative_tx_bytes, delta_rx_bytes_for_rate, delta_tx_bytes_for_rate);
+                    debug!(
+                        interface = %if_name,
+                        cum_rx = cumulative_rx_bytes,
+                        cum_tx = cumulative_tx_bytes,
+                        delta_rx = delta_rx_bytes_for_rate,
+                        delta_tx = delta_tx_bytes_for_rate,
+                        "Using default interface."
+                    );
                     break;
                 }
             }
             if !found_default {
-                 eprintln!("Warning: Default interface '{}' found by netdev, but not in sysinfo list. Network stats will be 0.", default_if_name);
+                 warn!(interface_name = %default_if_name, "Default interface found by netdev, but not in sysinfo list. Network stats will be 0.");
                  // Keep cumulative and delta values at 0
             }
         }
         Err(e) => {
-            eprintln!("Warning: Failed to get default interface using netdev: {}. Network stats will be 0.", e);
+            warn!(error = %e, "Failed to get default interface using netdev. Network stats will be 0.");
             // Keep cumulative and delta values at 0
         }
     }
@@ -134,19 +141,22 @@ fn collect_performance_snapshot(
             network_tx_bps = (delta_tx_bytes_for_rate as f64 / duration_secs) as u64;
 
             // --- Debugging Output ---
-            // println!("[Debug] Time Delta: {:.2}s", duration_secs);
-            // println!("[Debug] Using Delta RX for Rate: {}", delta_rx_bytes_for_rate);
-            // println!("[Debug] Using Delta TX for Rate: {}", delta_tx_bytes_for_rate);
-            // println!("[Debug] Calculated RX BPS: {}", network_rx_bps);
-            // println!("[Debug] Calculated TX BPS: {}", network_tx_bps);
+            debug!(
+                duration_secs,
+                delta_rx = delta_rx_bytes_for_rate,
+                delta_tx = delta_tx_bytes_for_rate,
+                rx_bps = network_rx_bps,
+                tx_bps = network_tx_bps,
+                "BPS calculation details."
+            );
             // --- End Debugging ---
         } else if duration_secs <= 0.0 {
-             // println!("[Debug] Duration is zero or negative, cannot calculate BPS.");
+             warn!("Duration is zero or negative, cannot calculate BPS.");
         } else {
-             // println!("[Debug] Delta RX/TX is zero, BPS is 0.");
+             warn!("Delta RX/TX is zero, BPS is 0.");
         }
     } else {
-         // println!("[Debug] No previous network state, cannot calculate BPS for the first snapshot.");
+         warn!("No previous network state, cannot calculate BPS for the first snapshot.");
     }
     // --- End Network I/O ---
 
@@ -210,8 +220,12 @@ pub async fn metrics_collection_loop(
     let mut upload_interval = tokio::time::interval(Duration::from_secs(upload_interval_duration as u64));
     // --- End Dynamic Configuration Setup ---
 
-    println!("[Agent:{}] Metrics collection task started. Collect interval: {}s, Upload interval: {}s, Batch size: {}",
-        agent_id, collect_interval_duration, upload_interval_duration, batch_max_size);
+    info!(
+        collect_interval_seconds = collect_interval_duration,
+        upload_interval_seconds = upload_interval_duration,
+        batch_size = batch_max_size,
+        "Metrics collection task started."
+    );
 
     // Initial refresh to set the baseline for the *next* delta calculation by sysinfo
     // Initial refresh to set the baseline for the *next* delta calculation by sysinfo
@@ -231,17 +245,17 @@ pub async fn metrics_collection_loop(
             let new_batch_size = if config.metrics_upload_batch_max_size > 0 { config.metrics_upload_batch_max_size } else { 10 };
 
             if new_collect_interval != collect_interval_duration {
-                println!("[Agent:{}] Updating metrics collect interval to {}s", agent_id, new_collect_interval);
+                info!(new_interval = new_collect_interval, "Updating metrics collect interval.");
                 collect_interval_duration = new_collect_interval;
                 collect_interval = tokio::time::interval(Duration::from_secs(collect_interval_duration as u64));
             }
             if new_upload_interval != upload_interval_duration {
-                println!("[Agent:{}] Updating metrics upload interval to {}s", agent_id, new_upload_interval);
+                info!(new_interval = new_upload_interval, "Updating metrics upload interval.");
                 upload_interval_duration = new_upload_interval;
                 upload_interval = tokio::time::interval(Duration::from_secs(upload_interval_duration as u64));
             }
             if new_batch_size != batch_max_size {
-                println!("[Agent:{}] Updating metrics batch size to {}", agent_id, new_batch_size);
+                info!(new_size = new_batch_size, "Updating metrics batch size.");
                 batch_max_size = new_batch_size;
             }
         }
@@ -272,9 +286,9 @@ pub async fn metrics_collection_loop(
                             vps_db_id,
                             agent_secret: agent_secret.clone(),
                         }).await {
-                            eprintln!("[Agent:{}] Failed to send metrics batch (size trigger): {}", agent_id, e);
+                            error!(error = %e, "Failed to send metrics batch (size trigger).");
                         } else {
-                            // println!("[Agent:{}] Sent metrics batch (size trigger). Msg ID: {}. Actual batch size: {}", agent_id, msg_id, batch_len);
+                            debug!(msg_id = msg_id, batch_size = batch_len, "Sent metrics batch (size trigger).");
                         }
                     }
                 }
@@ -291,9 +305,9 @@ pub async fn metrics_collection_loop(
                         vps_db_id,
                         agent_secret: agent_secret.clone(),
                     }).await {
-                        eprintln!("[Agent:{}] Failed to send metrics batch (interval trigger): {}", agent_id, e);
+                        error!(error = %e, "Failed to send metrics batch (interval trigger).");
                     } else {
-                        // println!("[Agent:{}] Sent metrics batch (interval trigger). Msg ID: {}. Actual batch size: {}", agent_id, msg_id, batch_len);
+                        debug!(msg_id = msg_id, batch_size = batch_len, "Sent metrics batch (interval trigger).");
                     }
                 }
             }

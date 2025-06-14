@@ -5,6 +5,7 @@ use reqwest::Client;
 use std::time::Duration;
 use once_cell::sync::Lazy;
 use std::str::FromStr; // For IpAddr::from_str
+use tracing::{info, error, warn, debug};
 
 const CF_TRACE_ENDPOINTS: &'static [&'static str] = &[
     "https://cloudflare.com/cdn-cgi/trace",
@@ -23,7 +24,7 @@ static HTTP_CLIENT_V4: Lazy<Client> = Lazy::new(|| {
         .user_agent(CUSTOM_USER_AGENT)
         .build()
         .unwrap_or_else(|e| {
-            eprintln!("Failed to create IPv4 HTTP client: {}", e);
+            error!(error = %e, "Failed to create IPv4 HTTP client, falling back to default.");
             Client::new()
         })
 });
@@ -36,7 +37,7 @@ static HTTP_CLIENT_V6: Lazy<Client> = Lazy::new(|| {
         .user_agent(CUSTOM_USER_AGENT)
         .build()
         .unwrap_or_else(|e| {
-            eprintln!("Failed to create IPv6 HTTP client: {}", e);
+            error!(error = %e, "Failed to create IPv6 HTTP client, falling back to default.");
             Client::new()
         })
 });
@@ -47,7 +48,7 @@ async fn fetch_ip_and_loc_from_endpoints(
     ip_version_is_v6: bool,
 ) -> Option<(String, Option<String>)> {
     for endpoint in endpoints {
-        println!("[DEBUG] Attempting to fetch IP and Loc from: {} (v6: {})", endpoint, ip_version_is_v6);
+        debug!(endpoint = %endpoint, "Attempting to fetch IP and Loc.");
         match client.get(*endpoint).send().await {
             Ok(resp) => {
                 if resp.status().is_success() {
@@ -62,10 +63,10 @@ async fn fetch_ip_and_loc_from_endpoints(
                                         if (ip_version_is_v6 && parsed_ip.is_ipv6()) || (!ip_version_is_v6 && parsed_ip.is_ipv4()) {
                                             ip_address = Some(ip_str.to_string());
                                         } else {
-                                            println!("[DEBUG] Mismatched IP type from {}: {} (expected v6: {})", endpoint, ip_str, ip_version_is_v6);
+                                            debug!(endpoint = %endpoint, ip = %ip_str, "Mismatched IP type from endpoint.");
                                         }
                                     } else {
-                                        eprintln!("[WARN] Failed to parse IP string: {} from {}", ip_str, endpoint);
+                                        warn!(ip_str = %ip_str, endpoint = %endpoint, "Failed to parse IP string from endpoint.");
                                     }
                                 } else if line.starts_with("loc=") {
                                     loc = Some(line.trim_start_matches("loc=").trim().to_string());
@@ -73,25 +74,25 @@ async fn fetch_ip_and_loc_from_endpoints(
                             }
 
                             if let Some(ip) = ip_address {
-                                println!("[INFO] Successfully fetched IP: {} and Loc: {:?} from {} (v6: {})", ip, loc, endpoint, ip_version_is_v6);
+                                info!(ip = %ip, loc = ?loc, endpoint = %endpoint, "Successfully fetched IP and Loc.");
                                 return Some((ip, loc));
                             } else {
-                                eprintln!("[WARN] 'ip=' field (matching version) not found or invalid in response from {}: {}", endpoint, body.chars().take(100).collect::<String>());
+                                warn!(endpoint = %endpoint, response_prefix = %body.chars().take(100).collect::<String>(), "'ip=' field (matching version) not found or invalid in response.");
                             }
                         }
                         Err(e) => {
-                            eprintln!("[WARN] Failed to read response body from {}: {}", endpoint, e);
+                            warn!(endpoint = %endpoint, error = %e, "Failed to read response body.");
                         }
                     }
                 } else {
-                    eprintln!("[WARN] Request to {} failed with status: {}", endpoint, resp.status());
+                    warn!(endpoint = %endpoint, status = %resp.status(), "Request failed.");
                 }
             }
             Err(e) => {
                 if e.is_connect() || e.is_timeout() {
-                    eprintln!("[WARN] Connection error for {}: {}. Might indicate no route for this IP version.", endpoint, e);
+                    warn!(endpoint = %endpoint, error = %e, "Connection error. Might indicate no route for this IP version.");
                 } else {
-                    eprintln!("[WARN] Failed to send request to {}: {}", endpoint, e);
+                    warn!(endpoint = %endpoint, error = %e, "Failed to send request.");
                 }
             }
         }
@@ -100,7 +101,7 @@ async fn fetch_ip_and_loc_from_endpoints(
 }
 
 pub async fn collect_public_ip_addresses() -> (Vec<String>, Option<String>) {
-    println!("[INFO] Starting public IP address and country code collection...");
+    info!("Starting public IP address and country code collection...");
 
     let ipv4_future = fetch_ip_and_loc_from_endpoints(&CF_TRACE_ENDPOINTS, &HTTP_CLIENT_V4, false);
     let ipv6_future = fetch_ip_and_loc_from_endpoints(&CF_TRACE_ENDPOINTS, &HTTP_CLIENT_V6, true);
@@ -111,30 +112,30 @@ pub async fn collect_public_ip_addresses() -> (Vec<String>, Option<String>) {
     let mut country_code: Option<String> = None;
 
     if let Some((ip4, loc4)) = ipv4_data {
-        println!("[INFO] Collected IPv4: {}, Loc: {:?}", ip4, loc4);
+        info!(ip = %ip4, loc = ?loc4, "Collected IPv4 address.");
         public_ips.push(ip4);
         if country_code.is_none() { // Prioritize loc from IPv4 if available
             country_code = loc4;
         }
     } else {
-        eprintln!("[WARN] Failed to collect IPv4 address from all providers.");
+        warn!("Failed to collect IPv4 address from all providers.");
     }
 
     if let Some((ip6, loc6)) = ipv6_data {
-        println!("[INFO] Collected IPv6: {}, Loc: {:?}", ip6, loc6);
+        info!(ip = %ip6, loc = ?loc6, "Collected IPv6 address.");
         public_ips.push(ip6);
         if country_code.is_none() { // If no loc from IPv4, use loc from IPv6
             country_code = loc6;
         }
     } else {
-        eprintln!("[WARN] Failed to collect IPv6 address from all providers.");
+        warn!("Failed to collect IPv6 address from all providers.");
     }
     
     if public_ips.is_empty() {
-        eprintln!("[WARN] Failed to collect any public IP address.");
+        warn!("Failed to collect any public IP address.");
     }
     if country_code.is_none() {
-        eprintln!("[WARN] Failed to collect country code.");
+        warn!("Failed to collect country code.");
     }
 
     (public_ips, country_code)

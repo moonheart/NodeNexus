@@ -37,6 +37,7 @@ use chrono::{Utc, Duration};
 use std::env;
 use crate::http_server::AppError;
 use axum::http::{Request, header};
+use tracing::warn;
 use axum::middleware::Next;
 use axum::{response::Response, body::Body as AxumBody}; // Import AxumBody
 
@@ -62,7 +63,7 @@ pub fn get_jwt_secret() -> String { // Made public
         // Fallback for development if JWT_SECRET is not set.
         // WARNING: Do NOT use this fallback in production.
         // In a real application, this should cause a panic or a proper error if not set in production.
-        eprintln!("WARNING: JWT_SECRET environment variable not set. Using a default, insecure secret for development.");
+        warn!("SECURITY WARNING: JWT_SECRET environment variable not set. Using a default, insecure secret for development.");
         "your-super-secret-and-long-jwt-secret-for-dev-only".to_string()
     })
 }
@@ -196,7 +197,7 @@ pub async fn auth(
         &DecodingKey::from_secret(jwt_secret.as_ref()),
         &Validation::default(), // TODO: Consider more specific validation if needed (e.g., issuer)
     ).map_err(|e| {
-        eprintln!("JWT decoding error: {:?}", e);
+        warn!(error = ?e, "JWT decoding error during auth middleware.");
         AppError::InvalidCredentials // Or "InvalidToken"
     })?;
 

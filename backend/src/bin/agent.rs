@@ -60,7 +60,7 @@ async fn spawn_and_monitor_core_tasks(
             metrics_vps_id,
             metrics_agent_secret,
         ).await;
-        println!("[Agent:{}] Metrics collection loop ended.", agent_id_for_log); // Use the clone
+        info!(agent_id = %agent_id_for_log, "Metrics collection loop ended.");
     }));
 
     // Heartbeat Task
@@ -82,7 +82,7 @@ async fn spawn_and_monitor_core_tasks(
             heartbeat_vps_id,
             heartbeat_agent_secret,
         ).await;
-        println!("[Agent:{}] Heartbeat loop ended.", agent_id_for_log); // Use the clone
+        info!(agent_id = %agent_id_for_log, "Heartbeat loop ended.");
     }));
     
     // Server Listener Task
@@ -110,7 +110,7 @@ async fn spawn_and_monitor_core_tasks(
             listener_config_path,
             listener_command_tracker, // Pass command_tracker
         ).await;
-        println!("[Agent:{}] Server message handler loop ended.", agent_id_for_log);
+        info!(agent_id = %agent_id_for_log, "Server message handler loop ended.");
     }));
 
 // Service Monitor Task
@@ -134,26 +134,55 @@ async fn spawn_and_monitor_core_tasks(
                 monitor_id_provider,
             )
             .await;
-        println!("[Agent:{}] Service monitor loop ended.", monitor_agent_id);
+        info!(agent_id = %monitor_agent_id, "Service monitor loop ended.");
     }));
-    println!("[Agent:{}] All core tasks spawned.", assigned_agent_id);
+    info!(agent_id = %assigned_agent_id, "All core tasks spawned.");
     tasks
+}
+
+
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, fmt};
+use tracing_appender::rolling;
+use tracing::{info, error, warn};
+
+fn init_logging() {
+    // Log to a file: JSON format, daily rotation
+    let file_appender = rolling::daily("logs", "agent.log");
+    let file_layer = fmt::layer()
+        .with_writer(file_appender)
+        .with_ansi(false) // No ANSI colors in file
+        .json(); // Log as JSON
+
+    // Log to stdout: human-readable format
+    let stdout_layer = fmt::layer()
+        .with_writer(std::io::stdout);
+
+    // Combine layers and filter based on RUST_LOG
+    // Default to `info` level if RUST_LOG is not set.
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info"));
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(file_layer)
+        .with(stdout_layer)
+        .init();
+    
+    // This allows libraries using the `log` crate to work with `tracing`
+    // tracing_log::LogTracer::init().expect("Failed to set logger");
 }
 
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // Setup logging (optional, but good practice)
-    // env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    // Or use tracing, etc.
-
-    println!("[Agent] Starting agent...");
+    init_logging();
+    info!("Starting agent...");
 
     let config_path = "agent_config.toml"; // Relative to current working directory
     let agent_cli_config = match load_cli_config(config_path) {
         Ok(config) => config,
         Err(e) => {
-            eprintln!("[Agent] Critical error loading configuration: {}. Exiting.", e);
+            error!(error = %e, "Critical error loading configuration. Exiting.");
             return Err(e);
         }
     };
@@ -168,15 +197,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Main loop for connecting to the primary server
     loop {
-        println!("[Agent] Main client loop: Attempting connection to server {} (delay: {}s)...", agent_cli_config.server_address, reconnect_delay_seconds);
-        
+        info!(
+            server_address = %agent_cli_config.server_address,
+            delay_seconds = reconnect_delay_seconds,
+            "Main client loop: Attempting connection to server."
+        );
+
         // Attempt to connect and handshake (client role)
         // Load the initial value from AtomicU64
         let initial_id = INITIAL_CLIENT_MESSAGE_ID.load(std::sync::atomic::Ordering::SeqCst);
         match ConnectionHandler::connect_and_handshake(&agent_cli_config, initial_id).await {
             Ok(handler) => {
                 let assigned_agent_id_log = handler.assigned_agent_id.clone();
-                println!("[Agent:{}] Connection and handshake successful. Spawning tasks.", assigned_agent_id_log);
+                info!(agent_id = %assigned_agent_id_log, "Connection and handshake successful. Spawning tasks.");
                 reconnect_delay_seconds = DEFAULT_RECONNECT_DELAY_SECONDS; // Reset delay on successful connection
 
                 // Create the shared, mutable configuration state
@@ -193,35 +226,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     match first_task_result {
                         Ok(_) => { // Task completed without panic
                             // This is expected if a task like heartbeat_loop or server_message_handler_loop exits due to error (e.g., send fail, stream break)
-                            eprintln!("[Agent:{}] A core task finished. This usually indicates a connection issue or an internal task error.", assigned_agent_id_log);
+                            warn!(agent_id = %assigned_agent_id_log, "A core task finished. This usually indicates a connection issue or an internal task error.");
                         }
                         Err(join_error) => { // Task panicked
-                            eprintln!("[Agent:{}] A core task panicked: {:?}. This is a critical issue.", assigned_agent_id_log, join_error);
+                            error!(agent_id = %assigned_agent_id_log, error = ?join_error, "A core task panicked. This is a critical issue.");
                             // Depending on the error, might want a longer backoff or specific error handling.
                         }
                     }
 
                     // Abort all other running tasks to ensure a clean state before reconnecting.
-                    println!("[Agent:{}] Aborting remaining tasks before reconnecting...", assigned_agent_id_log);
+                    info!(agent_id = %assigned_agent_id_log, "Aborting remaining tasks before reconnecting...");
                     for handle in remaining_handles {
                         handle.abort();
                     }
                 } else {
-                     eprintln!("[Agent:{}] No tasks were spawned, which is unexpected after successful handshake. This should not happen.", assigned_agent_id_log);
+                     error!(agent_id = %assigned_agent_id_log, "No tasks were spawned, which is unexpected after successful handshake. This should not happen.");
                      // This case implies an issue in spawn_and_monitor_core_tasks or ConnectionHandler::split_for_tasks
                 }
                 
-                eprintln!("[Agent:{}] A task ended or an issue occurred. Preparing to reconnect...", assigned_agent_id_log);
+                warn!(agent_id = %assigned_agent_id_log, "A task ended or an issue occurred. Preparing to reconnect...");
 
             }
             Err(e) => {
-                eprintln!("[Agent] Failed to connect or handshake: {}. Will retry.", e);
+                error!(error = %e, "Failed to connect or handshake. Will retry.");
                 // Error already logged by connect_and_handshake or load_cli_config
             }
         }
         
         // Exponential backoff for retrying connection
-        println!("[Agent] Sleeping for {} seconds before next connection attempt.", reconnect_delay_seconds);
+        info!(delay_seconds = reconnect_delay_seconds, "Sleeping before next connection attempt.");
         tokio::time::sleep(Duration::from_secs(reconnect_delay_seconds)).await;
         reconnect_delay_seconds = (reconnect_delay_seconds * 2).min(MAX_RECONNECT_DELAY_SECONDS);
     }

@@ -15,6 +15,7 @@ use sea_orm::{
     sea_query::{Alias, Expr, Func},
 };
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 use crate::agent_service::PerformanceSnapshotBatch;
 use crate::db::entities::{performance_disk_usage, performance_metric};
@@ -238,9 +239,10 @@ pub async fn save_performance_snapshot_batch(
         )
         .await
         {
-            eprintln!(
-                "Failed to update VPS traffic stats for vps_id {}: {}. Rolling back metric save.",
-                vps_id, e
+            error!(
+                vps_id = vps_id,
+                error = %e,
+                "Failed to update VPS traffic stats. Rolling back metric save."
             );
             txn.rollback().await?;
             return Err(e);

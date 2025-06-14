@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize}; // Added Serialize
 use std::sync::Arc;
 use chrono::{DateTime, Utc}; // Added for DateTime<Utc>
 use sea_orm::DbErr; // Added DbErr for error handling
+use tracing::error;
 use crate::db::{
     entities::{tag, vps}, // Changed to use entities
     models::{PerformanceMetric as DbPerformanceMetric}, // Keep DbPerformanceMetric for now
@@ -191,7 +192,7 @@ async fn create_vps_handler(
     match services::create_vps(&app_state.db_pool, user_id, &payload.name).await {
         Ok(vps_model) => Ok((StatusCode::CREATED, Json(vps_model))), // Changed vps to vps_model
         Err(db_err) => { // Changed sqlx_error to db_err
-            eprintln!("Failed to create VPS: {:?}", db_err);
+            error!(error = ?db_err, "Failed to create VPS.");
             Err(AppError::DatabaseError(db_err.to_string()))
         }
     }

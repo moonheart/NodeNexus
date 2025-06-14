@@ -6,6 +6,7 @@ use std::path::PathBuf; // For constructing paths
 use tokio::fs; // For async file operations (creating directory)
 use uuid::Uuid;
 use chrono::Utc;
+use tracing::{info, error, warn};
 
 use crate::db::entities::{
     batch_command_task,
@@ -388,7 +389,7 @@ impl BatchCommandManager {
         // Ensure the directory exists
         // Note: In a production environment, error handling for fs operations should be more robust.
         if let Err(e) = fs::create_dir_all(&base_log_dir).await {
-            eprintln!("Failed to create log directory {:?}: {}", base_log_dir, e);
+            error!(error = %e, path = ?base_log_dir, "Failed to create log directory.");
             // Depending on policy, might return an error or proceed without log path update
             // For now, we'll proceed but log the error.
         }
@@ -428,13 +429,13 @@ impl BatchCommandManager {
             {
                 Ok(mut file) => {
                     if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut file, &chunk).await {
-                        eprintln!("Failed to write to log file {:?}: {}", log_file_path, e);
+                        error!(error = %e, path = ?log_file_path, "Failed to write to log file.");
                         // Decide on error handling: return error, or just log and continue?
                         // For now, log and continue. A more robust system might retry or mark task with logging error.
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to open log file {:?}: {}", log_file_path, e);
+                    error!(error = %e, path = ?log_file_path, "Failed to open log file.");
                 }
             }
         }

@@ -6,6 +6,7 @@ use sea_orm::{
 };
 use serde_json::json;
 use uuid::Uuid;
+use tracing::{info, error, warn, debug};
 
 use crate::db::entities::{vps, vps_tag};
 use crate::db::services::vps_renewal_service::{
@@ -188,7 +189,7 @@ pub async fn update_vps(
                 renewal_info_changed = true; // Assume change if input provided
                 // This part requires vps_renewal_service to be refactored.
                 // For now, we'll skip the actual call to avoid breaking compilation here.
-                 eprintln!("TODO: Call refactored create_or_update_vps_renewal_info with SeaORM transaction");
+                 warn!("TODO: Call refactored create_or_update_vps_renewal_info with SeaORM transaction");
 
             }
 
@@ -290,7 +291,7 @@ pub async fn update_vps_info_on_handshake(
         .await?;
 
     if result.rows_affected == 0 {
-        eprintln!("VPS info update on handshake for vps_id {} affected 0 rows. This might indicate the VPS ID was not found for update.", vps_id);
+        warn!(vps_id = vps_id, "VPS info update on handshake affected 0 rows. This might indicate the VPS ID was not found for update.");
     }
     Ok(result.rows_affected)
 }

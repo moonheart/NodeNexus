@@ -5,6 +5,7 @@ use axum::{
 };
 use std::sync::Arc;
 use uuid::Uuid;
+use tracing::{info, error, warn};
 
 use super::models::{
     CreateBatchCommandRequest,
@@ -86,9 +87,10 @@ async fn create_batch_command(
                     ).await;
 
                     let (new_status, error_message) = if let Err(e) = dispatch_result {
-                        eprintln!(
-                            "Failed to dispatch command for child_task_id {}: {:?}",
-                            child_task.child_command_id, e
+                        error!(
+                            child_task_id = %child_task.child_command_id,
+                            error = ?e,
+                            "Failed to dispatch command."
                         );
                         (crate::db::enums::ChildCommandStatus::AgentUnreachable, Some(e.to_string()))
                     } else {
@@ -101,9 +103,10 @@ async fn create_batch_command(
                         None, // No exit code at this stage
                         error_message,
                     ).await {
-                        eprintln!(
-                            "Failed to update status after dispatch for child_task_id {}: {:?}",
-                            child_task.child_command_id, update_err
+                        error!(
+                            child_task_id = %child_task.child_command_id,
+                            error = ?update_err,
+                            "Failed to update status after dispatch."
                         );
                     }
                 });
@@ -116,7 +119,7 @@ async fn create_batch_command(
             }))
         }
         Err(e) => {
-            eprintln!("Failed to create batch command: {:?}", e);
+            error!(error = ?e, "Failed to create batch command.");
             Err(AppError::InternalServerError(format!(
                 "Failed to create batch command: {}",
                 e
@@ -142,9 +145,10 @@ async fn get_batch_command_detail(
             batch_command_id
         ))),
         Err(service_err) => {
-            eprintln!(
-                "Error fetching batch command detail for ID {}: {:?}",
-                batch_command_id, service_err
+            error!(
+                batch_command_id = %batch_command_id,
+                error = ?service_err,
+                "Error fetching batch command detail."
             );
             // Map BatchCommandServiceError to AppError
             match service_err {
@@ -188,9 +192,10 @@ async fn terminate_batch_command(
                             child_task.child_command_id,
                             child_task.vps_id,
                         ).await {
-                            eprintln!(
-                                "Failed to dispatch terminate command for child_task_id {}: {:?}",
-                                child_task.child_command_id, e
+                            error!(
+                                child_task_id = %child_task.child_command_id,
+                                error = ?e,
+                                "Failed to dispatch terminate command."
                             );
                             // Optionally, log this failure more permanently or alert.
                         }
@@ -202,9 +207,10 @@ async fn terminate_batch_command(
             })))
         }
         Err(service_err) => {
-            eprintln!(
-                "Error terminating batch command for ID {}: {:?}",
-                batch_command_id, service_err
+            error!(
+                batch_command_id = %batch_command_id,
+                error = ?service_err,
+                "Error terminating batch command."
             );
             match service_err {
                 crate::db::services::batch_command_service::BatchCommandServiceError::Unauthorized => {
@@ -246,9 +252,10 @@ async fn terminate_child_command(
                     child_task_to_terminate.child_command_id,
                     child_task_to_terminate.vps_id,
                 ).await {
-                    eprintln!(
-                        "Failed to dispatch terminate command for child_task_id {}: {:?}",
-                        child_task_to_terminate.child_command_id, e
+                    error!(
+                        child_task_id = %child_task_to_terminate.child_command_id,
+                        error = ?e,
+                        "Failed to dispatch terminate command for child task."
                     );
                 }
             });
@@ -258,9 +265,10 @@ async fn terminate_child_command(
             })))
         }
         Err(service_err) => {
-            eprintln!(
-                "Error terminating child command for ID {}: {:?}",
-                child_id, service_err
+            error!(
+                child_command_id = %child_id,
+                error = ?service_err,
+                "Error terminating child command."
             );
             match service_err {
                 crate::db::services::batch_command_service::BatchCommandServiceError::Unauthorized => {

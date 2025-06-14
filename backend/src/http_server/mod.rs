@@ -13,6 +13,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, Mutex}; // Added Mutex and mpsc
 use std::net::SocketAddr;
 use thiserror::Error;
+use tracing::info;
 use crate::server::agent_state::{ConnectedAgents, LiveServerDataCache};
 use crate::websocket_models::WsMessage;
 use tower_http::cors::{CorsLayer, Any}; // Added CorsLayer and Any
@@ -222,7 +223,7 @@ pub async fn run_http_server(
         .with_state(app_state.clone())
         .layer(cors);
 
-    println!("HTTP server listening on {}", http_addr);
+    info!(address = %http_addr, "HTTP server listening");
     let listener = tokio::net::TcpListener::bind(http_addr).await?;
     axum::serve(listener, app_router).await?;
     Ok(())

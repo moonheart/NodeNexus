@@ -10,6 +10,7 @@ use crate::agent_service::{AgentConfig, MessageToAgent, message_to_agent::Payloa
 use crate::db::services as db_services;
 use crate::db::entities::{setting, vps}; // Added setting and vps entities
 use uuid::Uuid;
+use tracing::{info, error, warn};
 
 // This router is for global settings, mounted under /api/settings
 pub fn create_settings_router() -> Router<Arc<AppState>> {
@@ -63,7 +64,7 @@ async fn update_global_agent_config(
         if vps_model.agent_config_override.is_none() {
             // push_config_to_vps now returns Result<(), AppError>, handle or ignore error
             if let Err(e) = push_config_to_vps(app_state.clone(), vps_model.id).await {
-                eprintln!("Failed to push config to VPS {}: {:?}", vps_model.id, e);
+                error!(vps_id = vps_model.id, error = ?e, "Failed to push config to VPS after global update.");
                 // Decide if this should halt the process or just log
             }
         }
@@ -165,18 +166,20 @@ pub async fn push_config_to_vps(
         if state.sender.send(Ok(msg)).await.is_ok() {
             // Assuming update_vps_config_status returns Result<_, DbErr>
             if let Err(e) = db_services::update_vps_config_status(&app_state.db_pool, vps_id, "pending", None).await {
-                eprintln!("Failed to update VPS config status to pending for {}: {:?}", vps_id, e);
+                error!(vps_id = vps_id, error = ?e, "Failed to update VPS config status to pending.");
             }
         } else {
             let err_msg = "Failed to send config to agent (channel closed).";
+            warn!(vps_id = vps_id, "Agent channel closed, could not send config.");
             if let Err(e) = db_services::update_vps_config_status(&app_state.db_pool, vps_id, "failed", Some(err_msg)).await {
-                 eprintln!("Failed to update VPS config status to failed (send error) for {}: {:?}", vps_id, e);
+                 error!(vps_id = vps_id, error = ?e, "Failed to update VPS config status to failed (send error).");
             }
         }
     } else {
         let err_msg = "Agent is not connected.";
+        warn!(vps_id = vps_id, "Agent not connected, could not send config.");
         if let Err(e) = db_services::update_vps_config_status(&app_state.db_pool, vps_id, "failed", Some(err_msg)).await {
-            eprintln!("Failed to update VPS config status to failed (not connected) for {}: {:?}", vps_id, e);
+            error!(vps_id = vps_id, error = ?e, "Failed to update VPS config status to failed (not connected).");
         }
     }
 

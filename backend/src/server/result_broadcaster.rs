@@ -1,6 +1,7 @@
 use tokio::sync::broadcast;
 use uuid::Uuid;
 use serde_json::json; // For creating JSON payloads easily
+use tracing::{error, info, debug};
 
 // Placeholder for the actual WebSocket message types for batch commands.
 // For now, we'll assume String messages (JSON serialized).
@@ -28,14 +29,21 @@ pub fn subscribe(&self) -> broadcast::Receiver<BatchCommandUpdateMsg> {
         match serde_json::to_string(&message_content) {
             Ok(json_string) => {
                 if let Err(e) = self.batch_updates_tx.send(json_string.clone()) {
-                    eprintln!("Failed to broadcast batch command update ({}): {}. Message: {}", message_type, e, json_string);
+                    error!(
+                        message_type = message_type,
+                        error = %e,
+                        "Failed to broadcast batch command update."
+                    );
                 } else {
-                    // Successfully sent, no need to log here as it can be noisy.
-                    // Or, use a lower log level like debug! or trace!
+                    debug!(message_type = message_type, "Successfully broadcasted batch command update.");
                 }
             }
             Err(e) => {
-                eprintln!("Failed to serialize batch command update message ({}): {}", message_type, e);
+                error!(
+                    message_type = message_type,
+                    error = %e,
+                    "Failed to serialize batch command update message."
+                );
             }
         }
     }
@@ -48,9 +56,11 @@ pub fn subscribe(&self) -> broadcast::Receiver<BatchCommandUpdateMsg> {
         status: String,
         exit_code: Option<i32>,
     ) {
-        println!(
-            "[ResultBroadcaster] Broadcasting child task update: child_id={}, status={}, exit_code={:?}",
-            child_task_id, status, exit_code
+        info!(
+            child_task_id = %child_task_id,
+            status = %status,
+            exit_code = ?exit_code,
+            "Broadcasting child task update."
         );
         let payload = json!({
             "batch_command_id": batch_command_id.to_string(),
@@ -68,9 +78,11 @@ pub fn subscribe(&self) -> broadcast::Receiver<BatchCommandUpdateMsg> {
         overall_status: String,
         completed_at: Option<String>, // Assuming DateTimeUtc to string
     ) {
-        println!(
-            "[ResultBroadcaster] Broadcasting batch task update: batch_id={}, status={}, completed_at={:?}",
-            batch_command_id, overall_status, completed_at
+        info!(
+            batch_command_id = %batch_command_id,
+            status = %overall_status,
+            completed_at = ?completed_at,
+            "Broadcasting batch task update."
         );
          let payload = json!({
             "batch_command_id": batch_command_id.to_string(),
@@ -89,9 +101,11 @@ pub fn subscribe(&self) -> broadcast::Receiver<BatchCommandUpdateMsg> {
         stream_type: String, // "stdout" or "stderr"
         timestamp: String, // Assuming DateTimeUtc to string
     ) {
-        println!(
-            "[ResultBroadcaster] Broadcasting new log output: child_id={}, stream={}, line_length={}",
-            child_task_id, stream_type, log_line.len()
+        debug!(
+            child_task_id = %child_task_id,
+            stream = %stream_type,
+            line_length = log_line.len(),
+            "Broadcasting new log output."
         );
         let payload = json!({
             "batch_command_id": batch_command_id.to_string(),

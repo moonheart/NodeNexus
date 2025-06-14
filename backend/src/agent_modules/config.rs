@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{fs, error::Error, path::Path};
 use crate::agent_service::AgentConfig;
+use tracing::{info, error};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AgentCliConfig {
@@ -14,21 +15,21 @@ pub fn load_cli_config(config_path_str: &str) -> Result<AgentCliConfig, Box<dyn 
     let config_path = Path::new(config_path_str);
     // Attempt to get absolute path for logging, but don't fail if it can't be canonicalized (e.g. if file doesn't exist yet)
     let absolute_path_display = config_path.canonicalize().unwrap_or_else(|_| config_path.to_path_buf());
-    println!("[Agent] Attempting to load config from: {:?}", absolute_path_display);
+    info!(path = ?absolute_path_display, "Attempting to load config.");
 
     let config_str = fs::read_to_string(config_path)
         .map_err(|e| {
-            eprintln!("Failed to read agent config file '{}': {}", config_path_str, e);
+            error!(path = %config_path_str, error = %e, "Failed to read agent config file.");
             Box::new(e) as Box<dyn Error>
         })?;
     
     let agent_cli_config: AgentCliConfig = toml::from_str(&config_str)
         .map_err(|e| {
-            eprintln!("Failed to parse agent config file '{}': {}", config_path_str, e);
+            error!(path = %config_path_str, error = %e, "Failed to parse agent config file.");
             Box::new(e) as Box<dyn Error>
         })?;
 
-    println!("[Agent] Loaded config: {:?}", agent_cli_config);
+    info!(config = ?agent_cli_config, "Loaded config successfully.");
     Ok(agent_cli_config)
 }
 
@@ -62,6 +63,6 @@ pub fn save_agent_config(config: &AgentConfig, config_path_str: &str) -> Result<
     // 6. Write the updated content back to the file
     fs::write(config_path, updated_content)?;
 
-    println!("[Agent] Successfully merged and saved configuration to {:?}", config_path);
+    info!(path = ?config_path, "Successfully merged and saved configuration.");
     Ok(())
 }

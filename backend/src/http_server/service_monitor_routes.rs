@@ -6,6 +6,7 @@ use axum::{
 use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use tracing::error;
 
 use crate::http_server::{AppState, AppError};
 use crate::db::services::service_monitor_service;
@@ -41,7 +42,7 @@ async fn create_monitor(
     let affected_vps_ids = service_monitor_service::get_vps_ids_for_monitor(&app_state.db_pool, created_monitor.id).await?;
     for vps_id in affected_vps_ids {
         if let Err(e) = push_config_to_vps(app_state.clone(), vps_id).await {
-            eprintln!("Failed to push config to VPS {}: {:?}", vps_id, e);
+            error!(vps_id = vps_id, error = ?e, "Failed to push config to VPS after creating monitor.");
         }
     }
 
@@ -76,7 +77,7 @@ async fn update_monitor(
 
     for vps_id in affected_vps_ids {
         if let Err(e) = push_config_to_vps(app_state.clone(), vps_id).await {
-            eprintln!("Failed to push config to VPS {}: {:?}", vps_id, e);
+            error!(vps_id = vps_id, error = ?e, "Failed to push config to VPS after updating monitor.");
         }
     }
 
@@ -101,7 +102,7 @@ async fn delete_monitor(
 
     for vps_id in affected_vps_ids {
         if let Err(e) = push_config_to_vps(app_state.clone(), vps_id).await {
-            eprintln!("Failed to push config to VPS {}: {:?}", vps_id, e);
+            error!(vps_id = vps_id, error = ?e, "Failed to push config to VPS after deleting monitor.");
         }
     }
 

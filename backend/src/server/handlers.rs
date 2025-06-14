@@ -9,6 +9,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Status};
 use uuid::Uuid;
 use sea_orm::DatabaseConnection; // Replaced PgPool
+use tracing::{info, error, warn, debug};
 
 use crate::agent_service::{
     AgentConfig, MessageToAgent, MessageToServer, ServerHandshakeAck, // Added OsType
@@ -35,8 +36,7 @@ pub async fn handle_connection(
     batch_command_manager: Arc<crate::db::services::BatchCommandManager>, // Added BatchCommandManager
 ) -> Result<Response<ReceiverStream<Result<MessageToAgent, Status>>>, Status> {
     let (tx_to_agent, rx_from_server) = mpsc::channel(128);
-    let connection_id = Uuid::new_v4().to_string();
-    println!("[{}] New connection stream established", connection_id);
+    info!("New connection stream established");
 
     let connected_agents_arc_clone = connected_agents_arc.clone();
     let pool_clone = pool.clone();
@@ -66,22 +66,22 @@ pub async fn handle_connection(
                                 auth_successful_for_msg = true;
                             } else {
                                 error_message_for_ack = "Authentication failed: Invalid secret.".to_string();
-                                eprintln!("[{}] Auth failed for VPS ID {}: Invalid secret.", connection_id, vps_db_id_from_msg);
+                                warn!("Authentication failed: Invalid secret.");
                             }
                         }
                         Ok(None) => {
                             error_message_for_ack = format!("Authentication failed: VPS ID {} not found.", vps_db_id_from_msg);
-                            eprintln!("[{}] Auth failed: VPS ID {} not found.", connection_id, vps_db_id_from_msg);
+                            warn!("Authentication failed: VPS ID not found.");
                         }
                         Err(e) => {
                             error_message_for_ack = format!("Authentication failed: Database error ({})", e);
-                            eprintln!("[{}] Auth failed for VPS ID {}: DB error: {}", connection_id, vps_db_id_from_msg, e);
+                            error!(error = %e, "Authentication failed: Database error.");
                         }
                     }
 
                     // Handle handshake payload specifically
                     if let Some(ServerPayload::AgentHandshake(handshake)) = &msg_to_server.payload {
-                        println!("[{}] Received AgentHandshake from VPS ID {}: {:?}", connection_id, vps_db_id_from_msg, handshake);
+                        info!(handshake = ?handshake, "Received AgentHandshake.");
                         if auth_successful_for_msg {
                             let assigned_agent_id = Uuid::new_v4().to_string();
                             current_session_agent_id = Some(assigned_agent_id.clone());
@@ -89,11 +89,11 @@ pub async fn handle_connection(
                             // Fetch service monitoring tasks for this agent
                             let tasks = match services::service_monitor_service::get_tasks_for_agent(&*pool_clone, vps_db_id_from_msg).await {
                                 Ok(tasks) => {
-                                    println!("[{}] Found {} service monitor tasks for agent (VPS ID {})", connection_id, tasks.len(), vps_db_id_from_msg);
+                                    info!(count = tasks.len(), "Found service monitor tasks for agent.");
                                     tasks
                                 }
                                 Err(e) => {
-                                    eprintln!("[{}] Error fetching service monitor tasks for agent (VPS ID {}): {}. Defaulting to empty list.", connection_id, vps_db_id_from_msg, e);
+                                    error!(error = %e, "Error fetching service monitor tasks for agent. Defaulting to empty list.");
                                     vec![]
                                 }
                             };
@@ -127,17 +127,17 @@ pub async fn handle_connection(
                             ).await {
                                 Ok(rows_affected) => {
                                     if rows_affected > 0 {
-                                        println!("[{}] Successfully updated VPS info for VPS ID {}. Triggering broadcast.", connection_id, vps_db_id_from_msg);
+                                        info!("Successfully updated VPS info. Triggering broadcast.");
                                         // Trigger broadcast after successful handshake update
                                         if trigger_clone.send(()).await.is_err() {
-                                            eprintln!("[{}] Failed to send update trigger after handshake.", connection_id);
+                                            error!("Failed to send update trigger after handshake.");
                                         }
                                     } else {
-                                        eprintln!("[{}] VPS info update on handshake for VPS ID {} affected 0 rows (handler level).", connection_id, vps_db_id_from_msg);
+                                        warn!("VPS info update on handshake affected 0 rows (handler level).");
                                     }
                                 }
                                 Err(e) => {
-                                    eprintln!("[{}] Failed to update VPS info for VPS ID {}: {}", connection_id, vps_db_id_from_msg, e);
+                                    error!(error = %e, "Failed to update VPS info.");
                                 }
                             }
                             
@@ -152,8 +152,7 @@ pub async fn handle_connection(
                             {
                                 let mut agents_guard = connected_agents_arc_clone.lock().await;
                                 agents_guard.agents.insert(assigned_agent_id.clone(), agent_state);
-                                println!("[{}] Agent {} (VPS DB ID: {}) registered. Total agents: {}",
-                                    connection_id, assigned_agent_id, vps_db_id_from_msg, agents_guard.agents.len());
+                                info!(total_agents = agents_guard.agents.len(), "Agent registered.");
                             }
                             
                             let ack = ServerHandshakeAck {
@@ -168,7 +167,7 @@ pub async fn handle_connection(
                                 server_message_id: server_message_id_counter,
                                 payload: Some(AgentPayload::ServerHandshakeAck(ack)),
                             })).await.is_err() {
-                                eprintln!("[{}] Failed to send successful ServerHandshakeAck to agent for VPS ID {}", connection_id, vps_db_id_from_msg);
+                                error!("Failed to send successful ServerHandshakeAck to agent.");
                             }
                             server_message_id_counter += 1;
                         } else {
@@ -185,13 +184,12 @@ pub async fn handle_connection(
                                 server_message_id: server_message_id_counter,
                                 payload: Some(AgentPayload::ServerHandshakeAck(ack)),
                             })).await;
-                            eprintln!("[{}] Handshake authentication failed for VPS ID {}. Closing stream.", connection_id, vps_db_id_from_msg);
+                            error!("Handshake authentication failed. Closing stream.");
                             return; // Close stream on failed handshake
                         }
                     } else { // Not a handshake message
                         if !auth_successful_for_msg {
-                            eprintln!("[{}] Authentication failed for non-handshake message from VPS ID {}. Ignoring message. ClientMsgID: {}",
-                                connection_id, vps_db_id_from_msg, msg_to_server.client_message_id);
+                            warn!(client_msg_id = msg_to_server.client_message_id, "Authentication failed for non-handshake message. Ignoring.");
                             // Optionally, could close the stream here too if strict auth per message is desired
                             // For now, just ignore the unauthenticated non-handshake message.
                             continue;
@@ -202,56 +200,51 @@ pub async fn handle_connection(
                             if let Some(payload) = msg_to_server.payload {
                                 match payload {
                                     ServerPayload::Heartbeat(heartbeat) => {
-                                        println!("[{}] Received Heartbeat from {} (VPS ID {}): client_msg_id={}, ts={}",
-                                            connection_id, session_id, vps_db_id_from_msg, msg_to_server.client_message_id, heartbeat.timestamp_unix_ms);
+                                        debug!(client_msg_id = msg_to_server.client_message_id, ts = heartbeat.timestamp_unix_ms, "Received Heartbeat.");
                                         let mut agents_guard = connected_agents_arc_clone.lock().await;
                                         if let Some(state) = agents_guard.agents.get_mut(session_id) {
                                             state.last_heartbeat_ms = Utc::now().timestamp_millis();
                                         } else {
-                                            eprintln!("[{}] Received Heartbeat from unknown/deregistered agent_id: {}. Ignoring.", connection_id, session_id);
+                                            warn!("Received Heartbeat from unknown/deregistered agent. Ignoring.");
                                         }
                                     }
                                     ServerPayload::PerformanceBatch(batch) => {
-                                        // println!("[{}] Received PerformanceBatch from {} (VPS ID {}). Snapshots: {}",
-                                        //     connection_id, session_id, vps_db_id_from_msg, batch.snapshots.len());
-
+                                        // debug!(snapshot_count = batch.snapshots.len(), "Received PerformanceBatch.");
                                         match services::save_performance_snapshot_batch(&*pool_clone, vps_db_id_from_msg, &batch).await { // Dereference Arc
                                             Ok(_) => {
                                                 // After saving metrics, trigger a full broadcast.
                                                 // This replaces the silent cache update with a full, consistent state refresh.
                                                 if trigger_clone.send(()).await.is_err() {
-                                                    eprintln!("[{}] Failed to send update trigger after metrics batch.", connection_id);
+                                                    error!("Failed to send update trigger after metrics batch.");
                                                 }
                                             }
                                             Err(e) => {
-                                                eprintln!("[{}] Failed to save performance batch for agent {} (VPS DB ID {}): {}", connection_id, session_id, vps_db_id_from_msg, e);
+                                                error!(error = %e, "Failed to save performance batch.");
                                             }
                                         }
                                     }
                                     ServerPayload::AgentHandshake(_) => {
                                         // This case should have been handled above. If reached, it's an anomaly.
-                                        eprintln!("[{}] Received duplicate AgentHandshake from VPS ID {} after initial handshake. Ignoring.", connection_id, vps_db_id_from_msg);
+                                        warn!("Received duplicate AgentHandshake after initial handshake. Ignoring.");
                                     }
                                     ServerPayload::UpdateConfigResponse(response) => {
-                                       println!("[{}] Received UpdateConfigResponse from {} (VPS ID {}): success={}, version_id={}",
-                                           connection_id, session_id, vps_db_id_from_msg, response.success, response.config_version_id);
+                                       info!(success = response.success, version_id = response.config_version_id, "Received UpdateConfigResponse.");
 
                                        let status = if response.success { "synced" } else { "failed" };
                                        let error_msg = if response.success { None } else { Some(response.error_message.as_str()) };
 
                                        match services::update_vps_config_status(&*pool_clone, vps_db_id_from_msg, status, error_msg).await { // Dereference Arc
                                            Ok(_) => {
-                                               println!("[{}] Successfully updated config status for VPS ID {}. Triggering broadcast.", connection_id, vps_db_id_from_msg);
+                                               info!("Successfully updated config status. Triggering broadcast.");
                                                if trigger_clone.send(()).await.is_err() {
-                                                   eprintln!("[{}] Failed to send update trigger after config update.", connection_id);
+                                                   error!("Failed to send update trigger after config update.");
                                                }
                                            }
-                                           Err(e) => eprintln!("[{}] Failed to update config status for VPS ID {}: {}", connection_id, vps_db_id_from_msg, e),
+                                           Err(e) => error!(error = %e, "Failed to update config status."),
                                        }
                                    }
                                    ServerPayload::BatchCommandOutputStream(output_stream) => {
-                                       println!("[{}] Received BatchCommandOutputStream from {} (VPS ID {}) for command_id: {}",
-                                           connection_id, session_id, vps_db_id_from_msg, output_stream.command_id);
+                                       debug!(command_id = %output_stream.command_id, "Received BatchCommandOutputStream.");
                                        match Uuid::parse_str(&output_stream.command_id) {
                                            Ok(child_task_id) => {
                                                let stream_type = GrpcOutputType::try_from(output_stream.stream_type)
@@ -262,17 +255,16 @@ pub async fn handle_connection(
                                                    output_stream.chunk,
                                                    Some(output_stream.timestamp),
                                                ).await {
-                                                   eprintln!("[{}] Error recording child task output for {}: {:?}", connection_id, child_task_id, e);
+                                                   error!(child_task_id = %child_task_id, error = ?e, "Error recording child task output.");
                                                }
                                            }
                                            Err(e) => {
-                                               eprintln!("[{}] Failed to parse command_id from BatchCommandOutputStream: {}. Error: {}", connection_id, output_stream.command_id, e);
+                                               error!(command_id = %output_stream.command_id, error = %e, "Failed to parse command_id from BatchCommandOutputStream.");
                                            }
                                        }
                                    }
                                    ServerPayload::BatchCommandResult(command_result) => {
-                                       println!("[{}] Received BatchCommandResult from {} (VPS ID {}) for command_id: {}, status: {:?}, exit_code: {}",
-                                           connection_id, session_id, vps_db_id_from_msg, command_result.command_id, command_result.status, command_result.exit_code);
+                                       info!(command_id = %command_result.command_id, status = ?command_result.status, exit_code = command_result.exit_code, "Received BatchCommandResult.");
                                        match Uuid::parse_str(&command_result.command_id) {
                                            Ok(child_task_id) => {
                                                let new_status = match GrpcCommandStatus::try_from(command_result.status) {
@@ -289,17 +281,17 @@ pub async fn handle_connection(
                                                    Some(command_result.exit_code),
                                                    error_message,
                                                ).await {
-                                                   eprintln!("[{}] Error updating child task status for {}: {:?}", connection_id, child_task_id, e);
+                                                   error!(child_task_id = %child_task_id, error = ?e, "Error updating child task status.");
                                                }
                                            }
                                            Err(e) => {
-                                               eprintln!("[{}] Failed to parse command_id from BatchCommandResult: {}. Error: {}", connection_id, command_result.command_id, e);
+                                               error!(command_id = %command_result.command_id, error = %e, "Failed to parse command_id from BatchCommandResult.");
                                            }
                                        }
                                    }
                                    ServerPayload::ServiceMonitorResult(result) => {
                                        if let Err(e) = services::service_monitor_service::record_monitor_result(&*pool_clone, vps_db_id_from_msg, &result).await {
-                                           eprintln!("[{}] Failed to record monitor result for monitor #{}: {}", connection_id, result.monitor_id, e);
+                                           error!(monitor_id = result.monitor_id, error = %e, "Failed to record monitor result.");
                                        } else {
                                            // After successfully recording, fetch the detailed result and broadcast it.
                                            let details = services::service_monitor_service::get_monitor_results_by_id(&*pool_clone, result.monitor_id, None, None, Some(1)).await;
@@ -307,29 +299,26 @@ pub async fn handle_connection(
                                                if let Some(detail) = details_vec.pop() {
                                                    let message = WsMessage::ServiceMonitorResult(detail);
                                                    if let Err(e) = ws_data_broadcaster_tx.send(message) {
-                                                       eprintln!("[{}] Failed to broadcast service monitor result: {}", connection_id, e);
+                                                       error!(error = %e, "Failed to broadcast service monitor result.");
                                                    }
                                                }
                                            }
                                        }
                                    }
                                    _ => {
-                                       println!("[{}] Received unhandled message type from {} (VPS ID {}): client_msg_id={}, payload_type: {:?}",
-                                           connection_id, session_id, vps_db_id_from_msg, msg_to_server.client_message_id, payload);
+                                       warn!(client_msg_id = msg_to_server.client_message_id, payload_type = ?payload, "Received unhandled message type.");
                                    }
                                }
                           } else {
-                                 println!("[{}] Received message with no payload from VPS ID {}: client_msg_id={}",
-                                    connection_id, vps_db_id_from_msg, msg_to_server.client_message_id);
+                                 debug!(client_msg_id = msg_to_server.client_message_id, "Received message with no payload.");
                             }
                         } else if msg_to_server.payload.is_some() { // Non-handshake message before handshake completed
-                             eprintln!("[{}] Received non-handshake message from VPS ID {} before handshake was completed. Ignoring.", connection_id, vps_db_id_from_msg);
+                             warn!("Received non-handshake message before handshake was completed. Ignoring.");
                         }
                     }
                 }
                 Err(status) => {
-                    eprintln!("[{}] Error receiving message from agent (session: {:?}): {:?}",
-                        connection_id, current_session_agent_id, status);
+                    error!(?status, "Error receiving message from agent. Stream broken.");
                     break;
                 }
             }
@@ -337,39 +326,39 @@ pub async fn handle_connection(
 
         // Cleanup logic for when the stream ends (client disconnects)
         if let Some(session_id_to_remove) = current_session_agent_id {
-            println!("[{}] Stream ended for agent session {}", connection_id, session_id_to_remove);
+            info!("Stream ended for agent session.");
             
             // Remove agent from the connected list
             {
                 let mut agents_guard = connected_agents_arc_clone.lock().await;
                 if agents_guard.agents.remove(&session_id_to_remove).is_some() {
-                    println!("[{}] Agent session {} deregistered. Total agents: {}", connection_id, session_id_to_remove, agents_guard.agents.len());
+                    info!(total_agents = agents_guard.agents.len(), "Agent session deregistered.");
                 }
             }
 
             // Update status to "offline" and broadcast the change
             if let Some(id) = vps_db_id {
-                println!("[{}] Setting status to 'offline' for VPS ID {}", connection_id, id);
+                info!("Setting status to 'offline'.");
                 match services::update_vps_status(&*pool_clone, id, "offline").await { // Dereference Arc
                     Ok(rows_affected) if rows_affected > 0 => {
-                        println!("[{}] Successfully set status to 'offline' for VPS ID {}. Triggering broadcast.", connection_id, id);
+                        info!("Successfully set status to 'offline'. Triggering broadcast.");
                         // Trigger a final broadcast to update all clients
                         if trigger_clone.send(()).await.is_err() {
-                            eprintln!("[{}] Failed to send update trigger on disconnect for VPS ID {}.", connection_id, id);
+                            error!("Failed to send update trigger on disconnect.");
                         }
                     }
                     Ok(_) => {
-                        eprintln!("[{}] Attempted to set status to 'offline' for VPS ID {}, but no rows were affected.", connection_id, id);
+                        warn!("Attempted to set status to 'offline', but no rows were affected.");
                     }
                     Err(e) => {
-                        eprintln!("[{}] Failed to set status to 'offline' for VPS ID {}: {}", connection_id, id, e);
+                        error!(error = %e, "Failed to set status to 'offline'.");
                     }
                 }
             }
         } else {
-            println!("[{}] Stream ended for a connection that did not complete handshake.", connection_id);
+            info!("Stream ended for a connection that did not complete handshake.");
         }
-        println!("[{}] Connection task finished.", connection_id);
+        info!("Connection task finished.");
     });
 
     Ok(Response::new(ReceiverStream::from(rx_from_server)))

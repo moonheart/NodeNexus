@@ -2,6 +2,7 @@ use std::sync::Arc;
 use sea_orm::{DatabaseConnection, DbErr, EntityTrait, QueryFilter, ColumnTrait, QueryOrder, QuerySelect}; // Added SeaORM imports, removed IntoSimpleExpr
 use tokio::time::{interval, Duration as TokioDuration}; // Renamed to avoid conflict
 use chrono::{Utc, Duration as ChronoDuration}; // Added ChronoDuration
+use tracing::{info, error, warn, debug};
 use crate::{
     db::{
         entities::{alert_rule, performance_metric, vps}, // Changed to use entities
@@ -42,50 +43,50 @@ impl EvaluationService {
 
     // Placeholder for the main evaluation loop
     pub async fn start_periodic_evaluation(self: Arc<Self>, period_seconds: u64) {
-        println!("Alert evaluation service started. Evaluation interval: {} seconds.", period_seconds);
+        info!(interval_seconds = period_seconds, "Alert evaluation service started.");
         let mut interval = interval(TokioDuration::from_secs(period_seconds)); // Use TokioDuration
         loop {
             interval.tick().await;
-            println!("Running alert evaluation cycle...");
+            debug!("Running alert evaluation cycle...");
             if let Err(e) = self.run_evaluation_cycle().await {
-                eprintln!("Error during alert evaluation cycle: {}", e);
+                error!(error = %e, "Error during alert evaluation cycle.");
             }
         }
     }
 
     async fn run_evaluation_cycle(&self) -> Result<(), EvaluationError> {
-        println!("Fetching active alert rules...");
+        debug!("Fetching active alert rules...");
         let active_rules = self.alert_service.get_all_active_rules_for_evaluation().await?; // Assuming this method exists or will be created
 
-        println!("Found {} active rules to evaluate.", active_rules.len());
+        info!(count = active_rules.len(), "Active rules to evaluate.");
 
         for rule in active_rules {
             // TODO: Implement cooldown logic here later if needed (e.g., check rule.last_triggered_at)
             
             match self.evaluate_rule(&rule).await { // rule is alert_rule::Model
                 Ok(Some(notification_message)) => {
-                    println!("Alert rule '{}' (ID: {}) triggered. Sending notifications.", rule.name, rule.id);
+                    info!(rule_name = %rule.name, rule_id = rule.id, "Alert rule triggered. Sending notifications.");
                     // We need a method in NotificationService to send notifications for a given rule_id / user_id
                     // This method would look up associated channels and send the message.
                     // For now, let's assume such a method exists or we'll add it.
                     // The user_id is on the rule object.
                     match self.notification_service.send_notifications_for_alert_rule(rule.id, rule.user_id, &notification_message).await {
                         Ok(_) => {
-                            println!("Successfully sent notifications for alert rule ID: {}", rule.id);
+                            info!(rule_id = rule.id, "Successfully sent notifications for alert rule.");
                             // Update last_triggered_at timestamp
                             if let Err(e_update) = self.alert_service.update_alert_rule_last_triggered(rule.id, rule.user_id).await {
-                                eprintln!("Failed to update last_triggered_at for rule ID {}: {}", rule.id, e_update);
+                                error!(rule_id = rule.id, error = %e_update, "Failed to update last_triggered_at for rule.");
                             }
                         }
-                        Err(e) => eprintln!("Failed to send notifications for alert rule ID {}: {}", rule.id, e),
+                        Err(e) => error!(rule_id = rule.id, error = %e, "Failed to send notifications for alert rule."),
                     }
                 }
                 Ok(None) => {
                     // Rule not triggered, do nothing or log verbosely if needed
-                    // println!("Rule '{}' (ID: {}) not triggered.", rule.name, rule.id);
+                    // debug!("Rule '{}' (ID: {}) not triggered.", rule.name, rule.id);
                 }
                 Err(e) => {
-                    eprintln!("Error evaluating rule '{}' (ID: {}): {}", rule.name, rule.id, e);
+                    error!(rule_name = %rule.name, rule_id = rule.id, error = %e, "Error evaluating rule.");
                 }
             }
         }
@@ -107,12 +108,12 @@ impl EvaluationService {
             self.evaluate_rule_for_single_vps(rule, specific_vps_id, &vps_name).await
         } else {
             // Rule is global, apply to all user's VPS
-            println!("Evaluating global rule '{}' (ID: {}) for user ID: {}", rule.name, rule.id, rule.user_id);
+            debug!(rule_name = %rule.name, rule_id = rule.id, user_id = rule.user_id, "Evaluating global rule.");
             // Assuming get_all_vps_for_user now returns Vec<vps::Model>
             let user_vps_list = crate::db::services::vps_service::get_all_vps_for_user(&*self.pool, rule.user_id).await?;
             
             if user_vps_list.is_empty() {
-                println!("No VPS found for user ID {} to evaluate global rule '{}'", rule.user_id, rule.name);
+                warn!(user_id = rule.user_id, rule_name = %rule.name, "No VPS found for user to evaluate global rule.");
                 return Ok(None);
             }
 
@@ -128,7 +129,7 @@ impl EvaluationService {
                     }
                     Err(e) => {
                         // Log error for this specific VPS evaluation but continue trying others for a global rule.
-                        eprintln!("Error evaluating global rule '{}' for VPS ID {}: {}", rule.name, vps_instance.id, e);
+                        error!(rule_name = %rule.name, vps_id = vps_instance.id, error = %e, "Error evaluating global rule for VPS.");
                     }
                 }
             }
@@ -151,9 +152,14 @@ impl EvaluationService {
             if let Some(last_triggered) = rule.last_triggered_at {
                 let cooldown_period = ChronoDuration::seconds(rule.cooldown_seconds as i64); // Use rule.cooldown_seconds
                 if now < last_triggered + cooldown_period {
-                    println!(
-                        "Rule '{}' (ID: {}) for VPS '{}' (ID: {}) is in cooldown for {}s. Last triggered: {}. Now: {}",
-                        rule.name, rule.id, vps_name, vps_id, rule.cooldown_seconds, last_triggered, now
+                    debug!(
+                        rule_name = %rule.name,
+                        rule_id = rule.id,
+                        vps_name = %vps_name,
+                        vps_id = vps_id,
+                        cooldown_seconds = rule.cooldown_seconds,
+                        last_triggered = %last_triggered,
+                        "Rule is in cooldown."
                     );
                     return Ok(None);
                 }
@@ -258,7 +264,7 @@ impl EvaluationService {
                              Some("out_only") => current_tx,
                              Some("max_in_out") => std::cmp::max(current_rx, current_tx),
                              _ => {
-                                 eprintln!("Unsupported or missing traffic_billing_rule for VPS ID {}", vps_id);
+                                 warn!(vps_id = vps_id, "Unsupported or missing traffic_billing_rule.");
                                  return Ok(None); // Cannot evaluate without a valid rule
                              }
                          };
@@ -274,7 +280,7 @@ impl EvaluationService {
                              "=" | "==" => (usage_percent - rule.threshold).abs() < f64::EPSILON,
                              "!=" => (usage_percent - rule.threshold).abs() > f64::EPSILON,
                              _ => {
-                                 eprintln!("Unsupported comparison_operator for traffic_usage_percent rule ID {}", rule.id);
+                                 warn!(rule_id = rule.id, "Unsupported comparison_operator for traffic_usage_percent rule.");
                                  return Ok(None); // Unsupported operator
                              }
                          };
@@ -287,16 +293,16 @@ impl EvaluationService {
 
                      } else {
                          // Limit is 0 or not set, cannot calculate percentage meaningfully for threshold rules
-                         println!("Traffic limit is 0 or not set for VPS ID {}. Cannot evaluate traffic_usage_percent rule ID {}", vps_id, rule.id);
+                         debug!(vps_id = vps_id, rule_id = rule.id, "Traffic limit is 0 or not set. Cannot evaluate traffic_usage_percent rule.");
                          return Ok(None);
                      }
                  } else {
                      // Limit is not set, cannot calculate percentage
-                     println!("Traffic limit is not configured for VPS ID {}. Cannot evaluate traffic_usage_percent rule ID {}", vps_id, rule.id);
+                     debug!(vps_id = vps_id, rule_id = rule.id, "Traffic limit is not configured. Cannot evaluate traffic_usage_percent rule.");
                      return Ok(None);
                  }
              } else {
-                 eprintln!("VPS with ID {} not found during traffic alert evaluation.", vps_id);
+                 error!(vps_id = vps_id, "VPS not found during traffic alert evaluation.");
                  return Err(EvaluationError::VpsNameNotFound(vps_id)); // VPS not found
              }
         }

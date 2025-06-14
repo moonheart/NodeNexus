@@ -5,6 +5,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as TokioCommand;
 use tokio::sync::{mpsc, oneshot};
 use chrono::Utc;
+use tracing::{info, error, warn, debug};
 
 use crate::agent_service::{
     message_to_server::Payload as ServerPayload, BatchAgentCommandRequest,
@@ -25,14 +26,13 @@ pub async fn handle_batch_agent_command(
     agent_secret: String,
     id_provider: impl Fn() -> u64 + Send + Sync + Clone + 'static,
 ) {
-    let child_command_id = request.command_id.clone();
-    println!("[Agent:{}][Command {}] Received request.", agent_id, child_command_id);
+    info!("Received command request.");
 
     // Create a one-shot channel for termination signaling.
     let (term_tx, term_rx) = oneshot::channel();
 
     // Add the termination sender to the tracker.
-    command_tracker.add_command(child_command_id.clone(), term_tx);
+    command_tracker.add_command(request.command_id.clone(), term_tx);
 
     // Spawn the dedicated management task.
     tokio::spawn(async move {
@@ -93,7 +93,7 @@ async fn manage_command_lifecycle(
         }
     };
 
-    println!("[Agent:{}][Command {}] Spawned successfully. PID: {:?}", agent_id, child_command_id, child_process.id());
+    info!(pid = ?child_process.id(), "Spawned command process successfully.");
 
     let stdout = child_process.stdout.take().expect("Failed to take stdout");
     let stderr = child_process.stderr.take().expect("Failed to take stderr");
@@ -102,10 +102,10 @@ async fn manage_command_lifecycle(
     let final_status_result = tokio::select! {
         // Case 1: The command is terminated by an external signal
         _ = &mut term_rx => {
-            println!("[Agent:{}][Command {}] Termination signal received.", agent_id, child_command_id);
+            warn!("Termination signal received.");
             match child_process.kill().await {
                 Ok(_) => {
-                    println!("[Agent:{}][Command {}] Kill signal sent successfully.", agent_id, child_command_id);
+                    info!("Kill signal sent successfully.");
                     BatchCommandResult {
                         command_id: child_command_id.clone(),
                         status: CommandStatus::Terminated.into(),
@@ -115,7 +115,7 @@ async fn manage_command_lifecycle(
                 }
                 Err(e) => {
                     let error_msg = format!("Failed to send kill signal: {}", e);
-                    eprintln!("[Agent:{}][Command {}] {}", agent_id, child_command_id, error_msg);
+                    error!(error = %error_msg);
                     BatchCommandResult {
                         command_id: child_command_id.clone(),
                         status: CommandStatus::Failure.into(),
@@ -137,7 +137,7 @@ async fn manage_command_lifecycle(
         } => {
             match result {
                 Ok(status) => {
-                    println!("[Agent:{}][Command {}] Completed with status: {}", agent_id, child_command_id, status);
+                    info!(?status, "Command completed.");
                     let final_status_enum = if status.success() { CommandStatus::Success } else { CommandStatus::Failure };
                     BatchCommandResult {
                         command_id: child_command_id.clone(),
@@ -148,7 +148,7 @@ async fn manage_command_lifecycle(
                 }
                 Err(e) => {
                     let error_msg = format!("Failed to wait for command: {}", e);
-                    eprintln!("[Agent:{}][Command {}] {}", agent_id, child_command_id, error_msg);
+                    error!(error = %error_msg);
                     BatchCommandResult {
                         command_id: child_command_id.clone(),
                         status: CommandStatus::Failure.into(),
@@ -168,12 +168,12 @@ async fn manage_command_lifecycle(
         vps_db_id,
         agent_secret,
     }).await.is_err() {
-        eprintln!("[Agent:{}][Command {}] Failed to send final result.", agent_id, child_command_id);
+        error!("Failed to send final result.");
     }
 
     // The command is finished, so remove it from the tracker.
     command_tracker.remove_command(&child_command_id);
-    println!("[Agent:{}][Command {}] Lifecycle management finished.", agent_id, child_command_id);
+    info!("Lifecycle management finished.");
 }
 
 /// Helper to stream output from stdout or stderr.
@@ -205,7 +205,7 @@ async fn stream_output(
             vps_db_id,
             agent_secret: agent_secret.clone(),
         }).await.is_err() {
-            eprintln!("[Agent] Output stream: Failed to send to server for command {}.", command_id);
+            error!("Output stream: Failed to send to server.");
             break;
         }
         buffer.clear();
@@ -221,7 +221,7 @@ async fn send_error_result(
     agent_secret: &str,
     id_provider: &(impl Fn() -> u64 + Send + Sync + Clone),
 ) {
-    eprintln!("[Agent][Command {}] Error: {}", command_id, error_message);
+    error!("Sending error result for command.");
     let error_result = BatchCommandResult {
         command_id: command_id.to_string(),
         status: CommandStatus::Failure.into(),
@@ -235,7 +235,7 @@ async fn send_error_result(
         vps_db_id,
         agent_secret: agent_secret.to_string(),
     }).await.is_err() {
-        eprintln!("[Agent][Command {}] Failed to send error result.", command_id);
+        error!("Failed to send error result.");
     }
 }
 
@@ -251,14 +251,14 @@ pub async fn handle_batch_terminate_command(
     id_provider: impl Fn() -> u64 + Send + Sync + Clone + 'static,
 ) {
     let command_id_to_terminate = request.command_id;
-    println!("[Agent:{}][Terminate {}] Received request.", agent_id, command_id_to_terminate);
+    info!("Received termination request.");
 
     // Simply signal the command's managing task to terminate.
     // The managing task is responsible for the actual killing and result reporting.
     if let Err(e) = command_tracker.signal_termination(&command_id_to_terminate) {
         // This case happens if the command already completed or was terminated.
         // We can send a message back to the server to confirm we tried, but the command was already gone.
-        println!("[Agent:{}][Terminate {}] Signal failed: {}", agent_id, command_id_to_terminate, e);
+        warn!(error = %e, "Termination signal failed, command likely already finished.");
         let result_payload = BatchCommandResult {
             command_id: command_id_to_terminate.clone(),
             status: CommandStatus::Terminated.into(), // We can consider it "Terminated" as the end state is correct.
@@ -272,7 +272,7 @@ pub async fn handle_batch_terminate_command(
             vps_db_id,
             agent_secret,
         }).await.is_err() {
-            eprintln!("[Agent:{}][Terminate {}] Failed to send 'already terminated' result.", agent_id, command_id_to_terminate);
+            error!("Failed to send 'already terminated' result.");
         }
     }
 }

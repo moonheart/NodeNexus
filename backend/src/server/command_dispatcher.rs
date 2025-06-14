@@ -4,6 +4,7 @@ use std::sync::{
 };
 use tokio::sync::Mutex;
 use uuid::Uuid;
+use tracing::{info, error, warn};
 
 use crate::db::services::BatchCommandManager; // To update task status
 use crate::server::agent_state::ConnectedAgents; // To get agent connections (gRPC clients)
@@ -104,7 +105,7 @@ let message_to_agent = MessageToAgent {
                     return Err(DispatcherError::MpscSendError(e.to_string()));
                 }
                 
-                println!("Successfully dispatched command for child_task_id {} to VPS ID {}", child_task_id, vps_id);
+                info!("Successfully dispatched command to agent.");
                 // TODO: Spawn a task to handle the response stream (AgentToServerMessage)
                 // This task would listen on a channel associated with this agent's communication stream
                 // and process BatchCommandOutputStream and BatchCommandResult messages.
@@ -148,25 +149,19 @@ let message_to_agent = MessageToAgent {
                     // Log the error, but the task is already marked as Terminating in DB.
                     // Further DB update here might be redundant or could conflict if agent is truly unreachable.
                     // The primary responsibility here is to attempt sending the termination signal.
-                    eprintln!(
-                        "Failed to send terminate command for child_task_id {} to VPS ID {} via mpsc: {}",
-                        child_task_id, vps_id, e
-                    );
+                    error!(error = %e, "Failed to send terminate command to agent via mpsc.");
                     // We might not want to return an error that stops processing other terminations.
                     // The status in DB is already 'Terminating'.
                     // Consider if this should return an error or just log. For now, let's log and continue.
                     // return Err(DispatcherError::MpscSendError(e.to_string()));
                 } else {
-                    println!("Successfully dispatched terminate command for child_task_id {} to VPS ID {}", child_task_id, vps_id);
+                    info!("Successfully dispatched terminate command to agent.");
                 }
             }
             None => {
                 // Agent not found. The task is already marked as Terminating in DB.
                 // Log this, but it's not necessarily an error for the dispatcher's attempt.
-                println!(
-                    "Agent not found for VPS ID {} when trying to send terminate for child_task_id {}. Task already marked Terminating.",
-                    vps_id, child_task_id
-                );
+                warn!("Agent not found when trying to send terminate. Task already marked Terminating.");
                 // return Err(DispatcherError::AgentNotFound(vps_id_str.to_string()));
             }
         }
