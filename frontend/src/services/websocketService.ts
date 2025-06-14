@@ -1,6 +1,7 @@
 import { useAuthStore } from '../store/authStore';
 import { EventEmitter } from './eventEmitter';
 import type { FullServerListPushType, ServiceMonitorResult } from '../types';
+import { throttle } from 'lodash';
 
 const WS_URL_BASE = import.meta.env.VITE_WS_BASE_URL || `ws://${window.location.host}`;
 
@@ -23,8 +24,13 @@ class WebSocketService extends EventEmitter<WebSocketEvents> {
     private intentionalClose = false;
     private currentToken: string | null = null;
 
+    private throttledEmitFullServerList: (data: FullServerListPushType) => void;
+
     constructor() {
         super();
+        this.throttledEmitFullServerList = throttle((data: FullServerListPushType) => {
+            this.emit('full_server_list', data);
+        }, 2000, { leading: true, trailing: true }); // Throttle to once every 2 seconds
     }
 
     private getWebSocketUrl(token: string): string {
@@ -93,7 +99,7 @@ class WebSocketService extends EventEmitter<WebSocketEvents> {
                             return;
                         // Note: 'full_server_list' might not be used if the raw object is sent instead
                         case 'full_server_list':
-                             this.emit('full_server_list', parsedData.data as FullServerListPushType);
+                             this.throttledEmitFullServerList(parsedData.data as FullServerListPushType);
                              return;
                         default:
                             console.warn('WebSocketService: Received unknown message type:', parsedData.type);
@@ -103,7 +109,7 @@ class WebSocketService extends EventEmitter<WebSocketEvents> {
 
                 // Case 2: Raw server list push (for backward compatibility or other push types)
                 if ('servers' in parsedData && Array.isArray(parsedData.servers)) {
-                    this.emit('full_server_list', parsedData as FullServerListPushType);
+                    this.throttledEmitFullServerList(parsedData as FullServerListPushType);
                     return;
                 }
 

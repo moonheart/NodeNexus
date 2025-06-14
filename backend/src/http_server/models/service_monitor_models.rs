@@ -61,6 +61,7 @@ pub struct ServiceMonitorResultDetails {
     pub monitor_id: i32,
     pub agent_id: i32,
     pub agent_name: String,
+    pub monitor_name: String,
     pub is_up: bool,
     pub latency_ms: Option<i32>,
     pub details: Option<Value>,

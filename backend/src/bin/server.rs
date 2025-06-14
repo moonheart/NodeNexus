@@ -168,7 +168,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     let broadcaster_for_debounce = ws_data_broadcaster_tx.clone();
     let debouncer_task = tokio::spawn(async move {
         use tokio::time::{sleep, Duration};
-        const DEBOUNCE_DURATION: Duration = Duration::from_millis(500);
+        const DEBOUNCE_DURATION: Duration = Duration::from_millis(2000);
 
         loop {
             // Wait for the first trigger to start a debounce window.

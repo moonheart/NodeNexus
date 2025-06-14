@@ -39,3 +39,17 @@ export const getMonitorResults = async (
   const response = await apiClient.get(`/monitors/${id}/results`, { params });
   return response.data;
 };
+export const getMonitorResultsByVpsId = async (
+  vpsId: number | string,
+  startTime?: string,
+  endTime?: string,
+  limit?: number
+): Promise<ServiceMonitorResult[]> => {
+  const params = new URLSearchParams();
+  if (startTime) params.append('start_time', startTime);
+  if (endTime) params.append('end_time', endTime);
+  if (limit) params.append('limit', limit.toString());
+
+  const response = await apiClient.get(`/vps/${vpsId}/monitor-results`, { params });
+  return response.data;
+};

@@ -288,6 +288,59 @@ pub async fn delete_monitor(
         .exec(db)
         .await
 }
+/// Fetches all service monitors assigned to a specific agent (VPS).
+/// This is similar to get_tasks_for_agent but returns the full monitor models.
+pub async fn get_monitors_for_vps(
+    db: &DatabaseConnection,
+    vps_id: i32,
+) -> Result<Vec<service_monitor::Model>, DbErr> {
+    // 1. Get monitor IDs from direct agent assignments
+    let direct_monitor_ids_future = ServiceMonitorAgent::find()
+        .select_only()
+        .column(service_monitor_agent::Column::MonitorId)
+        .filter(service_monitor_agent::Column::VpsId.eq(vps_id))
+        .into_tuple::<i32>()
+        .all(db);
+
+    // 2. Get monitor IDs from tag-based assignments
+    let agent_tags_future = VpsTag::find()
+        .select_only()
+        .column(vps_tag::Column::TagId)
+        .filter(vps_tag::Column::VpsId.eq(vps_id))
+        .into_tuple::<i32>()
+        .all(db);
+
+    let (direct_monitor_ids, agent_tags) = try_join!(direct_monitor_ids_future, agent_tags_future)?;
+
+    let mut tagged_monitor_ids: Vec<i32> = Vec::new();
+    if !agent_tags.is_empty() {
+        tagged_monitor_ids = ServiceMonitorTag::find()
+            .select_only()
+            .column(service_monitor_tag::Column::MonitorId)
+            .filter(service_monitor_tag::Column::TagId.is_in(agent_tags))
+            .into_tuple::<i32>()
+            .all(db)
+            .await?;
+    }
+
+    // 3. Combine and deduplicate monitor IDs
+    let mut all_monitor_ids = direct_monitor_ids;
+    all_monitor_ids.extend(tagged_monitor_ids);
+    all_monitor_ids.sort_unstable();
+    all_monitor_ids.dedup();
+
+    if all_monitor_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // 4. Fetch all monitors corresponding to the collected IDs
+    let monitors = ServiceMonitor::find()
+        .filter(service_monitor::Column::Id.is_in(all_monitor_ids))
+        .all(db)
+        .await?;
+
+    Ok(monitors)
+}
 /// Fetches all active service monitoring tasks assigned to a specific agent (VPS).
 ///
 /// This function determines the full set of monitors for an agent by combining:
@@ -441,6 +494,9 @@ pub async fn get_monitor_results_by_id(
     end_time: Option<DateTime<Utc>>,
     limit: Option<u64>,
 ) -> Result<Vec<ServiceMonitorResultDetails>, DbErr> {
+    let monitor = ServiceMonitor::find_by_id(monitor_id).one(db).await?
+        .ok_or_else(|| DbErr::RecordNotFound("Monitor not found".to_string()))?;
+
     let mut query = service_monitor_result::Entity::find()
         .filter(service_monitor_result::Column::MonitorId.eq(monitor_id));
 
@@ -464,19 +520,13 @@ pub async fn get_monitor_results_by_id(
         return Ok(Vec::new());
     }
 
-    // 2. Collect all unique agent IDs from the results
     let agent_ids: Vec<i32> = results.iter().map(|r| r.agent_id).collect::<std::collections::HashSet<_>>().into_iter().collect();
-
-    // 3. Fetch the names for these agents
     let agents = Vps::find()
         .filter(vps::Column::Id.is_in(agent_ids))
         .all(db)
         .await?;
-
-    // 4. Create a map from agent_id to agent_name for quick lookup
     let agent_name_map: HashMap<i32, String> = agents.into_iter().map(|a| (a.id, a.name)).collect();
 
-    // 5. Construct the final detailed response
     let result_details = results
         .into_iter()
         .map(|result| {
@@ -484,8 +534,93 @@ pub async fn get_monitor_results_by_id(
             ServiceMonitorResultDetails {
                 time: result.time.to_rfc3339(),
                 monitor_id: result.monitor_id,
+                monitor_name: monitor.name.clone(),
                 agent_id: result.agent_id,
                 agent_name,
+                is_up: result.is_up,
+                latency_ms: result.latency_ms,
+                details: result.details,
+            }
+        })
+        .collect();
+
+    Ok(result_details)
+}
+pub async fn get_monitor_results_by_vps_id(
+    db: &DatabaseConnection,
+    vps_id: i32,
+    user_id: i32,
+    start_time: Option<DateTime<Utc>>,
+    end_time: Option<DateTime<Utc>>,
+    limit_per_monitor: Option<u64>,
+) -> Result<Vec<ServiceMonitorResultDetails>, DbErr> {
+    // 1. Get all monitors associated with the VPS for the user
+    let monitors = get_monitors_for_vps(db, vps_id).await?;
+
+    if monitors.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Filter monitors by user_id to ensure authorization
+    let monitor_ids: Vec<i32> = monitors.into_iter()
+        .filter(|m| m.user_id == user_id)
+        .map(|m| m.id)
+        .collect();
+
+    if monitor_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // 2. Fetch results for these monitors
+    // Create a map of monitor_id to monitor_name for easy lookup
+    let monitor_name_map: HashMap<i32, String> = get_monitors_for_vps(db, vps_id).await?.into_iter()
+        .map(|m| (m.id, m.name))
+        .collect();
+
+    // 2. Fetch results for these monitors
+    let mut query = service_monitor_result::Entity::find()
+        .filter(service_monitor_result::Column::MonitorId.is_in(monitor_ids));
+
+    if let Some(start) = start_time {
+        query = query.filter(service_monitor_result::Column::Time.gte(start));
+    }
+    if let Some(end) = end_time {
+        query = query.filter(service_monitor_result::Column::Time.lte(end));
+    }
+
+    if let Some(limit_val) = limit_per_monitor {
+         query = query.limit(limit_val);
+    }
+
+    let results = query
+        .order_by_desc(service_monitor_result::Column::Time)
+        .all(db)
+        .await?;
+
+    if results.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // 3. Get agent names (which are VPS names)
+    let agent_ids: Vec<i32> = results.iter().map(|r| r.agent_id).collect::<std::collections::HashSet<_>>().into_iter().collect();
+    let agents = Vps::find()
+        .filter(vps::Column::Id.is_in(agent_ids))
+        .all(db)
+        .await?;
+    let agent_name_map: HashMap<i32, String> = agents.into_iter().map(|a| (a.id, a.name)).collect();
+
+    // 4. Construct the detailed response
+    let result_details = results
+        .into_iter()
+        .map(|result| {
+            let agent_name = agent_name_map.get(&result.agent_id).cloned().unwrap_or_else(|| "Unknown Agent".to_string());
+            let monitor_name = monitor_name_map.get(&result.monitor_id).cloned().unwrap_or_else(|| "Unknown Monitor".to_string());
+            ServiceMonitorResultDetails {
+                time: result.time.to_rfc3339(),
+                monitor_id: result.monitor_id,
+                agent_id: result.agent_id,
+                agent_name,
+                monitor_name,
                 is_up: result.is_up,
                 latency_ms: result.latency_ms,
                 details: result.details,

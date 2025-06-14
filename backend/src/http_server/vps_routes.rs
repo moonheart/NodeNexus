@@ -1,5 +1,5 @@
 use axum::{
-    extract::{State, Extension, Path}, // Added Path
+    extract::{State, Extension, Path, Query}, // Added Query
     http::StatusCode,
     routing::{get, post, put, delete},
     Json, Router,
@@ -16,6 +16,8 @@ use crate::db::{
 use super::{AppState, AppError, config_routes};
 use crate::http_server::auth_logic::AuthenticatedUser;
 use crate::server::update_service;
+use crate::http_server::models::service_monitor_models::ServiceMonitorResultDetails;
+use crate::http_server::service_monitor_routes::MonitorResultsQuery;
 
 // Frontend expects this structure for latest metrics
 #[derive(Serialize, Clone, Debug)]
@@ -514,6 +516,36 @@ async fn dismiss_renewal_reminder_handler(
 }
 
 
+async fn get_vps_monitor_results_handler(
+    Extension(authenticated_user): Extension<AuthenticatedUser>,
+    State(app_state): State<Arc<AppState>>,
+    Path(vps_id): Path<i32>,
+    Query(query): Query<MonitorResultsQuery>,
+) -> Result<Json<Vec<ServiceMonitorResultDetails>>, AppError> {
+    let user_id = authenticated_user.id;
+
+    // Authorization: Verify the user owns the VPS.
+    // This is implicitly handled by `get_monitor_results_by_vps_id` which filters by user_id.
+    // An explicit check could be added here if desired for early exit.
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await?
+        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
+    if vps.user_id != user_id {
+        return Err(AppError::Unauthorized("Access denied".to_string()));
+    }
+
+    let results = services::get_monitor_results_by_vps_id(
+        &app_state.db_pool,
+        vps_id,
+        user_id,
+        query.start_time,
+        query.end_time,
+        query.limit,
+    )
+    .await?;
+
+    Ok(Json(results))
+}
+
 pub fn vps_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", post(create_vps_handler))
@@ -522,6 +554,7 @@ pub fn vps_router() -> Router<Arc<AppState>> {
         .route("/{vps_id}", get(get_vps_detail_handler))
         .route("/{vps_id}", put(update_vps_handler))
         .route("/{vps_id}/renewal/dismiss-reminder", post(dismiss_renewal_reminder_handler)) // New route
+        .route("/{vps_id}/monitor-results", get(get_vps_monitor_results_handler)) // New route
         .nest("/{vps_id}/tags", vps_tags_router()) // Nest the tags router
         .merge(config_routes::create_vps_config_router())
 }

@@ -414,6 +414,7 @@ export interface ServiceMonitorResult {
   monitorId: number;
   agentId: number;
   agentName: string;
+  monitorName: string; // Added from the JOIN in the backend
   isUp: boolean;
   latencyMs: number | null;
   details?: {

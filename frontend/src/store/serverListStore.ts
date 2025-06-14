@@ -99,7 +99,39 @@ export const useServerListStore = create<ServerListState>()(
     },
 
     _handleWebSocketMessage: (data) => {
-        set({ servers: data.servers, isLoading: false, error: null, connectionStatus: 'connected' });
+        set(state => {
+            // Create a map of the new servers for efficient lookup
+            const newServersMap = new Map(data.servers.map(server => [server.id, server]));
+            
+            // Create a new array for the updated server list
+            const updatedServers = state.servers.map(oldServer => {
+                const newServer = newServersMap.get(oldServer.id);
+                if (newServer) {
+                    // If the server exists in the new data, update it
+                    newServersMap.delete(oldServer.id); // Remove from map to track new servers
+                    // Simple check to see if a deep equality check is needed.
+                    // A more robust solution might use a library like 'fast-deep-equal'.
+                    if (JSON.stringify(oldServer) !== JSON.stringify(newServer)) {
+                        return newServer;
+                    }
+                    return oldServer; // Return the old instance if no change
+                }
+                return oldServer; // Keep old server if not in new data (should not happen with full push)
+            });
+
+            // Add any new servers that were not in the old list
+            newServersMap.forEach(newServer => {
+                updatedServers.push(newServer);
+            });
+
+            // Only update state if the server list has actually changed
+            if (JSON.stringify(state.servers) !== JSON.stringify(updatedServers)) {
+                 return { servers: updatedServers, isLoading: false, error: null, connectionStatus: 'connected' };
+            }
+
+            // If no changes, return an empty object to prevent re-render
+            return {};
+        });
     },
 
     _handleServiceMonitorResult: (data) => {

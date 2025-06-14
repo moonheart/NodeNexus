@@ -1,10 +1,12 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea } from 'recharts';
 import { getVpsMetricsTimeseries, getLatestNMetrics } from '../services/metricsService';
+import { getMonitorResultsByVpsId } from '../services/serviceMonitorService';
 import { dismissVpsRenewalReminder } from '../services/vpsService';
-import type { PerformanceMetricPoint, ServerStatus } from '../types';
+import type { PerformanceMetricPoint, ServerStatus, ServiceMonitorResult } from '../types';
 import { useServerListStore } from '../store/serverListStore';
+import websocketService from '../services/websocketService';
 import EditVpsModal from '../components/EditVpsModal';
 import { useShallow } from 'zustand/react/shallow';
 import type { ValueType } from 'recharts/types/component/DefaultTooltipContent';
@@ -23,6 +25,7 @@ import {
   PencilIcon,
   SignalIcon, // Placeholder for BellIcon
   GlobeAltIcon, // Placeholder for InformationCircleIcon
+  ChartBarIcon,
 } from '../components/Icons';
 import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_ERROR } from '../types';
 
@@ -208,10 +211,19 @@ const VpsDetailPage: React.FC = () => {
   const [loadingChartMetrics, setLoadingChartMetrics] = useState(true);
   const [chartError, setChartError] = useState<string | null>(null);
   const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('realtime');
+
+  const handleSetSelectedTimeRange = useCallback((value: TimeRangeOption) => {
+    setSelectedTimeRange(value);
+  }, []);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDismissingReminder, setIsDismissingReminder] = useState(false);
   const [dismissReminderError, setDismissReminderError] = useState<string | null>(null);
   const [dismissReminderSuccess, setDismissReminderSuccess] = useState<string | null>(null);
+
+  // State for Service Monitoring
+  const [monitorResults, setMonitorResults] = useState<ServiceMonitorResult[]>([]);
+  const [loadingMonitors, setLoadingMonitors] = useState(true);
+  const [monitorError, setMonitorError] = useState<string | null>(null);
 
   const handleVpsUpdated = () => {
    // The websocket connection should update the store automatically.
@@ -327,6 +339,36 @@ const VpsDetailPage: React.FC = () => {
     return () => { isMounted = false; };
   }, [vpsId, selectedTimeRange]);
 
+  useEffect(() => {
+    if (!vpsId) return;
+
+    const fetchMonitorData = async () => {
+      setLoadingMonitors(true);
+      setMonitorError(null);
+      try {
+        let results: ServiceMonitorResult[];
+        if (selectedTimeRange === 'realtime') {
+          // Fetch last 5 mins of data for "realtime" view initially
+          const endTime = new Date();
+          const startTime = new Date(endTime.getTime() - 300 * 1000);
+          results = await getMonitorResultsByVpsId(vpsId, startTime.toISOString(), endTime.toISOString());
+        } else {
+          const endTime = new Date();
+          const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange]);
+          results = await getMonitorResultsByVpsId(vpsId, startTime.toISOString(), endTime.toISOString());
+        }
+        setMonitorResults(results);
+      } catch (err) {
+        console.error('Failed to fetch service monitor results:', err);
+        setMonitorError('Could not load service monitor data.');
+      } finally {
+        setLoadingMonitors(false);
+      }
+    };
+
+    fetchMonitorData();
+  }, [vpsId, selectedTimeRange]);
+
   // This effect for real-time updates can be simplified or removed if historical fetch is fast enough on range change
   // For now, we keep it to ensure live data continues to flow.
   useEffect(() => {
@@ -414,6 +456,31 @@ const VpsDetailPage: React.FC = () => {
       }));
     }
   }, [vpsDetail?.latestMetrics?.time, vpsId, selectedTimeRange]);
+
+  // WebSocket listener for new monitor results
+  useEffect(() => {
+    if (selectedTimeRange !== 'realtime' || !vpsId) {
+        return;
+    }
+
+    const handleNewMonitorResult = (result: ServiceMonitorResult) => {
+        // Check if the result belongs to any of the monitors associated with this VPS.
+        // This requires knowing which monitors are on this VPS.
+        // For now, we'll accept any result and let the chart component filter.
+        // A better approach would be to have a list of monitor IDs for this VPS.
+        setMonitorResults(prevResults => {
+            const updatedResults = [...prevResults, result].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+            // Keep a rolling window of data, e.g., last 300 points
+            return updatedResults.length > 300 ? updatedResults.slice(updatedResults.length - 300) : updatedResults;
+        });
+    };
+
+    websocketService.on('service_monitor_result', handleNewMonitorResult);
+
+    return () => {
+        websocketService.off('service_monitor_result', handleNewMonitorResult);
+    };
+}, [vpsId, selectedTimeRange]);
 
 
   if (isLoadingPage) {
@@ -550,7 +617,7 @@ const VpsDetailPage: React.FC = () => {
             {TIME_RANGE_OPTIONS.map(period => (
               <button
                 key={period.value}
-                onClick={() => setSelectedTimeRange(period.value)}
+                onClick={() => handleSetSelectedTimeRange(period.value)}
                 aria-pressed={selectedTimeRange === period.value}
                 className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${selectedTimeRange === period.value ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-200'}`}
               >
@@ -569,6 +636,21 @@ const VpsDetailPage: React.FC = () => {
             <DiskIoChartComponent data={diskIoData} />   {/* Uses avgDiskIoReadBps, avgDiskIoWriteBps internally */}
           </div>
         )}
+      </section>
+
+      {/* Service Monitoring Section */}
+      <section className="bg-white p-4 rounded-xl shadow-md">
+          <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-slate-700 flex items-center">
+                  <ChartBarIcon className="w-6 h-6 mr-2 text-indigo-500" />
+                  Service Monitoring
+              </h2>
+              {/* Time range selector is shared with performance metrics */}
+          </div>
+          {monitorError && <p className="text-red-500 text-center">{monitorError}</p>}
+          {loadingMonitors ? <div className="h-72 flex justify-center items-center"><p>Loading monitor charts...</p></div> : (
+              <ServiceMonitorChartComponent results={monitorResults} />
+          )}
       </section>
 
       {/* System Info Section */}
@@ -635,67 +717,213 @@ const VpsDetailPage: React.FC = () => {
   );
 };
 
-const ChartComponent: React.FC<{ title: string, data: PerformanceMetricPoint[], dataKey: string, stroke: string, yDomain: [number, number] }> = ({ title, data, dataKey, stroke, yDomain }) => (
-  <div className="h-72">
-    <h3 className="text-lg font-semibold text-slate-600 text-center mb-2">{title}</h3>
+const ChartComponent: React.FC<{ title: string, data: PerformanceMetricPoint[], dataKey: string, stroke: string, yDomain: [number, number] }> = React.memo(({ title, data, dataKey, stroke, yDomain }) => (
+  <div className="h-72 flex flex-col">
+    <h3 className="text-lg font-semibold text-slate-600 text-center mb-2 flex-shrink-0">{title}</h3>
     {data.length > 0 ? (
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
-          <YAxis domain={yDomain} tick={{ fontSize: 11 }} tickFormatter={(tick) => `${tick}%`} />
-          <Tooltip formatter={formatPercentForTooltip} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(2px)', borderRadius: '0.5rem', fontSize: '0.8rem' }} />
-          <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
-          <Line type="monotone" dataKey={dataKey} stroke={stroke} dot={false} name={title.split(' ')[0]} />
-        </LineChart>
-      </ResponsiveContainer>
+      <div className="flex-grow">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }}  />
+            <YAxis domain={yDomain} tick={{ fontSize: 11 }} tickFormatter={(tick) => `${tick}%`} />
+            <Tooltip formatter={formatPercentForTooltip} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(2px)', borderRadius: '0.5rem', fontSize: '0.8rem' }} />
+            <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
+            <Line type="monotone" dataKey={dataKey} stroke={stroke} dot={false} name={title.split(' ')[0]} isAnimationActive={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     ) : <p className="text-center text-slate-500 pt-16">No data available.</p>}
   </div>
-);
+));
 
-const NetworkChartComponent: React.FC<{ data: PerformanceMetricPoint[] }> = ({ data }) => (
-  <div className="h-72">
-    <h3 className="text-lg font-semibold text-slate-600 text-center mb-2">Network Speed</h3>
+const NetworkChartComponent: React.FC<{ data: PerformanceMetricPoint[] }> = React.memo(({ data }) => (
+  <div className="h-72 flex flex-col">
+    <h3 className="text-lg font-semibold text-slate-600 text-center mb-2 flex-shrink-0">Network Speed</h3>
     {data.length > 0 ? (
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
-          <YAxis tickFormatter={formatNetworkSpeed} width={80} tick={{ fontSize: 11 }} />
-          <Tooltip formatter={(value: ValueType) => formatNetworkSpeed(value as number)} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(2px)', borderRadius: '0.5rem', fontSize: '0.8rem' }} />
-          <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
-          <Line type="monotone" dataKey="avgNetworkRxInstantBps" stroke="#38bdf8" dot={false} name="Download" />
-          <Line type="monotone" dataKey="avgNetworkTxInstantBps" stroke="#34d399" dot={false} name="Upload" />
-        </LineChart>
-      </ResponsiveContainer>
+      <div className="flex-grow">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
+            <YAxis tickFormatter={formatNetworkSpeed} width={80} tick={{ fontSize: 11 }} />
+            <Tooltip formatter={(value: ValueType) => formatNetworkSpeed(value as number)} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(2px)', borderRadius: '0.5rem', fontSize: '0.8rem' }} />
+            <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
+            <Line type="monotone" dataKey="avgNetworkRxInstantBps" stroke="#38bdf8" dot={false} name="Download" isAnimationActive={false} />
+            <Line type="monotone" dataKey="avgNetworkTxInstantBps" stroke="#34d399" dot={false} name="Upload" isAnimationActive={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     ) : <p className="text-center text-slate-500 pt-16">No data available.</p>}
   </div>
-);
+));
 
-const DiskIoChartComponent: React.FC<{ data: PerformanceMetricPoint[] }> = ({ data }) => (
-  <div className="h-72">
-    <h3 className="text-lg font-semibold text-slate-600 text-center mb-2">Disk I/O Speed</h3>
+const DiskIoChartComponent: React.FC<{ data: PerformanceMetricPoint[] }> = React.memo(({ data }) => (
+  <div className="h-72 flex flex-col">
+    <h3 className="text-lg font-semibold text-slate-600 text-center mb-2 flex-shrink-0">Disk I/O Speed</h3>
     {data.length > 0 ? (
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
-          <YAxis tickFormatter={formatNetworkSpeed} width={80} tick={{ fontSize: 11 }} /> {/* Re-use formatNetworkSpeed for BPS */}
-          <Tooltip formatter={(value: ValueType) => formatNetworkSpeed(value as number)} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(2px)', borderRadius: '0.5rem', fontSize: '0.8rem' }} />
-          <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
-          <Line type="monotone" dataKey="avgDiskIoReadBps" stroke="#ff7300" dot={false} name="Read" /> {/* Orange for Read */}
-          <Line type="monotone" dataKey="avgDiskIoWriteBps" stroke="#387908" dot={false} name="Write" /> {/* Dark Green for Write */}
-        </LineChart>
-      </ResponsiveContainer>
+      <div className="flex-grow">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }}  />
+            <YAxis tickFormatter={formatNetworkSpeed} width={80} tick={{ fontSize: 11 }} /> {/* Re-use formatNetworkSpeed for BPS */}
+            <Tooltip formatter={(value: ValueType) => formatNetworkSpeed(value as number)} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(2px)', borderRadius: '0.5rem', fontSize: '0.8rem' }} />
+            <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
+            <Line type="monotone" dataKey="avgDiskIoReadBps" stroke="#ff7300" dot={false} name="Read" isAnimationActive={false} /> {/* Orange for Read */}
+            <Line type="monotone" dataKey="avgDiskIoWriteBps" stroke="#387908" dot={false} name="Write" isAnimationActive={false} /> {/* Dark Green for Write */}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     ) : <p className="text-center text-slate-500 pt-16">No data available.</p>}
   </div>
-);
+));
 
-const InfoBlock: React.FC<{ title: string, value: string }> = ({ title, value }) => (
+// Helper to format latency for tooltips
+const formatLatencyForTooltip = (value: ValueType) => {
+  if (typeof value === 'number') {
+    return `${value.toFixed(0)} ms`;
+  }
+  return `${value}`;
+};
+
+const AGENT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+
+const ServiceMonitorChartComponent: React.FC<{ results: ServiceMonitorResult[] }> = React.memo(({ results }) => {
+    const [hiddenLines, setHiddenLines] = useState<Record<string, boolean>>({});
+
+    const { chartData, monitorLines, downtimeAreas } = useMemo(() => {
+        if (!results || results.length === 0) {
+            return { chartData: [], monitorLines: [], downtimeAreas: [] };
+        }
+
+        // Sort all results by time initially
+        const sortedResults = [...results].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+
+        // Group results by monitor ID
+        const groupedByMonitorId = sortedResults.reduce((acc, result) => {
+            const monitorId = result.monitorId;
+            if (!acc[monitorId]) {
+                acc[monitorId] = [];
+            }
+            acc[monitorId].push(result);
+            return acc;
+        }, {} as Record<number, ServiceMonitorResult[]>);
+
+        // Create line definitions and assign colors
+        const monitorLines: { dataKey: string; name: string; stroke: string }[] = [];
+        let colorIndex = 0;
+        for (const monitorId in groupedByMonitorId) {
+            if (Object.prototype.hasOwnProperty.call(groupedByMonitorId, monitorId)) {
+                const firstResult = groupedByMonitorId[monitorId][0];
+                const monitorName = firstResult.monitorName || `Monitor #${monitorId}`;
+                const color = AGENT_COLORS[colorIndex % AGENT_COLORS.length];
+                
+                monitorLines.push({
+                    dataKey: `monitor_${monitorId}`,
+                    name: monitorName,
+                    stroke: color,
+                });
+                colorIndex++;
+            }
+        }
+
+        // Get all unique time points across all monitors
+        const timePoints = [...new Set(sortedResults.map(r => new Date(r.time).toISOString()))].sort();
+
+        // Create the chart data by pivoting the results
+        const chartData = timePoints.map(time => {
+            const point: { time: string; [key: string]: number | null | string } = { time };
+            for (const monitorId in groupedByMonitorId) {
+                const dataKey = `monitor_${monitorId}`;
+                const resultForTime = groupedByMonitorId[monitorId].find(r => new Date(r.time).toISOString() === time);
+                point[dataKey] = resultForTime && resultForTime.isUp ? resultForTime.latencyMs : null;
+            }
+            return point;
+        });
+
+        // Calculate downtime areas
+        const areas: { x1: string, x2: string }[] = [];
+        let downtimeStart: string | null = null;
+
+        for (let i = 0; i < timePoints.length; i++) {
+            const time = timePoints[i];
+            const isAnyDown = Object.values(groupedByMonitorId).some(monitorResults =>
+                monitorResults.some(r => new Date(r.time).toISOString() === time && !r.isUp)
+            );
+
+            if (isAnyDown && !downtimeStart) {
+                downtimeStart = time;
+            } else if (!isAnyDown && downtimeStart) {
+                // Find the previous time point to end the area
+                const prevTime = i > 0 ? timePoints[i-1] : downtimeStart;
+                areas.push({ x1: downtimeStart, x2: prevTime });
+                downtimeStart = null;
+            }
+        }
+        // If downtime continues to the end
+        if (downtimeStart) {
+            areas.push({ x1: downtimeStart, x2: timePoints[timePoints.length - 1] });
+        }
+
+        return { chartData, monitorLines, downtimeAreas: areas };
+    }, [results]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleLegendClick = (data: any) => {
+        const dataKey = data.dataKey;
+        if (typeof dataKey === 'string') {
+            setHiddenLines(prev => ({ ...prev, [dataKey]: !prev[dataKey] }));
+        }
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const renderLegendText = (value: string, entry: any) => {
+        const { color, dataKey } = entry;
+        const isHidden = typeof dataKey === 'string' && hiddenLines[dataKey];
+        return <span style={{ color: isHidden ? '#A0A0A0' : color || '#000', cursor: 'pointer' }}>{value}</span>;
+    };
+
+    if (results.length === 0) {
+        return <p className="text-center text-slate-500 pt-16">No service monitoring data available for this VPS.</p>;
+    }
+
+    return (
+        <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
+                    <YAxis tickFormatter={(tick) => `${tick} ms`} width={80} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={formatLatencyForTooltip} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(2px)', borderRadius: '0.5rem', fontSize: '0.8rem' }} />
+                    <Legend wrapperStyle={{ fontSize: '0.8rem' }} onClick={handleLegendClick} formatter={renderLegendText} />
+                    {downtimeAreas.map((area, index) => (
+                        <ReferenceArea key={index} x1={area.x1} x2={area.x2} stroke="transparent" fill="red" fillOpacity={0.15} ifOverflow="visible" />
+                    ))}
+                    {monitorLines.map((line: { dataKey: string; name: string; stroke: string }) => (
+                        <Line
+                            key={line.dataKey}
+                            type="monotone"
+                            dataKey={line.dataKey}
+                            name={line.name}
+                            stroke={hiddenLines[line.dataKey] ? 'transparent' : line.stroke}
+                            dot={false}
+                            connectNulls={true}
+                            strokeWidth={2}
+                            isAnimationActive={false}
+                        />
+                    ))}
+                </LineChart>
+            </ResponsiveContainer>
+        </div>
+    );
+});
+
+const InfoBlock: React.FC<{ title: string, value: string }> = React.memo(({ title, value }) => (
   <div className="space-y-1">
     <p className="font-medium text-slate-600 block">{title}</p>
     <p className="text-slate-800">{value}</p>
   </div>
-);
+));
 
 export default VpsDetailPage;

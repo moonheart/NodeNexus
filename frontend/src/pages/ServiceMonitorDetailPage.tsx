@@ -170,7 +170,7 @@ const ServiceMonitorDetailPage: React.FC = () => {
             <h1 className="text-3xl font-bold mb-2">{monitor.name}</h1>
             <p className="text-lg text-gray-600">{monitor.monitorType.toUpperCase()} - {monitor.target}</p>
         </div>
-        <Link to="/service-monitoring" className="inline-flex items-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3.5 rounded-lg transition-colors text-sm">
+        <Link to="/monitors" className="inline-flex items-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3.5 rounded-lg transition-colors text-sm">
             <ArrowLeftIcon className="w-4 h-4 mr-1.5" /> Back to List
         </Link>
       </div>
