@@ -25,7 +25,17 @@ export const deleteMonitor = async (id: number): Promise<void> => {
   await apiClient.delete(`/monitors/${id}`);
 };
 
-export const getMonitorResults = async (id: number): Promise<ServiceMonitorResult[]> => {
-    const response = await apiClient.get(`/monitors/${id}/results`);
-    return response.data;
+export const getMonitorResults = async (
+  id: number,
+  startTime?: string,
+  endTime?: string,
+  limit?: number
+): Promise<ServiceMonitorResult[]> => {
+  const params = new URLSearchParams();
+  if (startTime) params.append('start_time', startTime);
+  if (endTime) params.append('end_time', endTime);
+  if (limit) params.append('limit', limit.toString());
+
+  const response = await apiClient.get(`/monitors/${id}/results`, { params });
+  return response.data;
 };

@@ -10,7 +10,7 @@ use jsonwebtoken::{decode, DecodingKey, Validation}; // Added for JWT decoding
 
 use crate::http_server::auth_logic::{AuthenticatedUser, Claims, get_jwt_secret}; // Import Claims and get_jwt_secret
 use crate::http_server::AppState;
-use crate::websocket_models::FullServerListPush;
+use crate::websocket_models::{FullServerListPush, WsMessage};
 use crate::http_server::AppError; // For error handling
 
 #[derive(Deserialize, Debug)]
@@ -81,13 +81,13 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, user: Au
     println!("WebSocket connection established for user: {} (ID: {})", user.username, user.id);
 
     // 1. Send initial data snapshot
-    let initial_data_arc = {
+    let initial_data_message = {
         let cache_guard = app_state.live_server_data_cache.lock().await;
         let servers_list: Vec<crate::websocket_models::ServerWithDetails> = cache_guard.values().cloned().collect();
-        Arc::new(FullServerListPush { servers: servers_list })
+        WsMessage::FullServerList(FullServerListPush { servers: servers_list })
     };
 
-    if let Ok(json_data) = serde_json::to_string(&*initial_data_arc) {
+    if let Ok(json_data) = serde_json::to_string(&initial_data_message) {
         if socket.send(Message::Text(Utf8Bytes::from(json_data))).await.is_err() {
             eprintln!("[User: {}] Error sending initial WebSocket data. Closing connection.", user.username);
             return;
@@ -105,8 +105,8 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, user: Au
     loop {
         tokio::select! {
             // Receive updates from the broadcast channel
-            Ok(data_arc) = rx.recv() => {
-                if let Ok(json_data) = serde_json::to_string(&*data_arc) {
+            Ok(ws_message) = rx.recv() => {
+                if let Ok(json_data) = serde_json::to_string(&ws_message) {
                     if socket.send(Message::Text(Utf8Bytes::from(json_data))).await.is_err() {
                         eprintln!("[User: {}] Error sending WebSocket data update. Breaking loop.", user.username);
                         break; // Error sending, client might have disconnected

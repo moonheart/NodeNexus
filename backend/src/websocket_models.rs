@@ -94,8 +94,18 @@ pub struct ServerWithDetails {
     // pub last_reminder_generated_at: Option<DateTime<Utc>>, // Decided to omit from websocket model for now, primarily backend concern
 }
 
+use crate::http_server::models::service_monitor_models::ServiceMonitorResultDetails;
+
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct FullServerListPush {
     pub servers: Vec<ServerWithDetails>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(tag = "type", content = "data")]
+#[serde(rename_all = "snake_case")]
+pub enum WsMessage {
+    FullServerList(FullServerListPush),
+    ServiceMonitorResult(ServiceMonitorResultDetails),
 }

@@ -1,33 +1,35 @@
 import { useAuthStore } from '../store/authStore';
-import type { FullServerListPushType } from '../types'; // Assuming this will be defined
+import { EventEmitter } from './eventEmitter';
+import type { FullServerListPushType, ServiceMonitorResult } from '../types';
 
 const WS_URL_BASE = import.meta.env.VITE_WS_BASE_URL || `ws://${window.location.host}`;
 
-interface WebSocketServiceOptions {
-    onOpen: () => void;
-    onMessage: (data: FullServerListPushType) => void;
-    onClose: (isIntentional: boolean, event: CloseEvent) => void;
-    onError: (event: Event) => void;
-    onPermanentFailure?: () => void; // Optional: if all retries fail
+// Define the events and their payload types
+interface WebSocketEvents {
+  open: void;
+  close: { isIntentional: boolean; event: CloseEvent };
+  error: Event;
+  permanent_failure: void;
+  full_server_list: FullServerListPushType;
+  service_monitor_result: ServiceMonitorResult;
+  // Add other specific message types here
 }
 
-class WebSocketService {
+class WebSocketService extends EventEmitter<WebSocketEvents> {
     private ws: WebSocket | null = null;
-    private options: WebSocketServiceOptions;
     private reconnectAttempts = 0;
-    private maxReconnectAttempts = 5; // Max 5 retries
+    private maxReconnectAttempts = 5;
     private reconnectTimeoutId: number | null = null;
     private intentionalClose = false;
     private currentToken: string | null = null;
 
-    constructor(options: WebSocketServiceOptions) {
-        this.options = options;
+    constructor() {
+        super();
     }
 
     private getWebSocketUrl(token: string): string {
         const url = new URL('/ws/metrics', WS_URL_BASE);
         url.searchParams.append('token', token);
-        // Ensure ws:// or wss://
         if (url.protocol === 'http:') {
             url.protocol = 'ws:';
         } else if (url.protocol === 'https:') {
@@ -37,22 +39,17 @@ class WebSocketService {
     }
 
     public connect(token: string): void {
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            console.log('WebSocket is already connected.');
-            return;
-        }
-        if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
-            console.log('WebSocket is already connecting.');
+        if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+            console.log('WebSocket is already connected or connecting.');
             return;
         }
 
         this.currentToken = token;
-        this.intentionalClose = false; // Reset flag on new connect attempt
+        this.intentionalClose = false;
 
         if (!this.currentToken) {
             console.error('WebSocket connection attempt without a token.');
-            // Optionally, notify the store about this specific error
-            this.options.onError(new Event('No token provided for WebSocket connection'));
+            this.emit('error', new Event('No token provided'));
             return;
         }
 
@@ -62,12 +59,12 @@ class WebSocketService {
 
         this.ws.onopen = () => {
             console.log('WebSocket connection established.');
-            this.reconnectAttempts = 0; // Reset on successful connection
+            this.reconnectAttempts = 0;
             if (this.reconnectTimeoutId) {
                 clearTimeout(this.reconnectTimeoutId);
                 this.reconnectTimeoutId = null;
             }
-            this.options.onOpen();
+            this.emit('open', undefined);
         };
 
         this.ws.onmessage = (event) => {
@@ -75,45 +72,52 @@ class WebSocketService {
             try {
                 parsedData = JSON.parse(event.data as string);
             } catch (error) {
-                console.error('WebSocketService: Error parsing WebSocket message JSON:', error, 'Raw data:', event.data);
-                return; // Cannot process malformed JSON
+                console.error('WebSocketService: Error parsing message JSON:', error);
+                return;
             }
 
             if (parsedData && typeof parsedData === 'object') {
-                // Handle server-sent ping
-                if (parsedData.type === 'ping') {
-                    console.log('WebSocketService: Received ping from server, sending pong.');
-                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                        this.ws.send(JSON.stringify({ type: 'pong' }));
+                // Case 1: Message has a 'type' field (structured messages)
+                if ('type' in parsedData) {
+                    switch (parsedData.type) {
+                        case 'ping':
+                            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                                this.ws.send(JSON.stringify({ type: 'pong' }));
+                            }
+                            return;
+                        case 'connected':
+                            console.log('WebSocketService: Received "connected" confirmation.');
+                            return;
+                        case 'service_monitor_result':
+                            this.emit('service_monitor_result', parsedData.data as ServiceMonitorResult);
+                            return;
+                        // Note: 'full_server_list' might not be used if the raw object is sent instead
+                        case 'full_server_list':
+                             this.emit('full_server_list', parsedData.data as FullServerListPushType);
+                             return;
+                        default:
+                            console.warn('WebSocketService: Received unknown message type:', parsedData.type);
+                            return;
                     }
-                    return; // Ping handled, do not pass to application logic
                 }
 
-                // Handle server-sent connected confirmation
-                if (parsedData.type === 'connected') {
-                    console.log('WebSocketService: Received "connected" message from server.');
-                    // This type of message is usually for confirmation and not directly fed into data stores
-                    // unless a specific state needs to be set based on it.
-                    // For now, we just log it and don't pass it to this.options.onMessage
-                    // as onMessage expects FullServerListPushType.
-                    return; // "connected" message handled (logged)
+                // Case 2: Raw server list push (for backward compatibility or other push types)
+                if ('servers' in parsedData && Array.isArray(parsedData.servers)) {
+                    this.emit('full_server_list', parsedData as FullServerListPushType);
+                    return;
                 }
 
-                // Check if it's likely a FullServerListPushType message
-                // This assumes FullServerListPushType is an object and always contains a 'servers' array.
-                if (Array.isArray(parsedData.servers)) {
-                    this.options.onMessage(parsedData as FullServerListPushType);
-                } else {
-                    console.warn('WebSocketService: Received unknown JSON message structure:', parsedData);
-                }
+                // If neither condition is met, it's a malformed message
+                console.warn('WebSocketService: Received malformed message:', parsedData);
+
             } else {
-                console.warn('WebSocketService: Received message that is not a JSON object or is null:', parsedData);
+                 console.error('WebSocketService: Received message that is not a JSON object or is null.');
             }
         };
 
         this.ws.onclose = (event) => {
-            console.log(`WebSocket connection closed. Code: ${event.code}, Reason: '${event.reason}', WasClean: ${event.wasClean}, Intentional: ${this.intentionalClose}`);
-            this.options.onClose(this.intentionalClose, event);
+            console.log(`WebSocket connection closed. Code: ${event.code}, Intentional: ${this.intentionalClose}`);
+            this.emit('close', { isIntentional: this.intentionalClose, event });
             if (!this.intentionalClose) {
                 this.handleReconnect();
             }
@@ -121,37 +125,30 @@ class WebSocketService {
 
         this.ws.onerror = (event) => {
             console.error('WebSocket error:', event);
-            this.options.onError(event);
-            // Note: onerror is often followed by onclose. Reconnect logic is in onclose.
+            this.emit('error', event);
         };
     }
 
     private handleReconnect(): void {
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
             console.error('WebSocket: Maximum reconnect attempts reached.');
-            if (this.options.onPermanentFailure) {
-                this.options.onPermanentFailure();
-            }
+            this.emit('permanent_failure', undefined);
             return;
         }
 
         this.reconnectAttempts++;
-        const delay = Math.min(30000, (2 ** this.reconnectAttempts) * 1000); // Exponential backoff, max 30s
-        console.log(`WebSocket: Attempting to reconnect in ${delay / 1000}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}).`);
+        const delay = Math.min(30000, (2 ** this.reconnectAttempts) * 1000);
+        console.log(`WebSocket: Reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts})`);
 
-        if (this.reconnectTimeoutId) {
-            clearTimeout(this.reconnectTimeoutId);
-        }
+        if (this.reconnectTimeoutId) clearTimeout(this.reconnectTimeoutId);
 
         this.reconnectTimeoutId = window.setTimeout(() => {
-            const token = useAuthStore.getState().token; // Get fresh token
+            const token = useAuthStore.getState().token;
             if (token) {
                 this.connect(token);
             } else {
-                console.error('WebSocket: No token available for reconnect attempt.');
-                if (this.options.onPermanentFailure) { // Or a different callback for auth failure
-                    this.options.onPermanentFailure();
-                }
+                console.error('WebSocket: No token for reconnect.');
+                this.emit('permanent_failure', undefined);
             }
         }, delay);
     }
@@ -167,16 +164,18 @@ class WebSocketService {
             this.ws.close();
             this.ws = null;
         }
-        this.reconnectAttempts = 0; // Reset attempts on intentional disconnect
+        this.reconnectAttempts = 0;
     }
 
-    public send(message: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+    public send(message: object): void {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(message);
+            this.ws.send(JSON.stringify(message));
         } else {
             console.error('WebSocket is not connected. Cannot send message.');
         }
     }
 }
 
-export default WebSocketService;
+// Export a singleton instance
+const websocketService = new WebSocketService();
+export default websocketService;

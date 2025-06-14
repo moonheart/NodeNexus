@@ -1,7 +1,7 @@
 // 主入口文件
 use backend::server::agent_state::{ConnectedAgents, LiveServerDataCache}; // Added LiveServerDataCache
 use backend::server::service::MyAgentCommService;
-use backend::websocket_models::{FullServerListPush, ServerWithDetails}; // Added ServerWithDetails
+use backend::websocket_models::{ServerWithDetails, WsMessage};
 use backend::db::services as db_services;
 use backend::server::update_service; // Added for cache population
 use backend::notifications::{encryption::EncryptionService, service::NotificationService};
@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
 
     // --- Shared State Initialization for WebSocket and gRPC ---
     // Initialize the broadcast channel for WebSocket updates
-    let (ws_data_broadcaster_tx, _) = broadcast::channel::<Arc<FullServerListPush>>(100); // Capacity can be configured
+    let (ws_data_broadcaster_tx, _) = broadcast::channel::<WsMessage>(100); // Capacity can be configured
     let (batch_command_updates_tx, _rx) = broadcast::channel::<BatchCommandUpdateMsg>(100); // Channel for batch command updates
 
     // Initialize the live server data cache

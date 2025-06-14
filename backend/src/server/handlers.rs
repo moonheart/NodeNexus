@@ -22,7 +22,7 @@ use crate::server::agent_state::{AgentState, ConnectedAgents};
 use crate::db::services; // Will be used later for db operations
  // For fetching VPS details if not in cache
  
-use crate::websocket_models::FullServerListPush;
+use crate::websocket_models::{FullServerListPush, WsMessage};
 use tokio::sync::broadcast;
 
 pub async fn handle_connection(
@@ -30,7 +30,7 @@ pub async fn handle_connection(
     connected_agents_arc: Arc<Mutex<ConnectedAgents>>,
     pool: Arc<DatabaseConnection>, // Changed PgPool to DatabaseConnection
     live_server_data_cache: LiveServerDataCache,
-    ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
+    ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     update_trigger_tx: mpsc::Sender<()>,
     batch_command_manager: Arc<crate::db::services::BatchCommandManager>, // Added BatchCommandManager
 ) -> Result<Response<ReceiverStream<Result<MessageToAgent, Status>>>, Status> {
@@ -298,10 +298,19 @@ pub async fn handle_connection(
                                        }
                                    }
                                    ServerPayload::ServiceMonitorResult(result) => {
-                                       // println!("[{}] Received ServiceMonitorResult from {} for monitor #{}: success={}",
-                                       //     connection_id, session_id, result.monitor_id, result.successful);
                                        if let Err(e) = services::service_monitor_service::record_monitor_result(&*pool_clone, vps_db_id_from_msg, &result).await {
                                            eprintln!("[{}] Failed to record monitor result for monitor #{}: {}", connection_id, result.monitor_id, e);
+                                       } else {
+                                           // After successfully recording, fetch the detailed result and broadcast it.
+                                           let details = services::service_monitor_service::get_monitor_results_by_id(&*pool_clone, result.monitor_id, None, None, Some(1)).await;
+                                           if let Ok(mut details_vec) = details {
+                                               if let Some(detail) = details_vec.pop() {
+                                                   let message = WsMessage::ServiceMonitorResult(detail);
+                                                   if let Err(e) = ws_data_broadcaster_tx.send(message) {
+                                                       eprintln!("[{}] Failed to broadcast service monitor result: {}", connection_id, e);
+                                                   }
+                                               }
+                                           }
                                        }
                                    }
                                    _ => {

@@ -1,9 +1,11 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     routing::{get, post, put, delete},
     Json, Router, http::StatusCode,
 };
 use std::sync::Arc;
+use chrono::{DateTime, Utc};
+use serde::Deserialize;
 
 use crate::http_server::{AppState, AppError};
 use crate::db::services::service_monitor_service;
@@ -106,12 +108,27 @@ async fn delete_monitor(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Deserialize)]
+pub struct MonitorResultsQuery {
+    pub start_time: Option<DateTime<Utc>>,
+    pub end_time: Option<DateTime<Utc>>,
+    pub limit: Option<u64>,
+}
+
 #[axum::debug_handler]
 async fn get_monitor_results(
     State(app_state): State<Arc<AppState>>,
     Path(id): Path<i32>,
+    Query(query): Query<MonitorResultsQuery>,
     // TODO: Add user extraction and authorization
 ) -> Result<Json<Vec<crate::http_server::models::service_monitor_models::ServiceMonitorResultDetails>>, AppError> {
-    let results = service_monitor_service::get_monitor_results_by_id(&app_state.db_pool, id).await?;
+    let results = service_monitor_service::get_monitor_results_by_id(
+        &app_state.db_pool,
+        id,
+        query.start_time,
+        query.end_time,
+        query.limit,
+    )
+    .await?;
     Ok(Json(results))
 }

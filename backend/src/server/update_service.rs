@@ -4,7 +4,7 @@ use sea_orm::DatabaseConnection; // Replaced PgPool
 
 use crate::db::services;
 use crate::server::agent_state::LiveServerDataCache;
-use crate::websocket_models::FullServerListPush;
+use crate::websocket_models::{FullServerListPush, WsMessage};
 
 /// The centralized function to trigger a full state update and broadcast to all WebSocket clients.
 ///
@@ -21,7 +21,7 @@ use crate::websocket_models::FullServerListPush;
 pub async fn broadcast_full_state_update(
     pool: &DatabaseConnection, // Changed PgPool to DatabaseConnection
     cache: &LiveServerDataCache,
-    broadcaster: &broadcast::Sender<Arc<FullServerListPush>>,
+    broadcaster: &broadcast::Sender<WsMessage>,
 ) {
     // 1. Fetch the complete, fresh state for all servers from the database.
     match services::get_all_vps_with_details_for_cache(pool).await {
@@ -37,11 +37,12 @@ pub async fn broadcast_full_state_update(
 
             // 3. Broadcast the entire updated list to all clients.
             let servers_list_for_broadcast: Vec<crate::websocket_models::ServerWithDetails> = all_servers;
-            let full_list_push = Arc::new(FullServerListPush {
+            let full_list_push = FullServerListPush {
                 servers: servers_list_for_broadcast,
-            });
+            };
+            let message = WsMessage::FullServerList(full_list_push);
 
-            if broadcaster.send(full_list_push).is_err() {
+            if broadcaster.send(message).is_err() {
                 // This is not a critical error, it just means no web clients are currently listening.
                 // println!("No web clients listening, skipping broadcast.");
             } else {

@@ -1,8 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { getMonitorById, getMonitorResults } from '../services/serviceMonitorService';
 import type { ServiceMonitor, ServiceMonitorResult } from '../types';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea } from 'recharts';
+import websocketService from '../services/websocketService';
+import { ArrowLeftIcon } from '../components/Icons';
+
+const TIME_RANGE_OPTIONS = [
+  { label: '实时', value: 'realtime' as const },
+  { label: '1H', value: '1h' as const },
+  { label: '6H', value: '6h' as const },
+  { label: '24H', value: '24h' as const },
+  { label: '7D', value: '7d' as const },
+];
+type TimeRangeOption = typeof TIME_RANGE_OPTIONS[number]['value'];
+
 
 const ServiceMonitorDetailPage: React.FC = () => {
   const { monitorId } = useParams<{ monitorId: string }>();
@@ -10,6 +22,8 @@ const ServiceMonitorDetailPage: React.FC = () => {
   const [results, setResults] = useState<ServiceMonitorResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('realtime');
+
   interface ChartDataPoint {
     time: string;
     [agentName: string]: number | null | string;
@@ -19,53 +33,61 @@ const ServiceMonitorDetailPage: React.FC = () => {
 
   const AGENT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F'];
 
+  const processAndSetData = (data: ServiceMonitorResult[]) => {
+    const sortedData = data.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+    setResults(sortedData);
+
+    const groupedByAgent = sortedData.reduce((acc, result) => {
+      const agentName = result.agentName;
+      if (!acc[agentName]) {
+        acc[agentName] = [];
+      }
+      acc[agentName].push(result);
+      return acc;
+    }, {} as Record<string, ServiceMonitorResult[]>);
+
+    const newAgentColors = { ...agentColors };
+    let colorIndex = Object.keys(newAgentColors).length;
+    Object.keys(groupedByAgent).forEach(agentName => {
+      if (!newAgentColors[agentName]) {
+        newAgentColors[agentName] = AGENT_COLORS[colorIndex % AGENT_COLORS.length];
+        colorIndex++;
+      }
+    });
+    setAgentColors(newAgentColors);
+
+    const formattedTimePoints = [...new Set(sortedData.map(r => new Date(r.time).toLocaleString()))];
+    const finalChartData = formattedTimePoints.map(time => {
+      const point: ChartDataPoint = { time };
+      Object.keys(groupedByAgent).forEach(agentName => {
+        const resultForTime = groupedByAgent[agentName].find(r => new Date(r.time).toLocaleString() === time);
+        point[agentName] = resultForTime ? resultForTime.latencyMs : null;
+      });
+      return point;
+    });
+    setChartData(finalChartData);
+  };
+
+  const timeRangeToMillis: Record<Exclude<TimeRangeOption, 'realtime'>, number> = { '1h': 36e5, '6h': 216e5, '24h': 864e5, '7d': 6048e5 };
+
   useEffect(() => {
     if (!monitorId) return;
-
-    const processAndSetData = (data: ServiceMonitorResult[]) => {
-      const sortedData = data.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-      setResults(sortedData);
-
-      // Group results by agent
-      const groupedByAgent = sortedData.reduce((acc, result) => {
-        const agentName = result.agentName;
-        if (!acc[agentName]) {
-          acc[agentName] = [];
-        }
-        acc[agentName].push(result);
-        return acc;
-      }, {} as Record<string, ServiceMonitorResult[]>);
-
-      // Assign colors to agents
-      const newAgentColors = { ...agentColors };
-      let colorIndex = Object.keys(newAgentColors).length;
-      Object.keys(groupedByAgent).forEach(agentName => {
-        if (!newAgentColors[agentName]) {
-          newAgentColors[agentName] = AGENT_COLORS[colorIndex % AGENT_COLORS.length];
-          colorIndex++;
-        }
-      });
-      setAgentColors(newAgentColors);
-
-      // Transform data for the chart
-      const formattedTimePoints = [...new Set(sortedData.map(r => new Date(r.time).toLocaleString()))];
-      const finalChartData = formattedTimePoints.map(time => {
-        const point: ChartDataPoint = { time };
-        Object.keys(groupedByAgent).forEach(agentName => {
-          const resultForTime = groupedByAgent[agentName].find(r => new Date(r.time).toLocaleString() === time);
-          point[agentName] = resultForTime ? resultForTime.latencyMs : null;
-        });
-        return point;
-      });
-      setChartData(finalChartData);
-    };
 
     const fetchInitialData = async () => {
       try {
         setIsLoading(true);
         const monitorData = await getMonitorById(parseInt(monitorId, 10));
-        const resultsData = await getMonitorResults(parseInt(monitorId, 10));
         setMonitor(monitorData);
+
+        let resultsData: ServiceMonitorResult[];
+        if (selectedTimeRange === 'realtime') {
+          resultsData = await getMonitorResults(parseInt(monitorId, 10), undefined, undefined, 300);
+        } else {
+          const endTime = new Date();
+          const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange]);
+          resultsData = await getMonitorResults(parseInt(monitorId, 10), startTime.toISOString(), endTime.toISOString());
+        }
+
         processAndSetData(resultsData);
         setError(null);
       } catch (err) {
@@ -77,18 +99,36 @@ const ServiceMonitorDetailPage: React.FC = () => {
     };
 
     fetchInitialData();
+  }, [monitorId, selectedTimeRange]);
 
-    const intervalId = setInterval(async () => {
-      try {
-        const resultsData = await getMonitorResults(parseInt(monitorId, 10));
-        processAndSetData(resultsData);
-      } catch (err) {
-        console.error("Failed to fetch updated results:", err);
+  useEffect(() => {
+    if (!monitorId) return;
+
+    const handleNewResult = (result: ServiceMonitorResult) => {
+      if (result.monitorId !== parseInt(monitorId, 10) || selectedTimeRange !== 'realtime') {
+        return;
       }
-    }, 5000);
 
-    return () => clearInterval(intervalId);
-  }, [monitorId]);
+      setResults(prevResults => {
+        const updatedResults = [...prevResults, result].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+        return updatedResults.length > 300 ? updatedResults.slice(updatedResults.length - 300) : updatedResults;
+      });
+    };
+
+    websocketService.on('service_monitor_result', handleNewResult);
+
+    return () => {
+      websocketService.off('service_monitor_result', handleNewResult);
+    };
+  }, [monitorId, selectedTimeRange]);
+
+  useEffect(() => {
+    // Re-process chart data whenever results change
+    if (results.length > 0) {
+      processAndSetData(results);
+    }
+  }, [results]);
+
 
   const getDowntimeAreas = () => {
     const areas = [];
@@ -125,8 +165,15 @@ const ServiceMonitorDetailPage: React.FC = () => {
 
   return (
     <div className="container mx-auto p-4">
-      <h1 className="text-3xl font-bold mb-2">{monitor.name}</h1>
-      <p className="text-lg text-gray-600 mb-4">{monitor.monitorType.toUpperCase()} - {monitor.target}</p>
+      <div className="flex justify-between items-center mb-4">
+        <div>
+            <h1 className="text-3xl font-bold mb-2">{monitor.name}</h1>
+            <p className="text-lg text-gray-600">{monitor.monitorType.toUpperCase()} - {monitor.target}</p>
+        </div>
+        <Link to="/service-monitoring" className="inline-flex items-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3.5 rounded-lg transition-colors text-sm">
+            <ArrowLeftIcon className="w-4 h-4 mr-1.5" /> Back to List
+        </Link>
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 text-center">
         <div className="bg-white p-4 rounded-lg shadow">
@@ -146,13 +193,27 @@ const ServiceMonitorDetailPage: React.FC = () => {
       </div>
 
       <div className="mt-8">
-        <h2 className="text-2xl font-bold mb-4">Monitoring Results</h2>
+        <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
+            <h2 className="text-2xl font-bold">Monitoring Results</h2>
+            <div className="flex items-center space-x-1 mt-3 sm:mt-0 p-1 bg-slate-100 rounded-lg">
+                {TIME_RANGE_OPTIONS.map(period => (
+                <button
+                    key={period.value}
+                    onClick={() => setSelectedTimeRange(period.value)}
+                    aria-pressed={selectedTimeRange === period.value}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${selectedTimeRange === period.value ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-200'}`}
+                >
+                    {period.label}
+                </button>
+                ))}
+            </div>
+        </div>
         <div className="bg-white p-4 rounded-lg shadow h-96">
           {results.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" />
+                <XAxis dataKey="time" tick={{ fontSize: 11 }} />
                 <YAxis label={{ value: 'Latency (ms)', angle: -90, position: 'insideLeft' }} />
                 <Tooltip />
                 <Legend />

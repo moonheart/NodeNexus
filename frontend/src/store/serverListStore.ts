@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import WebSocketService from '../services/websocketService';
+import websocketService from '../services/websocketService';
 import { useAuthStore } from './authStore';
-import type { VpsListItemResponse, FullServerListPushType, ViewMode, Tag } from '../types';
+import type { VpsListItemResponse, FullServerListPushType, ViewMode, Tag, ServiceMonitorResult } from '../types';
 import * as tagService from '../services/tagService';
 
 export type ConnectionStatus =
@@ -18,7 +18,6 @@ export interface ServerListState { // Added export
     connectionStatus: ConnectionStatus;
     isLoading: boolean; // For initial load or when explicitly loading/reconnecting
     error: string | null; // For WebSocket related errors
-    websocketService: WebSocketService | null;
     viewMode: ViewMode;
     allTags: Tag[]; // To store all available tags globally
     fetchAllTags: () => Promise<void>; // Action to fetch all tags
@@ -28,7 +27,8 @@ export interface ServerListState { // Added export
     // Internal actions to be called by WebSocketService callbacks
     _handleWebSocketOpen: () => void;
     _handleWebSocketMessage: (data: FullServerListPushType) => void;
-    _handleWebSocketClose: (isIntentional: boolean, event: CloseEvent) => void;
+    _handleServiceMonitorResult: (data: ServiceMonitorResult) => void;
+    _handleWebSocketClose: (data: { isIntentional: boolean; event: CloseEvent }) => void;
     _handleWebSocketError: (event: Event) => void;
     _handleWebSocketPermanentFailure: () => void;
 }
@@ -40,7 +40,6 @@ export const useServerListStore = create<ServerListState>()(
       connectionStatus: 'disconnected',
     isLoading: true, // Assume loading initially until first connection or message
     error: null,
-    websocketService: null,
     viewMode: 'card', // Default view mode
     allTags: [],
 
@@ -57,53 +56,41 @@ export const useServerListStore = create<ServerListState>()(
     setViewMode: (mode) => set({ viewMode: mode }),
 
     initializeWebSocket: () => {
-        const { websocketService: currentService, connectionStatus } = get();
+      const { connectionStatus } = get();
+      if (connectionStatus === 'connected' || connectionStatus === 'connecting' || connectionStatus === 'reconnecting') {
+        return;
+      }
 
-        // If already connected or trying to connect/reconnect, do nothing.
-        if (connectionStatus === 'connected' || connectionStatus === 'connecting' || connectionStatus === 'reconnecting') {
-            console.log(`ServerListStore: WebSocket already ${connectionStatus}. Initialization skipped.`);
-            return;
-        }
+      const token = useAuthStore.getState().token;
+      if (!token) {
+        set({ connectionStatus: 'error', error: 'Authentication token not found.', isLoading: false });
+        return;
+      }
 
-        // If there's an existing service instance (e.g., from a failed/closed/error state),
-        // ensure it's properly disconnected before creating a new one.
-        // The disconnectWebSocket action also nullifies the service in the store.
-        if (currentService) {
-            console.log('ServerListStore: Previous WebSocket service instance found. Disconnecting it.');
-            get().disconnectWebSocket(); // This will call currentService.disconnect() and set store's service to null
-        }
+      set({ connectionStatus: 'connecting', isLoading: true, error: null });
 
-        const token = useAuthStore.getState().token;
-        if (!token) {
-            console.error('ServerListStore: Cannot initialize WebSocket: No auth token found.');
-            set({ connectionStatus: 'error', error: 'Authentication token not found.', isLoading: false });
-            return;
-        }
+      // Register event listeners
+      websocketService.on('open', get()._handleWebSocketOpen);
+      websocketService.on('full_server_list', get()._handleWebSocketMessage);
+      websocketService.on('service_monitor_result', get()._handleServiceMonitorResult);
+      websocketService.on('close', get()._handleWebSocketClose);
+      websocketService.on('error', get()._handleWebSocketError);
+      websocketService.on('permanent_failure', get()._handleWebSocketPermanentFailure);
 
-        set({ connectionStatus: 'connecting', isLoading: true, error: null });
-
-        const newService = new WebSocketService({
-            onOpen: () => get()._handleWebSocketOpen(),
-            onMessage: (data) => get()._handleWebSocketMessage(data),
-            onClose: (isIntentional, event) => get()._handleWebSocketClose(isIntentional, event),
-            onError: (event) => get()._handleWebSocketError(event),
-            onPermanentFailure: () => get()._handleWebSocketPermanentFailure(),
-        });
-
-        set({ websocketService: newService }); // Store the new service instance
-        newService.connect(token);
+      websocketService.connect(token);
     },
 
     disconnectWebSocket: () => {
-        const { websocketService } = get();
-        if (websocketService) {
-            console.log('ServerListStore: Disconnecting WebSocket.');
-            websocketService.disconnect();
-        }
-        // State update for intentional disconnect is handled by _handleWebSocketClose
-        // We can also set it here if immediate feedback is desired before ws.onclose fires
-        // set({ connectionStatus: 'disconnected', isLoading: false }); // Optional: immediate feedback
-        set({ websocketService: null }); // Clear the service instance
+      console.log('ServerListStore: Disconnecting WebSocket.');
+      websocketService.disconnect();
+
+      // Unregister event listeners
+      websocketService.off('open', get()._handleWebSocketOpen);
+      websocketService.off('full_server_list', get()._handleWebSocketMessage);
+      websocketService.off('service_monitor_result', get()._handleServiceMonitorResult);
+      websocketService.off('close', get()._handleWebSocketClose);
+      websocketService.off('error', get()._handleWebSocketError);
+      websocketService.off('permanent_failure', get()._handleWebSocketPermanentFailure);
     },
 
     _handleWebSocketOpen: () => {
@@ -111,25 +98,21 @@ export const useServerListStore = create<ServerListState>()(
         set({ connectionStatus: 'connected', isLoading: false, error: null });
     },
 
-    _handleWebSocketMessage: (data: FullServerListPushType) => {
-        // console.log('ServerListStore: Received WebSocket message:', data);
-        set({ servers: data.servers, isLoading: false, error: null }); // Assuming full list push
+    _handleWebSocketMessage: (data) => {
+        set({ servers: data.servers, isLoading: false, error: null, connectionStatus: 'connected' });
     },
 
-    _handleWebSocketClose: (isIntentional: boolean, event: CloseEvent) => {
+    _handleServiceMonitorResult: (data) => {
+        // This is handled by the detail page, but we could add logic here if needed globally.
+        console.log('Received service monitor result in store:', data.monitorId);
+    },
+
+    _handleWebSocketClose: ({ isIntentional, event }) => {
         console.log(`ServerListStore: WebSocket connection closed. Intentional: ${isIntentional}, Code: ${event.code}`);
         if (isIntentional) {
             set({ connectionStatus: 'disconnected', isLoading: false });
         } else {
-            // Reconnect attempts are handled by WebSocketService,
-            // it will call onOpen if successful, or onPermanentFailure if not.
-            // We can set status to 'reconnecting' here if WebSocketService doesn't manage this state itself via callbacks.
-            // For now, assuming WebSocketService's onError or onPermanentFailure will update status.
-            // If no specific "reconnecting" state is signaled by the service, we might just see 'disconnected' then 'connecting'
-            // or 'error' if an error occurs during reconnect.
-            // Let's assume the service will trigger onError or onOpen during its attempts.
-            // If it just closes and tries again, this 'disconnected' state is accurate until next 'connecting' or 'open'.
-            if (get().connectionStatus !== 'permanently_failed') { // Avoid overriding permanent failure
+            if (get().connectionStatus !== 'permanently_failed') {
                  set({ connectionStatus: 'reconnecting', isLoading: true, error: `Connection closed (code: ${event.code}). Attempting to reconnect.` });
             }
         }

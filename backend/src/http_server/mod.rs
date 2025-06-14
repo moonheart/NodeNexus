@@ -14,7 +14,7 @@ use tokio::sync::{broadcast, mpsc, Mutex}; // Added Mutex and mpsc
 use std::net::SocketAddr;
 use thiserror::Error;
 use crate::server::agent_state::{ConnectedAgents, LiveServerDataCache};
-use crate::websocket_models::FullServerListPush; // Added import
+use crate::websocket_models::WsMessage;
 use tower_http::cors::{CorsLayer, Any}; // Added CorsLayer and Any
 use self::auth_logic::{LoginRequest, RegisterRequest};
 use crate::notifications::service::NotificationService;
@@ -40,7 +40,7 @@ pub mod service_monitor_routes;
 pub struct AppState {
     pub db_pool: DatabaseConnection, // Changed PgPool to DatabaseConnection
     pub live_server_data_cache: LiveServerDataCache,
-    pub ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
+    pub ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     pub connected_agents: Arc<Mutex<ConnectedAgents>>,
     pub update_trigger_tx: mpsc::Sender<()>,
     pub notification_service: Arc<NotificationService>,
@@ -139,7 +139,7 @@ pub async fn run_http_server(
     db_pool: DatabaseConnection, // Changed PgPool to DatabaseConnection
     http_addr: SocketAddr,
     live_server_data_cache: LiveServerDataCache,
-    ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
+    ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     connected_agents: Arc<Mutex<ConnectedAgents>>,
     update_trigger_tx: mpsc::Sender<()>,
     notification_service: Arc<NotificationService>,

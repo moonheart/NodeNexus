@@ -12,7 +12,7 @@ use futures::try_join;
 use crate::agent_service::{ServiceMonitorResult, ServiceMonitorTask};
 use crate::db::entities::{service_monitor_result, vps_tag};
 use sea_orm::QuerySelect;
-use chrono::{TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 pub async fn create_monitor(
     db: &DatabaseConnection,
     user_id: i32,
@@ -437,10 +437,25 @@ pub async fn record_monitor_result(
 pub async fn get_monitor_results_by_id(
     db: &DatabaseConnection,
     monitor_id: i32,
+    start_time: Option<DateTime<Utc>>,
+    end_time: Option<DateTime<Utc>>,
+    limit: Option<u64>,
 ) -> Result<Vec<ServiceMonitorResultDetails>, DbErr> {
-    // 1. Fetch all results for the monitor
-    let results = service_monitor_result::Entity::find()
-        .filter(service_monitor_result::Column::MonitorId.eq(monitor_id))
+    let mut query = service_monitor_result::Entity::find()
+        .filter(service_monitor_result::Column::MonitorId.eq(monitor_id));
+
+    if let Some(start) = start_time {
+        query = query.filter(service_monitor_result::Column::Time.gte(start));
+    }
+    if let Some(end) = end_time {
+        query = query.filter(service_monitor_result::Column::Time.lte(end));
+    }
+
+    if let Some(limit_val) = limit {
+        query = query.limit(limit_val);
+    }
+
+    let results = query
         .order_by_desc(service_monitor_result::Column::Time)
         .all(db)
         .await?;

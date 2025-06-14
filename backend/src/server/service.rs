@@ -5,7 +5,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use std::sync::Arc;
 
 use super::agent_state::{ConnectedAgents, LiveServerDataCache};
-use crate::websocket_models::FullServerListPush;
+use crate::websocket_models::WsMessage;
 use tokio::sync::broadcast;
 use super::handlers::handle_connection;
 use crate::db::services::BatchCommandManager; // Added BatchCommandManager
@@ -15,7 +15,7 @@ pub struct MyAgentCommService {
     pub connected_agents: Arc<Mutex<ConnectedAgents>>,
     pub db_pool: Arc<DatabaseConnection>, // Changed PgPool to DatabaseConnection
     pub live_server_data_cache: LiveServerDataCache,
-    pub ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
+    pub ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     pub update_trigger_tx: mpsc::Sender<()>,
     pub batch_command_manager: Arc<BatchCommandManager>, // Added BatchCommandManager
 }
@@ -25,7 +25,7 @@ impl MyAgentCommService {
         connected_agents: Arc<Mutex<ConnectedAgents>>,
         db_pool: Arc<DatabaseConnection>, // Changed PgPool to DatabaseConnection
         live_server_data_cache: LiveServerDataCache,
-        ws_data_broadcaster_tx: broadcast::Sender<Arc<FullServerListPush>>,
+        ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
         update_trigger_tx: mpsc::Sender<()>,
         batch_command_manager: Arc<BatchCommandManager>, // Added BatchCommandManager
     ) -> Self {
