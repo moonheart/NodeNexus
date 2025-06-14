@@ -10,9 +10,55 @@ const ServiceMonitorDetailPage: React.FC = () => {
   const [results, setResults] = useState<ServiceMonitorResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  interface ChartDataPoint {
+    time: string;
+    [agentName: string]: number | null | string;
+  }
+  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
+  const [agentColors, setAgentColors] = useState<Record<string, string>>({});
+
+  const AGENT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F'];
 
   useEffect(() => {
     if (!monitorId) return;
+
+    const processAndSetData = (data: ServiceMonitorResult[]) => {
+      const sortedData = data.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+      setResults(sortedData);
+
+      // Group results by agent
+      const groupedByAgent = sortedData.reduce((acc, result) => {
+        const agentName = result.agentName;
+        if (!acc[agentName]) {
+          acc[agentName] = [];
+        }
+        acc[agentName].push(result);
+        return acc;
+      }, {} as Record<string, ServiceMonitorResult[]>);
+
+      // Assign colors to agents
+      const newAgentColors = { ...agentColors };
+      let colorIndex = Object.keys(newAgentColors).length;
+      Object.keys(groupedByAgent).forEach(agentName => {
+        if (!newAgentColors[agentName]) {
+          newAgentColors[agentName] = AGENT_COLORS[colorIndex % AGENT_COLORS.length];
+          colorIndex++;
+        }
+      });
+      setAgentColors(newAgentColors);
+
+      // Transform data for the chart
+      const formattedTimePoints = [...new Set(sortedData.map(r => new Date(r.time).toLocaleString()))];
+      const finalChartData = formattedTimePoints.map(time => {
+        const point: ChartDataPoint = { time };
+        Object.keys(groupedByAgent).forEach(agentName => {
+          const resultForTime = groupedByAgent[agentName].find(r => new Date(r.time).toLocaleString() === time);
+          point[agentName] = resultForTime ? resultForTime.latencyMs : null;
+        });
+        return point;
+      });
+      setChartData(finalChartData);
+    };
 
     const fetchInitialData = async () => {
       try {
@@ -20,7 +66,7 @@ const ServiceMonitorDetailPage: React.FC = () => {
         const monitorData = await getMonitorById(parseInt(monitorId, 10));
         const resultsData = await getMonitorResults(parseInt(monitorId, 10));
         setMonitor(monitorData);
-        setResults(resultsData.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()));
+        processAndSetData(resultsData);
         setError(null);
       } catch (err) {
         setError('Failed to fetch monitor details.');
@@ -35,34 +81,21 @@ const ServiceMonitorDetailPage: React.FC = () => {
     const intervalId = setInterval(async () => {
       try {
         const resultsData = await getMonitorResults(parseInt(monitorId, 10));
-        setResults(resultsData.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()));
+        processAndSetData(resultsData);
       } catch (err) {
         console.error("Failed to fetch updated results:", err);
-        // Optionally, set an error state for the update failure
       }
-    }, 5000); // Refresh every 5 seconds
+    }, 5000);
 
-    return () => clearInterval(intervalId); // Cleanup on component unmount
+    return () => clearInterval(intervalId);
   }, [monitorId]);
-
-  if (isLoading) {
-    return <div>Loading...</div>;
-  }
-
-  if (error) {
-    return <div className="text-red-500">{error}</div>;
-  }
-
-  if (!monitor) {
-    return <div>Monitor not found.</div>;
-  }
 
   const getDowntimeAreas = () => {
     const areas = [];
     let inDowntime = false;
     let start: string | null = null;
-
-    const formattedResults = [...results].map(r => ({ ...r, time: new Date(r.time).toLocaleString() }));
+    const sortedResults = [...results].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+    const formattedResults = sortedResults.map(r => ({ ...r, time: new Date(r.time).toLocaleString() }));
 
     for (let i = 0; i < formattedResults.length; i++) {
       const result = formattedResults[i];
@@ -78,13 +111,15 @@ const ServiceMonitorDetailPage: React.FC = () => {
       }
     }
 
-    // If the last period was downtime, close it off.
     if (inDowntime && start && formattedResults.length > 0) {
       areas.push({ x1: start, x2: formattedResults[formattedResults.length - 1].time, y1: 0, y2: 'auto' });
     }
-
     return areas;
   };
+
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div className="text-red-500">{error}</div>;
+  if (!monitor) return <div>Monitor not found.</div>;
 
   const downtimeAreas = getDowntimeAreas();
 
@@ -115,7 +150,7 @@ const ServiceMonitorDetailPage: React.FC = () => {
         <div className="bg-white p-4 rounded-lg shadow h-96">
           {results.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={results.map(r => ({ ...r, time: new Date(r.time).toLocaleString() }))}>
+              <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="time" />
                 <YAxis label={{ value: 'Latency (ms)', angle: -90, position: 'insideLeft' }} />
@@ -124,7 +159,18 @@ const ServiceMonitorDetailPage: React.FC = () => {
                 {downtimeAreas.map((area, index) => (
                   <ReferenceArea key={index} x1={area.x1} x2={area.x2} stroke="transparent" fill="red" fillOpacity={0.1} />
                 ))}
-                <Line type="monotone" dataKey="latencyMs" name="Latency (ms)" stroke="#8884d8" dot={false} activeDot={{ r: 8 }} />
+                {Object.keys(agentColors).map(agentName => (
+                  <Line
+                    key={agentName}
+                    type="monotone"
+                    dataKey={agentName}
+                    name={agentName}
+                    stroke={agentColors[agentName]}
+                    dot={false}
+                    activeDot={{ r: 8 }}
+                    connectNulls={false}
+                  />
+                ))}
               </LineChart>
             </ResponsiveContainer>
           ) : (

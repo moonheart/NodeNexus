@@ -413,6 +413,7 @@ export interface ServiceMonitorResult {
   time: string; // TIMESTAMPTZ
   monitorId: number;
   agentId: number;
+  agentName: string;
   isUp: boolean;
   latencyMs: number | null;
   details?: {

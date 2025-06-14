@@ -4,8 +4,8 @@
 //! assigning them to agents/tags, and recording check results.
 
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ModelTrait, QueryFilter, QueryOrder, Set, TransactionTrait};
-use crate::db::entities::{prelude::*, service_monitor, service_monitor_agent, service_monitor_tag};
-use crate::http_server::models::service_monitor_models::{CreateMonitor, ServiceMonitorDetails, UpdateMonitor};
+use crate::db::entities::{prelude::*, service_monitor, service_monitor_agent, service_monitor_tag, vps};
+use crate::http_server::models::service_monitor_models::{CreateMonitor, ServiceMonitorDetails, ServiceMonitorResultDetails, UpdateMonitor};
 use std::collections::HashMap;
 use futures::try_join;
 
@@ -437,10 +437,46 @@ pub async fn record_monitor_result(
 pub async fn get_monitor_results_by_id(
     db: &DatabaseConnection,
     monitor_id: i32,
-) -> Result<Vec<service_monitor_result::Model>, DbErr> {
-    service_monitor_result::Entity::find()
+) -> Result<Vec<ServiceMonitorResultDetails>, DbErr> {
+    // 1. Fetch all results for the monitor
+    let results = service_monitor_result::Entity::find()
         .filter(service_monitor_result::Column::MonitorId.eq(monitor_id))
         .order_by_desc(service_monitor_result::Column::Time)
         .all(db)
-        .await
+        .await?;
+
+    if results.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // 2. Collect all unique agent IDs from the results
+    let agent_ids: Vec<i32> = results.iter().map(|r| r.agent_id).collect::<std::collections::HashSet<_>>().into_iter().collect();
+
+    // 3. Fetch the names for these agents
+    let agents = Vps::find()
+        .filter(vps::Column::Id.is_in(agent_ids))
+        .all(db)
+        .await?;
+
+    // 4. Create a map from agent_id to agent_name for quick lookup
+    let agent_name_map: HashMap<i32, String> = agents.into_iter().map(|a| (a.id, a.name)).collect();
+
+    // 5. Construct the final detailed response
+    let result_details = results
+        .into_iter()
+        .map(|result| {
+            let agent_name = agent_name_map.get(&result.agent_id).cloned().unwrap_or_else(|| "Unknown Agent".to_string());
+            ServiceMonitorResultDetails {
+                time: result.time.to_rfc3339(),
+                monitor_id: result.monitor_id,
+                agent_id: result.agent_id,
+                agent_name,
+                is_up: result.is_up,
+                latency_ms: result.latency_ms,
+                details: result.details,
+            }
+        })
+        .collect();
+
+    Ok(result_details)
 }

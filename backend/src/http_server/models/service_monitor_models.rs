@@ -54,3 +54,14 @@ pub struct UpdateMonitor {
     pub monitor_config: Option<serde_json::Value>,
     pub assignments: Option<MonitorAssignments>,
 }
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceMonitorResultDetails {
+    pub time: String,
+    pub monitor_id: i32,
+    pub agent_id: i32,
+    pub agent_name: String,
+    pub is_up: bool,
+    pub latency_ms: Option<i32>,
+    pub details: Option<Value>,
+}

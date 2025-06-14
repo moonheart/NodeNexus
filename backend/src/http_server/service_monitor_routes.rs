@@ -111,7 +111,7 @@ async fn get_monitor_results(
     State(app_state): State<Arc<AppState>>,
     Path(id): Path<i32>,
     // TODO: Add user extraction and authorization
-) -> Result<Json<Vec<crate::db::entities::service_monitor_result::Model>>, AppError> {
+) -> Result<Json<Vec<crate::http_server::models::service_monitor_models::ServiceMonitorResultDetails>>, AppError> {
     let results = service_monitor_service::get_monitor_results_by_id(&app_state.db_pool, id).await?;
     Ok(Json(results))
 }
