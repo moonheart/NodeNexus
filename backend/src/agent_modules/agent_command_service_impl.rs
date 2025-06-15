@@ -11,8 +11,10 @@ use lazy_static::lazy_static;
 
 // Platform-specific encoding detection
 #[cfg(windows)]
-use windows_sys::Win32::Globalization::GetACP;
-use codepage;
+use {
+    codepage,
+    windows_sys::Win32::Globalization::GetACP,
+};
 
 lazy_static! {
     static ref SYSTEM_ENCODING: &'static encoding_rs::Encoding = {
