@@ -252,7 +252,7 @@ pub async fn handle_connection(
                                                if let Err(e) = batch_command_manager_clone.record_child_task_output(
                                                    child_task_id,
                                                    stream_type,
-                                                   output_stream.chunk,
+                                                   output_stream.chunk.into_bytes(),
                                                    Some(output_stream.timestamp),
                                                ).await {
                                                    error!(child_task_id = %child_task_id, error = ?e, "Error recording child task output.");

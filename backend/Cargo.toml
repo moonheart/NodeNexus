@@ -37,7 +37,16 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "regis
 tracing-appender = "0.2"
 tracing-log = "0.2"
 surge-ping = "0.8"
+encoding_rs = "0.8"
+lazy_static = "1.5"
 rand = "0.9"
+
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["winnt", "winuser", "errhandlingapi"] }
+windows-sys = { version = "0.60", features = ["Win32_Globalization"] } # Ensure this is the correct version
+codepage = "0.1"
+
 
 [build-dependencies]
 prost-build = "0.13"

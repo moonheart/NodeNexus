@@ -39,7 +39,7 @@ message BatchTerminateCommandRequest { // Renamed from TerminateCommandRequest
 message BatchCommandOutputStream { // Renamed from CommandOutputStream
   string command_id = 1; // child_command_id
   OutputType stream_type = 2;
-  bytes chunk = 3; // 输出内容块
+  string chunk = 3; // 输出内容块, now guaranteed to be UTF-8
   int64 timestamp = 4; // Optional: output timestamp (Unix nano or millis). Defaults to 0 if not set.
 }
 

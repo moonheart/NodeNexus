@@ -244,11 +244,14 @@ dependencies = [
  "bcrypt",
  "bytes",
  "chrono",
+ "codepage",
  "dotenv",
+ "encoding_rs",
  "futures",
  "futures-util",
  "hex",
  "jsonwebtoken",
+ "lazy_static",
  "netdev",
  "once_cell",
  "prost",
@@ -274,6 +277,8 @@ dependencies = [
  "tracing-log",
  "tracing-subscriber",
  "uuid",
+ "winapi",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -509,6 +514,15 @@ checksum = "773f3b9af64447d2ce9850330c473515014aa235e6a783b02db81ff39e4a3dad"
 dependencies = [
  "crypto-common",
  "inout",
+]
+
+[[package]]
+name = "codepage"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48f68d061bc2828ae826206326e61251aca94c1e4a5305cf52d9138639c918b4"
+dependencies = [
+ "encoding_rs",
 ]
 
 [[package]]
@@ -4388,6 +4402,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
 dependencies = [
  "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "windows-sys"
+version = "0.60.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2f500e4d28234f72040990ec9d39e3a6b950f9f22d3dba18416c35882612bcb"
+dependencies = [
+ "windows-targets 0.53.2",
 ]
 
 [[package]]
