@@ -7,51 +7,95 @@ on:
     branches: [ master ]
 
 jobs:
-  build:
+  build_frontend:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm install
+        working-directory: ./frontend
+      - name: Build frontend
+        run: npm run build
+        working-directory: ./frontend
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: frontend-dist
+          path: frontend/dist
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '22'
-        cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
-
-    - name: Install frontend dependencies
-      run: npm install
-      working-directory: ./frontend
-
-    - name: Build frontend
-      run: npm run build
-      working-directory: ./frontend
-
-    - name: Set up Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        override: true
-    
-    - name: Cache cargo registry
-      uses: actions/cache@v3
-      with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Cache cargo index
-      uses: actions/cache@v3
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Cache cargo build
-      uses: actions/cache@v3
-      with:
-        path: backend/target
-        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Build backend
-      run: cargo build --release
-      working-directory: ./backend
+  build_backend:
+    needs: build_frontend
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bin: server
+            name: server-linux-amd64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            bin: server
+            name: server-linux-arm64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bin: agent
+            name: agent-linux-amd64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            bin: agent
+            name: agent-linux-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bin: agent
+            name: agent-windows-amd64.exe
+          - os: macos-13
+            target: x86_64-apple-darwin
+            bin: agent
+            name: agent-macos-amd64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            bin: agent
+            name: agent-macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install cross
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: cargo install cross
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          target: ${{ matrix.target }}
+      - name: Setup protoc
+        uses: arduino/setup-protoc@v3
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+      - name: Cache cargo index
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+      - name: Cache cargo build
+        uses: actions/cache@v3
+        with:
+          path: backend/target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build backend
+        run: |
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            cross build --release --bin ${{ matrix.bin }} --target ${{ matrix.target }}
+          else
+            cargo build --release --bin ${{ matrix.bin }} --target ${{ matrix.target }}
+          fi
+        working-directory: ./backend
