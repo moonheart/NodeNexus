@@ -76,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         .expect("Failed to create database connection.");
     
     // --- gRPC Server Setup ---
-    let grpc_addr: SocketAddr = "0.0.0.0:50051".parse()?;
+    let addr: SocketAddr = "0.0.0.0:8080".parse()?;
     let connected_agents = ConnectedAgents::new();
 
     // --- Shared State Initialization for WebSocket and gRPC ---
@@ -120,11 +120,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     );
 
     let grpc_service = AgentCommunicationServiceServer::new(agent_comm_service);
-    let grpc_server_future = TonicServer::builder()
-        .add_service(grpc_service)
-        .serve(grpc_addr);
-
-    info!(address = %grpc_addr, "gRPC AgentCommunicationService listening");
     
     // --- Agent Heartbeat Check Task ---
     let connected_agents_for_check = connected_agents.clone();
@@ -178,20 +173,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     });
 
     // --- Axum HTTP Server Setup ---
-    let http_addr: SocketAddr = "0.0.0.0:8080".parse()?;
-    // Pass db_pool, cache, and broadcaster_tx to the http_server run function
-    let http_server_future = http_server::run_http_server(
+    let http_router = http_server::create_axum_router(
         db_pool.clone(),
-        http_addr,
-        live_server_data_cache.clone(), // Pass cache to HTTP service
-        ws_data_broadcaster_tx.clone(), // Pass broadcaster to HTTP service (for AppState)
-        connected_agents.clone(),       // Pass connected agents state to HTTP service
-        update_trigger_tx.clone(),      // Pass update trigger to HTTP service
+        live_server_data_cache.clone(),
+        ws_data_broadcaster_tx.clone(),
+        connected_agents.clone(),
+        update_trigger_tx.clone(),
         notification_service.clone(),
-        alert_service.clone(), // Pass AlertService to HTTP server
-        batch_command_manager.clone(), // Pass BatchCommandManager to HTTP server
-        batch_command_updates_tx.clone(), // Pass batch_command_updates_tx to HTTP server
-        result_broadcaster.clone(), // Pass result_broadcaster to HTTP server
+        alert_service.clone(),
+        batch_command_manager.clone(),
+        batch_command_updates_tx.clone(),
+        result_broadcaster.clone(),
     );
 
     // --- Debounced Broadcast Task ---
@@ -358,18 +350,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
 
 
     // --- Run all servers and tasks concurrently ---
-    let grpc_handle = tokio::spawn(grpc_server_future);
-    let http_handle = tokio::spawn(http_server_future);
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    info!(address = %addr, "HTTP and gRPC server listening");
 
-    // Use `try_join!` to await the main server tasks. The debouncer runs in the background.
-    let (grpc_res, http_res) = tokio::try_join!(grpc_handle, http_handle)?;
+    // Combine axum router and grpc service.
+    // Requests that are not handled by the axum router will be forwarded to the grpc service.
+    let app = http_router.fallback_service(grpc_service);
 
-    if let Err(e) = grpc_res {
-        error!(error = %e, "gRPC server exited with an error.");
-    }
-    if let Err(e) = http_res {
-        error!(error = %e, "HTTP server exited with an error.");
-    }
+    axum::serve(listener, app.into_make_service()).await?;
 
     // The debouncer_task will be aborted when main exits. For a graceful shutdown,
     // a cancellation token would be needed, but this is sufficient for now.

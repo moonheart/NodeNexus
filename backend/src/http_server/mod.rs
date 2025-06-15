@@ -137,19 +137,18 @@ async fn login_test_handler() -> (StatusCode, Json<serde_json::Value>) {
     (StatusCode::OK, Json(serde_json::json!({ "message": "POST test successful" })))
 }
 
-pub async fn run_http_server(
-    db_pool: DatabaseConnection, // Changed PgPool to DatabaseConnection
-    http_addr: SocketAddr,
+pub fn create_axum_router(
+    db_pool: DatabaseConnection,
     live_server_data_cache: LiveServerDataCache,
     ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     connected_agents: Arc<Mutex<ConnectedAgents>>,
     update_trigger_tx: mpsc::Sender<()>,
     notification_service: Arc<NotificationService>,
-    alert_service: Arc<AlertService>, // Added alert_service parameter
-    batch_command_manager: Arc<BatchCommandManager>, // Added batch_command_manager parameter
-    batch_command_updates_tx: broadcast::Sender<BatchCommandUpdateMsg>, // Added sender for batch updates
-    result_broadcaster: Arc<ResultBroadcaster>, // Added ResultBroadcaster instance
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    alert_service: Arc<AlertService>,
+    batch_command_manager: Arc<BatchCommandManager>,
+    batch_command_updates_tx: broadcast::Sender<BatchCommandUpdateMsg>,
+    result_broadcaster: Arc<ResultBroadcaster>,
+) -> Router {
     // batch_command_manager is now passed in
     let command_dispatcher = Arc::new(CommandDispatcher::new(
         connected_agents.clone(), // Assuming connected_agents is Arc<Mutex<ConnectedAgents>>
@@ -223,8 +222,5 @@ pub async fn run_http_server(
         .with_state(app_state.clone())
         .layer(cors);
 
-    info!(address = %http_addr, "HTTP server listening");
-    let listener = tokio::net::TcpListener::bind(http_addr).await?;
-    axum::serve(listener, app_router).await?;
-    Ok(())
+    app_router
 }
