@@ -1,4 +1,3 @@
-import { useAuthStore } from '../store/authStore';
 import { EventEmitter } from './eventEmitter';
 import type { FullServerListPushType, ServiceMonitorResult } from '../types';
 import { throttle } from 'lodash';
@@ -33,9 +32,14 @@ class WebSocketService extends EventEmitter<WebSocketEvents> {
         }, 2000, { leading: true, trailing: true }); // Throttle to once every 2 seconds
     }
 
-    private getWebSocketUrl(token: string): string {
-        const url = new URL('/ws/metrics', WS_URL_BASE);
-        url.searchParams.append('token', token);
+    private _getWebSocketUrl(token?: string | null): string {
+        const urlPath = token ? '/ws/metrics' : '/ws/public';
+        const url = new URL(urlPath, WS_URL_BASE);
+
+        if (token) {
+            url.searchParams.append('token', token);
+        }
+
         if (url.protocol === 'http:') {
             url.protocol = 'ws:';
         } else if (url.protocol === 'https:') {
@@ -44,22 +48,16 @@ class WebSocketService extends EventEmitter<WebSocketEvents> {
         return url.toString();
     }
 
-    public connect(token: string): void {
+    public connect(token?: string | null): void {
         if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
             console.log('WebSocket is already connected or connecting.');
             return;
         }
 
-        this.currentToken = token;
+        this.currentToken = token || null;
         this.intentionalClose = false;
 
-        if (!this.currentToken) {
-            console.error('WebSocket connection attempt without a token.');
-            this.emit('error', new Event('No token provided'));
-            return;
-        }
-
-        const wsUrl = this.getWebSocketUrl(this.currentToken);
+        const wsUrl = this._getWebSocketUrl(this.currentToken);
         console.log('Attempting to connect to WebSocket:', wsUrl);
         this.ws = new WebSocket(wsUrl);
 
@@ -149,13 +147,8 @@ class WebSocketService extends EventEmitter<WebSocketEvents> {
         if (this.reconnectTimeoutId) clearTimeout(this.reconnectTimeoutId);
 
         this.reconnectTimeoutId = window.setTimeout(() => {
-            const token = useAuthStore.getState().token;
-            if (token) {
-                this.connect(token);
-            } else {
-                console.error('WebSocket: No token for reconnect.');
-                this.emit('permanent_failure', undefined);
-            }
+            // Reconnect with the same token (or lack thereof) used for the initial connection.
+            this.connect(this.currentToken);
         }, delay);
     }
 

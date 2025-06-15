@@ -51,6 +51,7 @@ pub struct AppState {
     pub db_pool: DatabaseConnection, // Changed PgPool to DatabaseConnection
     pub live_server_data_cache: LiveServerDataCache,
     pub ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
+    pub public_ws_data_broadcaster_tx: broadcast::Sender<WsMessage>, // For public, desensitized data
     pub connected_agents: Arc<Mutex<ConnectedAgents>>,
     pub update_trigger_tx: mpsc::Sender<()>,
     pub notification_service: Arc<NotificationService>,
@@ -149,6 +150,7 @@ pub fn create_axum_router(
     db_pool: DatabaseConnection,
     live_server_data_cache: LiveServerDataCache,
     ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
+    public_ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     connected_agents: Arc<Mutex<ConnectedAgents>>,
     update_trigger_tx: mpsc::Sender<()>,
     notification_service: Arc<NotificationService>,
@@ -167,7 +169,8 @@ pub fn create_axum_router(
     let app_state = Arc::new(AppState {
         db_pool,
         live_server_data_cache,
-        ws_data_broadcaster_tx,
+        ws_data_broadcaster_tx: ws_data_broadcaster_tx.clone(),
+        public_ws_data_broadcaster_tx,
         connected_agents,
         update_trigger_tx,
         notification_service,
@@ -192,6 +195,7 @@ pub fn create_axum_router(
         .route("/api/auth/register", post(register_handler))
         .route("/api/auth/login", post(login_handler))
         .route("/ws/metrics", get(websocket_handler::websocket_handler)) // Added WebSocket route
+        .route("/ws/public", get(websocket_handler::public_websocket_handler)) // Added Public WebSocket route
         .merge(metrics_routes::metrics_router()) // 合并指标路由
         .nest(
             "/api/vps",

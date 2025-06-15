@@ -161,3 +161,88 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, user: Au
     }
     info!("WebSocket connection closed.");
 }
+
+
+// --- Public WebSocket Handler ---
+
+#[debug_handler]
+pub async fn public_websocket_handler(
+    ws: WebSocketUpgrade,
+    State(app_state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    info!("Public WebSocket connection request.");
+    ws.on_upgrade(move |socket| handle_public_socket(socket, app_state))
+}
+
+async fn handle_public_socket(mut socket: WebSocket, app_state: Arc<AppState>) {
+    info!("Public WebSocket connection established.");
+
+    // 1. Send initial data snapshot (desensitized)
+    let initial_data_message = {
+        let cache_guard = app_state.live_server_data_cache.lock().await;
+        let public_servers_list: Vec<crate::websocket_models::ServerWithDetails> = cache_guard
+            .values()
+            .map(|s| s.desensitize()) // Use the new desensitize method
+            .collect();
+        
+        WsMessage::FullServerList(FullServerListPush {
+            servers: public_servers_list,
+        })
+    };
+
+    if let Ok(json_data) = serde_json::to_string(&initial_data_message) {
+        if socket
+            .send(Message::Text(Utf8Bytes::from(json_data)))
+            .await
+            .is_err()
+        {
+            error!("Error sending initial public WebSocket data. Closing connection.");
+            return;
+        }
+        info!("Sent initial public data snapshot.");
+    } else {
+        error!("Failed to serialize initial public data. Closing connection.");
+        return;
+    }
+
+    // 2. Subscribe to the public broadcast channel.
+    let mut rx = app_state.public_ws_data_broadcaster_tx.subscribe();
+
+    // 3. Main loop to listen for updates and client pings
+    loop {
+        tokio::select! {
+            Ok(ws_message) = rx.recv() => {
+                // The public channel now sends FullServerList messages, just like the private one.
+                // No need to filter by message type, as the public broadcaster is dedicated.
+                if let Ok(json_data) = serde_json::to_string(&ws_message) {
+                    if socket.send(Message::Text(Utf8Bytes::from(json_data))).await.is_err() {
+                        warn!("Error sending public WebSocket data update. Breaking loop.");
+                        break;
+                    }
+                } else {
+                    error!("Failed to serialize public broadcast data.");
+                }
+            }
+            Some(Ok(msg)) = socket.next() => {
+                match msg {
+                    Message::Ping(p) => {
+                        if socket.send(Message::Pong(p)).await.is_err() {
+                            warn!("Error sending pong on public socket. Breaking loop.");
+                            break;
+                        }
+                    }
+                    Message::Close(_) => {
+                        info!("Public client sent close message. Closing connection.");
+                        break;
+                    }
+                    _ => {} // Ignore other message types
+                }
+            }
+            else => {
+                info!("Public client disconnected. Breaking loop.");
+                break;
+            }
+        }
+    }
+    info!("Public WebSocket connection closed.");
+}

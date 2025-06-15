@@ -3,7 +3,6 @@ import EditVpsModal from '../components/EditVpsModal';
 import CreateVpsModal from '../components/CreateVpsModal';
 import type { Vps, VpsListItemResponse, ServerStatus as ServerStatusType, ViewMode, Tag } from '../types';
 import { useServerListStore, type ServerListState, type ConnectionStatus } from '../store/serverListStore';
-import { useAuthStore } from '../store/authStore';
 import { useShallow } from 'zustand/react/shallow';
 import StatCard from '../components/StatCard';
 import {
@@ -25,7 +24,7 @@ import VpsTableRow from '../components/VpsTableRow';
 import BulkEditTagsModal from '../components/BulkEditTagsModal';
 import * as tagService from '../services/tagService';
 
-interface HomePageStateSlice {
+interface ServerManagementPageStateSlice {
   servers: VpsListItemResponse[];
   isLoading: boolean;
   error: string | null;
@@ -34,7 +33,7 @@ interface HomePageStateSlice {
   setViewMode: (mode: ViewMode) => void;
 }
 
-const selectHomePageData = (state: ServerListState): HomePageStateSlice => ({
+const selectServerManagementPageData = (state: ServerListState): ServerManagementPageStateSlice => ({
   servers: state.servers,
   isLoading: state.isLoading,
   error: state.error,
@@ -64,12 +63,7 @@ const getContrastingTextColor = (hexColor: string): string => {
 };
 
 
-const HomePage: React.FC = () => {
-  const { isAuthenticated } = useAuthStore();
-  // WebSocket connection management is now fully handled by the serverListStore,
-  // which listens to authStore changes. This component is now only responsible for
-  // displaying the state from the store.
-
+const ServerManagementPage: React.FC = () => {
   const [isCreateVpsModalOpen, setIsCreateVpsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingVps, setEditingVps] = useState<VpsListItemResponse | null>(null);
@@ -82,6 +76,7 @@ const HomePage: React.FC = () => {
   const [isTagDropdownOpen, setIsTagDropdownOpen] = useState(false);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
 
+
   const {
     servers: vpsList,
     isLoading: isLoadingServers,
@@ -89,31 +84,19 @@ const HomePage: React.FC = () => {
     connectionStatus,
     viewMode,
     setViewMode,
-  } = useServerListStore(useShallow(selectHomePageData));
-
-  // Effect for managing WebSocket connections based on authentication state
-  // The useEffect for managing WebSocket connection has been removed.
-  // The logic is now centralized in `serverListStore.ts` and triggered
-  // by the `init()` call in `App.tsx`.
-
+  } = useServerListStore(useShallow(selectServerManagementPageData));
 
   useEffect(() => {
     const fetchTags = async () => {
-      if (isAuthenticated) {
-        try {
-          const tags = await tagService.getTags();
-          setAvailableTags(tags);
-        } catch (error) {
-          console.error("获取标签失败:", error);
-        }
-      } else {
-        // For public view, tags are derived from the server data itself within the filter logic
-        // We can clear local state to be safe
-        setAvailableTags([]);
+      try {
+        const tags = await tagService.getTags();
+        setAvailableTags(tags);
+      } catch (error) {
+        console.error("Failed to fetch tags:", error);
       }
     };
     fetchTags();
-  }, [isAuthenticated, vpsList]); // Depend on vpsList for public view updates
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -175,7 +158,7 @@ const HomePage: React.FC = () => {
   const handleOpenCreateVpsModal = () => setIsCreateVpsModalOpen(true);
   const handleCloseCreateVpsModal = () => setIsCreateVpsModalOpen(false);
   const handleVpsCreated = (newVps: Vps) => {
-    console.log('VPS 已创建:', newVps);
+    console.log('VPS Created:', newVps);
     handleCloseCreateVpsModal();
   };
 
@@ -190,7 +173,7 @@ const HomePage: React.FC = () => {
   };
 
   const handleVpsUpdated = () => {
-    console.log('VPS 已更新，状态将通过 WebSocket 刷新。');
+    console.log('VPS updated, store should refresh via WebSocket.');
     handleCloseEditModal();
   };
 
@@ -210,15 +193,6 @@ const HomePage: React.FC = () => {
     return ['ALL', ...Array.from(groups).sort()];
   }, [vpsList]);
 
-  const uniqueTagsForPublicView = useMemo(() => {
-    if (isAuthenticated) return [];
-    const allTags = vpsList.flatMap(s => s.tags || []);
-    const uniqueTags = Array.from(new Map(allTags.map(tag => [tag.id, tag])).values());
-    return uniqueTags.filter(t => t.isVisible);
-  }, [isAuthenticated, vpsList]);
-
-  const currentAvailableTags = isAuthenticated ? availableTags : uniqueTagsForPublicView;
-
   const onlineServersForNetworkTotals = useMemo(() => displayedServers.filter(s => s.status === STATUS_ONLINE && s.latestMetrics), [displayedServers]);
   const totalNetworkUp = useMemo(() => onlineServersForNetworkTotals.reduce((acc, server) => acc + (server.latestMetrics?.networkTxInstantBps || 0), 0), [onlineServersForNetworkTotals]);
   const totalNetworkDown = useMemo(() => onlineServersForNetworkTotals.reduce((acc, server) => acc + (server.latestMetrics?.networkRxInstantBps || 0), 0), [onlineServersForNetworkTotals]);
@@ -230,7 +204,7 @@ const HomePage: React.FC = () => {
   };
 
   if (isLoadingServers && vpsList.length === 0) {
-    return <div className="flex flex-col items-center justify-center h-64"><p className="mt-4 text-slate-600">正在加载服务器...</p></div>;
+    return <div className="flex flex-col items-center justify-center h-64"><p className="mt-4 text-slate-600">Loading servers...</p></div>;
   }
 
   let statusMessage = '';
@@ -242,17 +216,11 @@ const HomePage: React.FC = () => {
     <div className="p-4 md:p-6 lg:p-8 space-y-8 bg-slate-50 min-h-screen">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-        <h1 className="text-3xl font-bold text-slate-800">{isAuthenticated ? "VPS 管理面板" : "服务器状态"}</h1>
-        {isAuthenticated && (
-          <button onClick={handleOpenCreateVpsModal} className="mt-3 sm:mt-0 btn btn-primary">创建新的VPS</button>
-        )}
+        <h1 className="text-3xl font-bold text-slate-800">服务器管理</h1>
+        <button onClick={handleOpenCreateVpsModal} className="mt-3 sm:mt-0 btn btn-primary">创建新的VPS</button>
       </div>
-      {isAuthenticated && (
-        <>
-          <CreateVpsModal isOpen={isCreateVpsModalOpen} onClose={handleCloseCreateVpsModal} onVpsCreated={handleVpsCreated} />
-          <EditVpsModal isOpen={isEditModalOpen} onClose={handleCloseEditModal} vps={editingVps} allVps={vpsList} onVpsUpdated={handleVpsUpdated} />
-        </>
-      )}
+      <CreateVpsModal isOpen={isCreateVpsModalOpen} onClose={handleCloseCreateVpsModal} onVpsCreated={handleVpsCreated} />
+      <EditVpsModal isOpen={isEditModalOpen} onClose={handleCloseEditModal} vps={editingVps} allVps={vpsList} onVpsUpdated={handleVpsUpdated} />
 
       {/* Connection Status */}
       {statusMessage && <div className={`p-3 rounded-md text-sm text-center ${connectionStatus === 'error' || connectionStatus === 'permanently_failed' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{statusMessage}</div>}
@@ -292,12 +260,12 @@ const HomePage: React.FC = () => {
                         ))}
                     </div>
                     <div className="w-full md:w-auto border-t md:border-t-0 md:border-l border-slate-200 my-2 md:my-0 md:mx-4 h-auto md:h-8"></div>
-                    {currentAvailableTags.length > 0 && (
+                    {availableTags.length > 0 && (
                         <div className="flex flex-wrap gap-2 items-center">
                             <span className="text-sm font-medium text-slate-600">按标签筛选:</span>
                             {/* Display selected tags */}
                             {Array.from(selectedTagIds).map(tagId => {
-                                const tag = currentAvailableTags.find(t => t.id === tagId);
+                                const tag = availableTags.find(t => t.id === tagId);
                                 if (!tag) return null;
                                 return (
                                     <span key={tag.id} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: tag.color, color: getContrastingTextColor(tag.color) }}>
@@ -329,7 +297,8 @@ const HomePage: React.FC = () => {
                                 {isTagDropdownOpen && (
                                     <div className="origin-top-left absolute left-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
                                         <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
-                                            {currentAvailableTags
+                                            {availableTags
+                                                .filter(t => t.isVisible)
                                                 .map(tag => (
                                                     <a
                                                         key={tag.id}
@@ -364,14 +333,14 @@ const HomePage: React.FC = () => {
                         </div>
                     )}
                 </div>
-                {isAuthenticated && selectedVpsIds.size > 0 && (
-                  <button
-                    onClick={() => setIsBulkEditModalOpen(true)}
-                    className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-4 rounded-md transition-colors duration-200 text-sm flex items-center"
-                  >
-                      <PencilSquareIcon className="w-4 h-4 mr-2" />
-                      批量编辑标签 ({selectedVpsIds.size})
-                  </button>
+                {selectedVpsIds.size > 0 && (
+                <button
+                  onClick={() => setIsBulkEditModalOpen(true)}
+                  className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-4 rounded-md transition-colors duration-200 text-sm flex items-center"
+                >
+                    <PencilSquareIcon className="w-4 h-4 mr-2" />
+                    批量编辑标签 ({selectedVpsIds.size})
+                </button>
                 )}
             </div>
         </div>
@@ -380,7 +349,7 @@ const HomePage: React.FC = () => {
           <p className="text-slate-500 text-center py-8 bg-white rounded-lg shadow">没有找到符合当前筛选条件的服务器。</p>
         ) : viewMode === 'card' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {displayedServers.map(server => <VpsCard key={server.id} server={server} onEdit={isAuthenticated ? handleOpenEditModal : undefined} isSelected={selectedVpsIds.has(server.id)} onSelectionChange={handleVpsSelectionChange} />)}
+            {displayedServers.map(server => <VpsCard key={server.id} server={server} onEdit={handleOpenEditModal} isSelected={selectedVpsIds.has(server.id)} onSelectionChange={handleVpsSelectionChange} />)}
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-lg overflow-x-auto">
@@ -389,15 +358,13 @@ const HomePage: React.FC = () => {
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                     <div className="flex items-center">
-                      {isAuthenticated && (
-                        <input
-                          type="checkbox"
-                          className="checkbox checkbox-primary checkbox-sm mr-4"
-                          onChange={handleSelectAllClick}
-                          checked={isAllDisplayedSelected}
-                          aria-label="选择所有服务器"
-                        />
-                      )}
+                      <input
+                        type="checkbox"
+                        className="checkbox checkbox-primary checkbox-sm mr-4"
+                        onChange={handleSelectAllClick}
+                        checked={isAllDisplayedSelected}
+                        aria-label="Select all servers"
+                      />
                       <span>名称</span>
                     </div>
                   </th>
@@ -410,31 +377,29 @@ const HomePage: React.FC = () => {
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">续费状态</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">上传</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">下载</th>
-                  {isAuthenticated && <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">操作</th>}
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {displayedServers.map(server => <VpsTableRow key={server.id} server={server} onEdit={isAuthenticated ? handleOpenEditModal : undefined} isSelected={selectedVpsIds.has(server.id)} onSelectionChange={handleVpsSelectionChange} showActions={isAuthenticated} />)}
+                {displayedServers.map(server => <VpsTableRow key={server.id} server={server} onEdit={handleOpenEditModal} isSelected={selectedVpsIds.has(server.id)} onSelectionChange={handleVpsSelectionChange} />)}
               </tbody>
             </table>
           </div>
         )}
       </section>
 
-      {isAuthenticated && (
-        <BulkEditTagsModal
-          isOpen={isBulkEditModalOpen}
-          onClose={() => setIsBulkEditModalOpen(false)}
-          vpsIds={Array.from(selectedVpsIds)}
-          onTagsUpdated={() => {
-            // The backend will push updates via WebSocket.
-            // Clearing selection is a good practice after the action is done.
-            setSelectedVpsIds(new Set());
-          }}
-        />
-      )}
+      <BulkEditTagsModal
+        isOpen={isBulkEditModalOpen}
+        onClose={() => setIsBulkEditModalOpen(false)}
+        vpsIds={Array.from(selectedVpsIds)}
+        onTagsUpdated={() => {
+          // The backend will push updates via WebSocket.
+          // Clearing selection is a good practice after the action is done.
+          setSelectedVpsIds(new Set());
+        }}
+      />
     </div>
   );
 };
 
-export default HomePage;
+export default ServerManagementPage;

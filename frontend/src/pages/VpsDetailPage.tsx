@@ -6,6 +6,7 @@ import { getMonitorResultsByVpsId } from '../services/serviceMonitorService';
 import { dismissVpsRenewalReminder } from '../services/vpsService';
 import type { PerformanceMetricPoint, ServerStatus, ServiceMonitorResult } from '../types';
 import { useServerListStore } from '../store/serverListStore';
+import { useAuthStore } from '../store/authStore';
 import websocketService from '../services/websocketService';
 import EditVpsModal from '../components/EditVpsModal';
 import { useShallow } from 'zustand/react/shallow';
@@ -191,8 +192,9 @@ type TimeRangeOption = typeof TIME_RANGE_OPTIONS[number]['value'];
 
 const VpsDetailPage: React.FC = () => {
   const { vpsId } = useParams<{ vpsId: string }>();
+  const { isAuthenticated } = useAuthStore();
 
-  const { servers, connectionStatus, isLoading: isServerListLoading } = useServerListStore(useShallow(state => ({
+  const { servers, connectionStatus, isLoading } = useServerListStore(useShallow(state => ({
     servers: state.servers,
     connectionStatus: state.connectionStatus,
     isLoading: state.isLoading,
@@ -202,7 +204,7 @@ const VpsDetailPage: React.FC = () => {
     if (!vpsId) return null;
     const numericVpsId = parseInt(vpsId, 10);
     return servers.find(server => server.id === numericVpsId) || null;
-  }, [servers, vpsId]);
+  }, [vpsId, servers]);
 
   const [cpuData, setCpuData] = useState<PerformanceMetricPoint[]>([]);
   const [memoryData, setMemoryData] = useState<PerformanceMetricPoint[]>([]);
@@ -257,16 +259,22 @@ const VpsDetailPage: React.FC = () => {
    }
  };
 
- const isLoadingPage = isServerListLoading && !vpsDetail;
-  const pageError = connectionStatus === 'error' || connectionStatus === 'permanently_failed'
+  const isLoadingPage = isLoading && !vpsDetail;
+  const pageError = (connectionStatus === 'error' || connectionStatus === 'permanently_failed')
     ? "WebSocket connection error."
-    : (connectionStatus === 'connected' && !vpsDetail && !isServerListLoading ? "VPS details not found." : null);
+    : (connectionStatus === 'connected' && !vpsDetail && !isLoading ? "VPS details not found." : null);
 
   const timeRangeToMillis: Record<Exclude<TimeRangeOption, 'realtime'>, number> = { '1h': 36e5, '6h': 216e5, '24h': 864e5, '7d': 6048e5 };
 
   useEffect(() => {
     if (!vpsId) {
       setChartError('VPS ID not found.');
+      setLoadingChartMetrics(false);
+      return;
+    }
+    // In public view, we don't fetch historical metrics via API for now.
+    // We will rely on the `latestMetrics` from the public websocket push.
+    if (!isAuthenticated) {
       setLoadingChartMetrics(false);
       return;
     }
@@ -340,7 +348,10 @@ const VpsDetailPage: React.FC = () => {
   }, [vpsId, selectedTimeRange]);
 
   useEffect(() => {
-    if (!vpsId) return;
+    if (!vpsId || !isAuthenticated) {
+      setLoadingMonitors(false);
+      return;
+    };
 
     const fetchMonitorData = async () => {
       setLoadingMonitors(true);
@@ -367,13 +378,13 @@ const VpsDetailPage: React.FC = () => {
     };
 
     fetchMonitorData();
-  }, [vpsId, selectedTimeRange]);
+  }, [vpsId, selectedTimeRange, isAuthenticated]);
 
   // This effect for real-time updates can be simplified or removed if historical fetch is fast enough on range change
   // For now, we keep it to ensure live data continues to flow.
   useEffect(() => {
     // Only apply websocket updates in real-time mode
-    if (selectedTimeRange !== 'realtime' || !vpsDetail?.latestMetrics || !vpsId) {
+    if (selectedTimeRange !== 'realtime' || !vpsDetail?.latestMetrics || !vpsId || !isAuthenticated) {
       return;
     }
 
@@ -455,11 +466,11 @@ const VpsDetailPage: React.FC = () => {
         swapUsageBytes: null, swapTotalBytes: null,
       }));
     }
-  }, [vpsDetail?.latestMetrics?.time, vpsId, selectedTimeRange]);
+  }, [vpsDetail?.latestMetrics?.time, vpsId, selectedTimeRange, isAuthenticated]);
 
   // WebSocket listener for new monitor results
   useEffect(() => {
-    if (selectedTimeRange !== 'realtime' || !vpsId) {
+    if (selectedTimeRange !== 'realtime' || !vpsId || !isAuthenticated) {
         return;
     }
 
@@ -480,7 +491,7 @@ const VpsDetailPage: React.FC = () => {
     return () => {
         websocketService.off('service_monitor_result', handleNewMonitorResult);
     };
-}, [vpsId, selectedTimeRange]);
+}, [vpsId, selectedTimeRange, isAuthenticated]);
 
 
   if (isLoadingPage) {
@@ -492,7 +503,7 @@ const VpsDetailPage: React.FC = () => {
       <div className="text-center py-10">
         <XCircleIcon className="w-16 h-16 text-red-500 mx-auto mb-4" />
         <p className="text-xl text-red-600 bg-red-100 p-4 rounded-lg">{pageError}</p>
-        <Link to="/" className="mt-6 inline-flex items-center bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors">
+        <Link to={isAuthenticated ? "/servers" : "/"} className="mt-6 inline-flex items-center bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors">
           <ArrowLeftIcon className="w-5 h-5 inline mr-2" />Back to Dashboard
         </Link>
       </div>
@@ -503,17 +514,17 @@ const VpsDetailPage: React.FC = () => {
     return <div className="text-center text-slate-500">Server data not available.</div>;
   }
 
-  const { latestMetrics: metrics, metadata } = vpsDetail;
+  const { latestMetrics: metrics } = vpsDetail;
+  const { metadata } = vpsDetail;
   const memUsed = metrics?.memoryUsageBytes ?? 0;
   const memTotal = metrics?.memoryTotalBytes ?? 0;
   const diskUsed = metrics?.diskUsedBytes ?? 0;
   const diskTotal = metrics?.diskTotalBytes ?? 0;
 
   // Traffic data calculation
-  const trafficLimit = vpsDetail.trafficLimitBytes ?? null;
-  const currentRx = vpsDetail.trafficCurrentCycleRxBytes ?? 0;
-  const currentTx = vpsDetail.trafficCurrentCycleTxBytes ?? 0;
-  const billingRule = vpsDetail.trafficBillingRule;
+  const { trafficLimitBytes: trafficLimit, trafficCurrentCycleRxBytes, trafficCurrentCycleTxBytes, trafficBillingRule: billingRule } = vpsDetail;
+  const currentRx = trafficCurrentCycleRxBytes ?? 0;
+  const currentTx = trafficCurrentCycleTxBytes ?? 0;
 
   let totalUsedTraffic = 0;
   if (billingRule === 'sum_in_out') {
@@ -540,35 +551,41 @@ const VpsDetailPage: React.FC = () => {
               <ServerIcon className="w-8 h-8 mr-3 text-indigo-600 flex-shrink-0" />
               <h1 className="text-3xl font-bold text-slate-800">{vpsDetail.name}</h1>
             </div>
-            <p className="text-slate-500 mt-1 ml-11">IP: {vpsDetail.ipAddress || 'N/A'}</p>
+            {vpsDetail.ipAddress && (
+              <p className="text-slate-500 mt-1 ml-11">IP: {vpsDetail.ipAddress}</p>
+            )}
           </div>
           <div className="mt-4 sm:mt-0 sm:text-right space-y-2">
             <div className={`px-3 py-1.5 text-sm font-semibold rounded-full inline-flex items-center gap-2 ${getStatusBadgeClasses(vpsDetail.status)}`}>
               {getStatusIcon(vpsDetail.status)}
               {vpsDetail.status.toUpperCase()}
             </div>
-           <div className="flex items-center space-x-2">
-               <button
-                   onClick={() => setIsEditModalOpen(true)}
-                   className="inline-flex items-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3.5 rounded-lg transition-colors text-sm"
-                   aria-label={`Edit ${vpsDetail.name}`}
-               >
-                   <PencilIcon className="w-4 h-4 mr-1.5" /> 编辑
-               </button>
-               <Link to="/" className="inline-flex items-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3.5 rounded-lg transition-colors text-sm">
+            <div className="flex items-center space-x-2">
+              {isAuthenticated && (
+                <button
+                    onClick={() => setIsEditModalOpen(true)}
+                    className="inline-flex items-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3.5 rounded-lg transition-colors text-sm"
+                    aria-label={`Edit ${vpsDetail.name}`}
+                >
+                    <PencilIcon className="w-4 h-4 mr-1.5" /> 编辑
+                </button>
+              )}
+               <Link to={isAuthenticated ? "/servers" : "/"} className="inline-flex items-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3.5 rounded-lg transition-colors text-sm">
                    <ArrowLeftIcon className="w-4 h-4 mr-1.5" /> Dashboard
                </Link>
-           </div>
+            </div>
           </div>
         </div>
       </section>
-     <EditVpsModal
-       isOpen={isEditModalOpen}
-       onClose={() => setIsEditModalOpen(false)}
-       vps={vpsDetail}
-       allVps={servers}
-       onVpsUpdated={handleVpsUpdated}
-     />
+      {isAuthenticated && (
+        <EditVpsModal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          vps={vpsDetail}
+          allVps={servers}
+          onVpsUpdated={handleVpsUpdated}
+        />
+      )}
 
       {/* Quick Stats Section */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
@@ -581,7 +598,7 @@ const VpsDetailPage: React.FC = () => {
       </section>
 
       {/* Traffic Information Section */}
-      { (trafficLimit != null || billingRule) && (
+      {isAuthenticated && vpsDetail.trafficBillingRule && (
         <section className="bg-white p-6 rounded-xl shadow-md">
           <h2 className="text-xl font-semibold text-slate-700 mb-6">流量信息</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6 text-sm">
@@ -639,19 +656,21 @@ const VpsDetailPage: React.FC = () => {
       </section>
 
       {/* Service Monitoring Section */}
-      <section className="bg-white p-4 rounded-xl shadow-md">
-          <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold text-slate-700 flex items-center">
-                  <ChartBarIcon className="w-6 h-6 mr-2 text-indigo-500" />
-                  Service Monitoring
-              </h2>
-              {/* Time range selector is shared with performance metrics */}
-          </div>
-          {monitorError && <p className="text-red-500 text-center">{monitorError}</p>}
-          {loadingMonitors ? <div className="h-72 flex justify-center items-center"><p>Loading monitor charts...</p></div> : (
-              <ServiceMonitorChartComponent results={monitorResults} />
-          )}
-      </section>
+      {isAuthenticated && (
+        <section className="bg-white p-4 rounded-xl shadow-md">
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold text-slate-700 flex items-center">
+                    <ChartBarIcon className="w-6 h-6 mr-2 text-indigo-500" />
+                    Service Monitoring
+                </h2>
+                {/* Time range selector is shared with performance metrics */}
+            </div>
+            {monitorError && <p className="text-red-500 text-center">{monitorError}</p>}
+            {loadingMonitors ? <div className="h-72 flex justify-center items-center"><p>Loading monitor charts...</p></div> : (
+                <ServiceMonitorChartComponent results={monitorResults} />
+            )}
+        </section>
+      )}
 
       {/* System Info Section */}
       <section className="bg-white p-6 rounded-xl shadow-md">
@@ -674,7 +693,7 @@ const VpsDetailPage: React.FC = () => {
       </section>
 
       {/* Renewal Information Section */}
-      {(vpsDetail.renewalCycle || vpsDetail.nextRenewalDate || vpsDetail.paymentMethod) && ( // Show section if any key renewal info exists
+      {isAuthenticated && (vpsDetail.renewalCycle || vpsDetail.nextRenewalDate || vpsDetail.paymentMethod) && (
         <section className="bg-white p-6 rounded-xl shadow-md">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-xl font-semibold text-slate-700 flex items-center">

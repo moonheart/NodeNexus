@@ -23,9 +23,9 @@ import {
 
 interface VpsCardProps {
   server: VpsListItemResponse;
-  onEdit: (server: VpsListItemResponse) => void;
-  isSelected: boolean;
-  onSelectionChange: (vpsId: number, isSelected: boolean) => void;
+  onEdit?: (server: VpsListItemResponse) => void;
+  isSelected?: boolean;
+  onSelectionChange?: (vpsId: number, isSelected: boolean) => void;
 }
 
 const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelectionChange }) => {
@@ -42,6 +42,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
   const diskUsagePercent = diskTotalBytes && diskUsedBytes !== null ? (diskUsedBytes / diskTotalBytes) * 100 : null;
 
   const { usedTrafficBytes, trafficUsagePercent } = calculateTrafficUsage(server);
+
   const renewalInfo = calculateRenewalInfo(
     server.nextRenewalDate,
     server.lastRenewalDate,
@@ -52,15 +53,17 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
 
   return (
     <div className={`relative bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300 overflow-hidden flex flex-col border-l-4 ${cardBorderClass}`}>
-      <div className="absolute top-2 right-2 z-10">
-        <input
-          type="checkbox"
-          className="checkbox checkbox-primary"
-          checked={isSelected}
-          onChange={(e) => onSelectionChange(server.id, e.target.checked)}
-          aria-label={`Select ${server.name}`}
-        />
-      </div>
+      {onSelectionChange && (
+        <div className="absolute top-2 right-2 z-10">
+          <input
+            type="checkbox"
+            className="checkbox checkbox-primary"
+            checked={!!isSelected}
+            onChange={(e) => onSelectionChange(server.id, e.target.checked)}
+            aria-label={`Select ${server.name}`}
+          />
+        </div>
+      )}
       <div className="p-4">
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-base font-semibold text-slate-800 truncate" title={server.name}>
@@ -76,14 +79,14 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
           {server.metadata?.country_code && (
             <span className={`fi fi-${server.metadata.country_code.toLowerCase()} mr-1.5`}></span>
           )}
-          {server.ipAddress || 'N/A'}
+          {server.ipAddress || server.osType || 'N/A'}
         </p>
         {server.metadata?.os_name && (
           <p className="text-xs text-slate-500 mb-1 truncate" title={`OS: ${server.metadata.long_os_version} ${server.metadata.kernel_version ? `(${server.metadata.kernel_version})` : ''}`}>
             OS: {server.metadata.long_os_version} {server.metadata.kernel_version ? `(${server.metadata.kernel_version})` : ''}
           </p>
         )}
-        {server.metadata?.cpu_static_info && server.metadata.cpu_static_info.brand && (
+        {server.metadata?.cpu_static_info?.brand && (
           <p className="text-xs text-slate-500 mb-1 truncate" title={`CPU: ${server.metadata.cpu_static_info.brand}`}>
             CPU: {server.metadata.cpu_static_info.brand}
           </p>
@@ -167,20 +170,22 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
         </div>
       </div>
 
-      <div className="p-3 bg-slate-50 border-t border-slate-200 grid grid-cols-2 gap-2">
+      <div className={`p-3 bg-slate-50 border-t border-slate-200 grid ${onEdit ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
        <RouterLink
          to={`/vps/${server.id}`}
          className="block w-full text-center bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-1.5 px-3 rounded-md transition-colors duration-200 text-sm"
        >
          查看详情
        </RouterLink>
-       <button
-         onClick={() => onEdit(server)}
-         className="w-full text-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3 rounded-md transition-colors duration-200 text-sm flex items-center justify-center"
-       >
-         <PencilIcon className="w-4 h-4 mr-1.5" />
-         编辑
-       </button>
+       {onEdit && (
+        <button
+          onClick={() => onEdit(server)}
+          className="w-full text-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3 rounded-md transition-colors duration-200 text-sm flex items-center justify-center"
+        >
+          <PencilIcon className="w-4 h-4 mr-1.5" />
+          编辑
+        </button>
+       )}
       </div>
     </div>
   );

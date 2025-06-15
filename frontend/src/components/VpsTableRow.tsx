@@ -19,12 +19,13 @@ import {
 
 interface VpsTableRowProps {
   server: VpsListItemResponse;
-  onEdit: (server: VpsListItemResponse) => void;
-  isSelected: boolean;
-  onSelectionChange: (vpsId: number, isSelected: boolean) => void;
+  onEdit?: (server: VpsListItemResponse) => void;
+  isSelected?: boolean;
+  onSelectionChange?: (vpsId: number, isSelected: boolean) => void;
+  showActions?: boolean;
 }
 
-const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, onSelectionChange }) => {
+const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, onSelectionChange, showActions = true }) => {
   const { tableRowBadgeClass, tableRowTextClass, icon } = getVpsStatusAppearance(server.status);
   const metrics = server.latestMetrics;
 
@@ -36,6 +37,7 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, o
   const downSpeed = metrics ? formatNetworkSpeed(metrics.networkRxInstantBps) : 'N/A';
 
   const { usedTrafficBytes, trafficUsagePercent } = calculateTrafficUsage(server);
+
   const renewalInfo = calculateRenewalInfo(
     server.nextRenewalDate,
     server.lastRenewalDate,
@@ -48,13 +50,15 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, o
     <tr className="bg-white hover:bg-slate-50 transition-colors duration-150 border-b border-slate-200 last:border-b-0">
       <td className="px-4 py-3 text-sm font-medium text-slate-800">
         <div className="flex items-center">
-          <input
-            type="checkbox"
-            className="checkbox checkbox-primary checkbox-sm mr-4"
-            checked={isSelected}
-            onChange={(e) => onSelectionChange(server.id, e.target.checked)}
-            aria-label={`Select ${server.name}`}
-          />
+          {onSelectionChange && (
+            <input
+              type="checkbox"
+              className="checkbox checkbox-primary checkbox-sm mr-4"
+              checked={!!isSelected}
+              onChange={(e) => onSelectionChange(server.id, e.target.checked)}
+              aria-label={`Select ${server.name}`}
+            />
+          )}
           <div className="truncate" title={server.name}>
             <RouterLink to={`/vps/${server.id}`} className="text-indigo-600 hover:text-indigo-700 hover:underline">
               {server.name}
@@ -77,8 +81,8 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, o
           {server.ipAddress || 'N/A'}
         </div>
       </td>
-      <td className="px-4 py-3 text-sm text-slate-600 truncate" title={server.metadata?.os_name ? String(server.metadata.os_name) : 'N/A'}>
-        {server.metadata?.os_name ? String(server.metadata.os_name) : 'N/A'}
+      <td className="px-4 py-3 text-sm text-slate-600 truncate" title={server.osType ?? 'N/A'}>
+        {server.osType ?? 'N/A'}
       </td>
       <td className="px-4 py-3 text-sm text-slate-600">{cpuUsage}</td>
       <td className="px-4 py-3 text-sm text-slate-600">{memUsage}</td>
@@ -100,14 +104,11 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, o
           <span className="text-xs text-slate-400">未配置</span>
         )}
       </td>
-      {/* Renewal Info Column */}
       <td className="px-4 py-3 text-sm text-slate-600">
         {renewalInfo.isApplicable && renewalInfo.progressPercent !== null ? (
           <div className="w-28"> {/* Fixed width for consistency */}
             <div className="flex items-center justify-between text-xs mb-0.5">
               <span className={`font-semibold ${renewalInfo.colorClass.replace('bg-', 'text-')}`}>{renewalInfo.statusText}</span>
-              {/* Optional: Show percentage if space allows or on hover */}
-              {/* <span className="text-slate-500">{renewalInfo.progressPercent.toFixed(0)}%</span> */}
             </div>
             <SharedProgressBar value={renewalInfo.progressPercent} colorClass={renewalInfo.colorClass} heightClass="h-1.5" />
           </div>
@@ -121,25 +122,29 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, o
       <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
         <ArrowDownIcon className="w-3.5 h-3.5 mr-1 text-sky-500 inline-block" /> {downSpeed}
       </td>
-      <td className="px-4 py-3 text-center">
-       <div className="flex items-center justify-center space-x-2">
-         <RouterLink
-           to={`/vps/${server.id}`}
-           className="text-indigo-600 hover:text-indigo-700 font-medium text-xs py-1 px-3 rounded-md hover:bg-indigo-50 transition-colors"
-           aria-label={`View details for ${server.name}`}
-         >
-           详情
-         </RouterLink>
-         <button
-           onClick={() => onEdit(server)}
-           className="text-slate-600 hover:text-slate-800 font-medium text-xs py-1 px-3 rounded-md hover:bg-slate-100 transition-colors flex items-center"
-           aria-label={`Edit ${server.name}`}
-         >
-           <PencilIcon className="w-3.5 h-3.5 mr-1" />
-           编辑
-         </button>
-       </div>
-      </td>
+      {showActions && (
+        <td className="px-4 py-3 text-center">
+         <div className="flex items-center justify-center space-x-2">
+           <RouterLink
+             to={`/vps/${server.id}`}
+             className="text-indigo-600 hover:text-indigo-700 font-medium text-xs py-1 px-3 rounded-md hover:bg-indigo-50 transition-colors"
+             aria-label={`View details for ${server.name}`}
+           >
+             详情
+           </RouterLink>
+           {onEdit && (
+            <button
+              onClick={() => onEdit(server)}
+              className="text-slate-600 hover:text-slate-800 font-medium text-xs py-1 px-3 rounded-md hover:bg-slate-100 transition-colors flex items-center"
+              aria-label={`Edit ${server.name}`}
+            >
+              <PencilIcon className="w-3.5 h-3.5 mr-1" />
+              编辑
+            </button>
+           )}
+         </div>
+        </td>
+      )}
     </tr>
   );
 };

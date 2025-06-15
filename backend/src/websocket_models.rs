@@ -94,6 +94,46 @@ pub struct ServerWithDetails {
     // pub last_reminder_generated_at: Option<DateTime<Utc>>, // Decided to omit from websocket model for now, primarily backend concern
 }
 
+impl ServerWithDetails {
+    /// Creates a desensitized version of `ServerWithDetails`, suitable for public broadcasting.
+    /// It nullifies all sensitive information by creating a new instance with `None` for private fields.
+    pub fn desensitize(&self) -> Self {
+        ServerWithDetails {
+            // Sensitive fields in basic_info are set to None
+            basic_info: ServerBasicInfo {
+                ip_address: None,
+                last_config_error: None,
+                traffic_limit_bytes: None,
+                traffic_billing_rule: None,
+                traffic_current_cycle_rx_bytes: None,
+                traffic_current_cycle_tx_bytes: None,
+                traffic_last_reset_at: None,
+                traffic_reset_config_type: None,
+                traffic_reset_config_value: None,
+                next_traffic_reset_at: None,
+                // Clone the public fields from the original basic_info
+                ..self.basic_info.clone()
+            },
+            // Sensitive top-level fields are set to None
+            metadata: None,
+            renewal_cycle: None,
+            renewal_cycle_custom_days: None,
+            renewal_price: None,
+            renewal_currency: None,
+            next_renewal_date: None,
+            last_renewal_date: None,
+            service_start_date: None,
+            payment_method: None,
+            auto_renew_enabled: None,
+            renewal_notes: None,
+            reminder_active: None,
+            // Clone the remaining public fields from the original ServerWithDetails
+            ..self.clone()
+        }
+    }
+}
+
+
 use crate::http_server::models::service_monitor_models::ServiceMonitorResultDetails;
 
 #[derive(Serialize, Clone, Debug)]

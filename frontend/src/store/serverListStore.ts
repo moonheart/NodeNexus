@@ -20,11 +20,13 @@ export interface ServerListState { // Added export
     error: string | null; // For WebSocket related errors
     viewMode: ViewMode;
     allTags: Tag[]; // To store all available tags globally
+    isInitialized: boolean; // Flag to prevent double initialization
     fetchAllTags: () => Promise<void>; // Action to fetch all tags
     setViewMode: (mode: ViewMode) => void;
-    initializeWebSocket: () => void;
+    init: () => void; // New action to start listening to auth changes
     disconnectWebSocket: () => void;
-    // Internal actions to be called by WebSocketService callbacks
+    // Internal actions
+    _initializeWebSocket: (isAuthenticated: boolean) => void;
     _handleWebSocketOpen: () => void;
     _handleWebSocketMessage: (data: FullServerListPushType) => void;
     _handleServiceMonitorResult: (data: ServiceMonitorResult) => void;
@@ -38,10 +40,11 @@ export const useServerListStore = create<ServerListState>()(
     (set, get) => ({
       servers: [],
       connectionStatus: 'disconnected',
-    isLoading: true, // Assume loading initially until first connection or message
-    error: null,
-    viewMode: 'card', // Default view mode
-    allTags: [],
+      isLoading: true, // Assume loading initially until first connection or message
+      error: null,
+      viewMode: 'card', // Default view mode
+      allTags: [],
+      isInitialized: false,
 
     fetchAllTags: async () => {
         try {
@@ -55,83 +58,130 @@ export const useServerListStore = create<ServerListState>()(
 
     setViewMode: (mode) => set({ viewMode: mode }),
 
-    initializeWebSocket: () => {
-      const { connectionStatus } = get();
-      if (connectionStatus === 'connected' || connectionStatus === 'connecting' || connectionStatus === 'reconnecting') {
-        return;
-      }
+    init: () => {
+        // Make the init function idempotent to prevent issues with React's Strict Mode.
+        if (get().isInitialized) {
+            console.log("ServerListStore: Already initialized.");
+            return;
+        }
+        set({ isInitialized: true });
 
-      const token = useAuthStore.getState().token;
-      if (!token) {
-        set({ connectionStatus: 'error', error: 'Authentication token not found.', isLoading: false });
-        return;
-      }
+        console.log("ServerListStore: Initializing and subscribing to auth changes.");
 
-      set({ connectionStatus: 'connecting', isLoading: true, error: null });
+        // Subscribe to the auth store
+        useAuthStore.subscribe(
+            (state, prevState) => {
+                if (state.isAuthenticated !== prevState.isAuthenticated) {
+                    console.log(`ServerListStore: Detected auth state change from ${prevState.isAuthenticated} to ${state.isAuthenticated}.`);
+                    get()._initializeWebSocket(state.isAuthenticated);
+                }
+            }
+        );
 
-      // Register event listeners
-      websocketService.on('open', get()._handleWebSocketOpen);
-      websocketService.on('full_server_list', get()._handleWebSocketMessage);
-      websocketService.on('service_monitor_result', get()._handleServiceMonitorResult);
-      websocketService.on('close', get()._handleWebSocketClose);
-      websocketService.on('error', get()._handleWebSocketError);
-      websocketService.on('permanent_failure', get()._handleWebSocketPermanentFailure);
+        // Initial connection based on the current state
+        const initialIsAuthenticated = useAuthStore.getState().isAuthenticated;
+        get()._initializeWebSocket(initialIsAuthenticated);
+    },
 
-      websocketService.connect(token);
+    _initializeWebSocket: (isAuthenticated) => {
+        const { connectionStatus } = get();
+        // We still check status to avoid redundant connections if state somehow doesn't change.
+        if (connectionStatus === 'connected' && useAuthStore.getState().isAuthenticated === isAuthenticated) {
+            console.log('Connection already established with correct auth state.');
+            return;
+        }
+
+        set({ connectionStatus: 'connecting', isLoading: true, error: null });
+
+        // Centralized disconnect before reconnecting
+        get().disconnectWebSocket();
+
+        if (isAuthenticated) {
+            const token = useAuthStore.getState().token;
+            if (!token) {
+                set({ connectionStatus: 'error', error: 'Authentication token not found.', isLoading: false });
+                return;
+            }
+            // Register event listeners for the private service
+            websocketService.on('open', get()._handleWebSocketOpen);
+            websocketService.on('full_server_list', get()._handleWebSocketMessage);
+            websocketService.on('service_monitor_result', get()._handleServiceMonitorResult);
+            websocketService.on('close', get()._handleWebSocketClose);
+            websocketService.on('error', get()._handleWebSocketError);
+            websocketService.on('permanent_failure', get()._handleWebSocketPermanentFailure);
+            websocketService.connect(token);
+        } else {
+            // Register event listeners for the public service (now handled by the same service)
+            websocketService.on('open', get()._handleWebSocketOpen);
+            websocketService.on('full_server_list', get()._handleWebSocketMessage);
+            // No service_monitor_result for public view
+            websocketService.on('close', get()._handleWebSocketClose);
+            websocketService.on('error', get()._handleWebSocketError);
+            websocketService.on('permanent_failure', get()._handleWebSocketPermanentFailure);
+            websocketService.connect(); // Connect without a token for the public endpoint
+        }
     },
 
     disconnectWebSocket: () => {
-      console.log('ServerListStore: Disconnecting WebSocket.');
+      console.log('ServerListStore: Disconnecting WebSocket and removing listeners.');
+      
+      // Disconnect the single service
       websocketService.disconnect();
 
-      // Unregister event listeners
+      // Unregister all event listeners to prevent memory leaks
       websocketService.off('open', get()._handleWebSocketOpen);
       websocketService.off('full_server_list', get()._handleWebSocketMessage);
       websocketService.off('service_monitor_result', get()._handleServiceMonitorResult);
       websocketService.off('close', get()._handleWebSocketClose);
       websocketService.off('error', get()._handleWebSocketError);
       websocketService.off('permanent_failure', get()._handleWebSocketPermanentFailure);
+
+      set({ connectionStatus: 'disconnected' });
     },
 
     _handleWebSocketOpen: () => {
         console.log('ServerListStore: WebSocket connection opened.');
-        set({ connectionStatus: 'connected', isLoading: false, error: null });
+        set({ connectionStatus: 'connected', error: null }); // Keep isLoading: true until the first message arrives
     },
 
     _handleWebSocketMessage: (data) => {
-        set(state => {
-            // Create a map of the new servers for efficient lookup
-            const newServersMap = new Map(data.servers.map(server => [server.id, server]));
-            
-            // Create a new array for the updated server list
-            const updatedServers = state.servers.map(oldServer => {
-                const newServer = newServersMap.get(oldServer.id);
-                if (newServer) {
-                    // If the server exists in the new data, update it
-                    newServersMap.delete(oldServer.id); // Remove from map to track new servers
-                    // Simple check to see if a deep equality check is needed.
-                    // A more robust solution might use a library like 'fast-deep-equal'.
-                    if (JSON.stringify(oldServer) !== JSON.stringify(newServer)) {
-                        return newServer;
+        const isAuthenticated = useAuthStore.getState().isAuthenticated;
+        if (isAuthenticated) {
+            set(state => {
+                // Create a map of the new servers for efficient lookup
+                const newServersMap = new Map(data.servers.map(server => [server.id, server]));
+                
+                // Create a new array for the updated server list
+                const updatedServers = state.servers.map(oldServer => {
+                    const newServer = newServersMap.get(oldServer.id);
+                    if (newServer) {
+                        // If the server exists in the new data, update it
+                        newServersMap.delete(oldServer.id); // Remove from map to track new servers
+                        if (JSON.stringify(oldServer) !== JSON.stringify(newServer)) {
+                            return newServer;
+                        }
+                        return oldServer; // Return the old instance if no change
                     }
-                    return oldServer; // Return the old instance if no change
+                    return oldServer;
+                });
+
+                // Add any new servers that were not in the old list
+                newServersMap.forEach(newServer => {
+                    updatedServers.push(newServer);
+                });
+
+                // Only update state if the server list has actually changed
+                if (JSON.stringify(state.servers) !== JSON.stringify(updatedServers)) {
+                     return { servers: updatedServers, isLoading: false, error: null, connectionStatus: 'connected' };
                 }
-                return oldServer; // Keep old server if not in new data (should not happen with full push)
+
+                // If no changes, return an empty object to prevent re-render
+                return {};
             });
-
-            // Add any new servers that were not in the old list
-            newServersMap.forEach(newServer => {
-                updatedServers.push(newServer);
-            });
-
-            // Only update state if the server list has actually changed
-            if (JSON.stringify(state.servers) !== JSON.stringify(updatedServers)) {
-                 return { servers: updatedServers, isLoading: false, error: null, connectionStatus: 'connected' };
-            }
-
-            // If no changes, return an empty object to prevent re-render
-            return {};
-        });
+        } else {
+            // For public view, a simple replacement is sufficient and more performant
+            set({ servers: data.servers, isLoading: false, connectionStatus: 'connected', error: null });
+        }
     },
 
     _handleServiceMonitorResult: (data) => {

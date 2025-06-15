@@ -26,10 +26,10 @@ const Navbar: React.FC = () => {
             {isAuthenticated ? (
               <>
                 <Link
-                  to="/"
+                  to="/servers"
                   className="px-3 py-2 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
                 >
-                  主机
+                  服务器管理
                 </Link>
                 <Link
                   to="/tasks"

@@ -82,7 +82,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
 
     // --- Shared State Initialization for WebSocket and gRPC ---
     // Initialize the broadcast channel for WebSocket updates
-    let (ws_data_broadcaster_tx, _) = broadcast::channel::<WsMessage>(100); // Capacity can be configured
+    let (ws_data_broadcaster_tx, _) = broadcast::channel::<WsMessage>(100); // For private, full data
+    let (public_ws_data_broadcaster_tx, _) = broadcast::channel::<WsMessage>(100); // For public, desensitized data
     let (batch_command_updates_tx, _rx) = broadcast::channel::<BatchCommandUpdateMsg>(100); // Channel for batch command updates
 
     // Initialize the live server data cache
@@ -178,6 +179,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         db_pool.clone(),
         live_server_data_cache.clone(),
         ws_data_broadcaster_tx.clone(),
+        public_ws_data_broadcaster_tx.clone(), // Pass public broadcaster
         connected_agents.clone(),
         update_trigger_tx.clone(),
         notification_service.clone(),
@@ -190,7 +192,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     // --- Debounced Broadcast Task ---
     let pool_for_debounce = db_pool.clone();
     let cache_for_debounce = live_server_data_cache.clone();
-    let broadcaster_for_debounce = ws_data_broadcaster_tx.clone();
+    let private_broadcaster_for_debounce = ws_data_broadcaster_tx.clone();
+    let public_broadcaster_for_debounce = public_ws_data_broadcaster_tx.clone();
     let debouncer_task = tokio::spawn(async move {
         use tokio::time::{sleep, Duration};
         const DEBOUNCE_DURATION: Duration = Duration::from_millis(2000);
@@ -212,11 +215,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
             }
 
             // Now that the stream of updates has settled, perform the actual broadcast.
-            debug!("Debounce window finished. Triggering broadcast.");
-            update_service::broadcast_full_state_update(
+            debug!("Debounce window finished. Triggering broadcast to both channels.");
+            update_service::broadcast_full_state_update_to_all(
                 &pool_for_debounce,
                 &cache_for_debounce,
-                &broadcaster_for_debounce,
+                &private_broadcaster_for_debounce,
+                &public_broadcaster_for_debounce,
             )
             .await;
         }
