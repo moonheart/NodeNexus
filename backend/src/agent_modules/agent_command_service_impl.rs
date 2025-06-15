@@ -5,7 +5,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as TokioCommand;
 use tokio::sync::{mpsc, oneshot};
 use chrono::Utc;
-use tracing::{info, error, warn, debug};
+use tracing::{info, error, warn};
 use encoding_rs;
 use lazy_static::lazy_static;
 

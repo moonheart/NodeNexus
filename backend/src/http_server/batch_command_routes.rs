@@ -5,7 +5,7 @@ use axum::{
 };
 use std::sync::Arc;
 use uuid::Uuid;
-use tracing::{info, error, warn};
+use tracing::error;
 
 use super::models::{
     CreateBatchCommandRequest,

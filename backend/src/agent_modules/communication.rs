@@ -4,9 +4,7 @@ use crate::agent_service::agent_communication_service_client::AgentCommunication
 use crate::agent_service::message_to_server::Payload as ServerPayload; // Renamed for clarity
 use crate::agent_service::message_to_agent::Payload as AgentPayload; // Renamed for clarity
 use crate::agent_service::{
-    AgentConfig, AgentHandshake, Heartbeat, MessageToAgent, MessageToServer, OsType,
-    BatchAgentCommandRequest, BatchCommandResult, BatchCommandOutputStream, BatchTerminateCommandRequest, // Added for batch commands
-    CommandStatus, OutputType, // Enums used by batch messages
+    AgentConfig, AgentHandshake, Heartbeat, MessageToAgent, MessageToServer, OsType, // Enums used by batch messages
 };
 use crate::agent_modules::command_tracker::RunningCommandsTracker; // Added
 use std::error::Error;
@@ -17,7 +15,7 @@ use sysinfo::System;
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use uuid::Uuid;
-use chrono::Utc; // For timestamps
+ // For timestamps
 use tracing::{info, error, warn, debug};
 
 // Import the refactored helper functions

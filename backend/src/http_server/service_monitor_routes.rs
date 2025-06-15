@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, Query, State},
-    routing::{get, post, put, delete},
+    routing::get,
     Json, Router, http::StatusCode,
 };
 use std::sync::Arc;

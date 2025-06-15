@@ -1,13 +1,11 @@
 //! Agent-side module for managing and executing service monitoring tasks.
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
-use std::net::IpAddr;
-use std::str::FromStr;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use rand::random;
-use tracing::{info, error, warn, debug};
+use tracing::{info, error};
 
 use crate::agent_service::{
     message_to_server::Payload as ServerPayload, AgentConfig, MessageToServer,

@@ -23,7 +23,7 @@ use crate::server::agent_state::{AgentState, ConnectedAgents};
 use crate::db::services; // Will be used later for db operations
  // For fetching VPS details if not in cache
  
-use crate::websocket_models::{FullServerListPush, WsMessage};
+use crate::websocket_models::WsMessage;
 use tokio::sync::broadcast;
 
 pub async fn handle_connection(

@@ -10,7 +10,7 @@ use crate::agent_service::{AgentConfig, MessageToAgent, message_to_agent::Payloa
 use crate::db::services as db_services;
 use crate::db::entities::{setting, vps}; // Added setting and vps entities
 use uuid::Uuid;
-use tracing::{info, error, warn};
+use tracing::{error, warn};
 
 // This router is for global settings, mounted under /api/settings
 pub fn create_settings_router() -> Router<Arc<AppState>> {

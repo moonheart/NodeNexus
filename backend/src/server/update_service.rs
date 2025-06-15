@@ -1,7 +1,6 @@
-use std::sync::Arc;
 use tokio::sync::broadcast;
 use sea_orm::DatabaseConnection; // Replaced PgPool
-use tracing::{info, error, debug};
+use tracing::{error, debug};
 
 use crate::db::services;
 use crate::server::agent_state::LiveServerDataCache;

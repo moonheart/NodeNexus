@@ -6,7 +6,7 @@ use sea_orm::{
 };
 use serde_json::json;
 use uuid::Uuid;
-use tracing::{info, error, warn, debug};
+use tracing::warn;
 
 use crate::db::entities::{vps, vps_tag};
 use crate::db::services::vps_renewal_service::{

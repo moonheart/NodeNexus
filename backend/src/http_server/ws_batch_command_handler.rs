@@ -9,7 +9,7 @@ use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
-use tracing::{info, error, warn, debug};
+use tracing::{info, warn, debug};
 
 use crate::http_server::AppState;
 

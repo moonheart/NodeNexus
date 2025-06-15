@@ -11,9 +11,7 @@ use sea_orm::DatabaseConnection; // Replaced PgPool
 use std::sync::Arc;
  // Added for LiveServerDataCache
 use tokio::sync::{broadcast, mpsc, Mutex}; // Added Mutex and mpsc
-use std::net::SocketAddr;
 use thiserror::Error;
-use tracing::info;
 use crate::server::agent_state::{ConnectedAgents, LiveServerDataCache};
 use crate::websocket_models::WsMessage;
 use tower_http::cors::{CorsLayer, Any}; // Added CorsLayer and Any
@@ -22,6 +20,12 @@ use crate::notifications::service::NotificationService;
 use crate::db::services::{AlertService, BatchCommandManager}; // Added BatchCommandManager
 use crate::server::command_dispatcher::CommandDispatcher; // Added CommandDispatcher
 use crate::server::result_broadcaster::{ResultBroadcaster, BatchCommandUpdateMsg}; // Added ResultBroadcaster
+use rust_embed::RustEmbed;
+use crate::axum_embed::ServeEmbed;
+
+pub fn create_static_file_service() -> ServeEmbed<Assets> {
+    ServeEmbed::<Assets>::new()
+}
 
 pub mod auth_logic;
 pub mod metrics_routes;
@@ -37,6 +41,10 @@ pub mod ws_batch_command_handler; // Added WebSocket handler for batch commands
 pub mod service_monitor_routes;
 pub mod command_script_routes;
  
+#[derive(RustEmbed, Clone)]
+#[folder = "../frontend/dist"]
+pub struct Assets;
+
  // Application state to share PgPool
 #[derive(Clone)]
 pub struct AppState {

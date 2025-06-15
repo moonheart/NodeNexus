@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set}; // Added SeaORM imports
 use thiserror::Error;
-use tracing::{info, error, warn};
+use tracing::{info, error};
 
 use super::encryption::{EncryptionService, EncryptionError};
 use super::models::{ChannelConfig, ChannelTemplate, ChannelTemplateField};

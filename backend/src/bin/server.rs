@@ -8,7 +8,6 @@ use backend::notifications::{encryption::EncryptionService, service::Notificatio
 use backend::db::services::{AlertService, BatchCommandManager}; // Added BatchCommandManager
 use backend::alerting::evaluation_service::EvaluationService; // Added EvaluationService
 use backend::server::result_broadcaster::{ResultBroadcaster, BatchCommandUpdateMsg}; // Added ResultBroadcaster
-use tonic::transport::Server as TonicServer;
 use backend::agent_service::agent_communication_service_server::AgentCommunicationServiceServer;
 use backend::http_server;
 
@@ -25,6 +24,8 @@ use tokio::sync::mpsc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, fmt};
 use tracing_appender::rolling;
 use tracing::{info, error, warn, debug};
+
+use tower::Service;
 
 fn init_logging() {
     // Log to a file: JSON format, daily rotation
@@ -353,9 +354,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!(address = %addr, "HTTP and gRPC server listening");
 
-    // Combine axum router and grpc service.
-    // Requests that are not handled by the axum router will be forwarded to the grpc service.
-    let app = http_router.fallback_service(grpc_service);
+    let static_file_service = http_server::create_static_file_service();
+
+    let app = http_router.fallback_service(
+        tower::service_fn(move |req: axum::http::Request<axum::body::Body>| {
+            let mut grpc_service = grpc_service.clone();
+            let mut static_file_service = static_file_service.clone();
+
+            async move {
+                if req.headers().get("content-type").map(|v| v.as_bytes().starts_with(b"application/grpc")).unwrap_or(false) {
+                    grpc_service.call(req).await
+                        .map(|res| res.map(axum::body::Body::new))
+                        .map_err(|err| match err {})
+                } else {
+                    static_file_service.call(req).await
+                        .map(|res| res.map(axum::body::Body::new))
+                        .map_err(|err| match err {})
+                }
+            }
+        })
+    );
 
     axum::serve(listener, app.into_make_service()).await?;
 

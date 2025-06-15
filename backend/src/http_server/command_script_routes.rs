@@ -1,10 +1,10 @@
 use axum::{
     extract::{Extension, Path, State},
-    routing::{get, post, put, delete},
+    routing::{get, post},
     Json, Router,
 };
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::db::services::command_script_service::{CommandScriptService, CommandScriptError};
 use crate::http_server::{AppState, AppError};

@@ -6,7 +6,7 @@ use std::path::PathBuf; // For constructing paths
 use tokio::fs; // For async file operations (creating directory)
 use uuid::Uuid;
 use chrono::Utc;
-use tracing::{info, error, warn};
+use tracing::error;
 
 use crate::db::entities::{
     batch_command_task,
