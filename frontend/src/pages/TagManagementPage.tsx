@@ -6,14 +6,12 @@ import type { Tag, UpdateTagPayload } from '../types';
 import { useServerListStore } from '../store/serverListStore';
 import TagEditModal from '../components/TagEditModal';
 import TagCard from '../components/TagCard';
-import TagSkeletonCard from '../components/TagSkeletonCard';
 import EmptyState from '../components/EmptyState';
 
 const TagManagementPage: React.FC = () => {
   const tags = useServerListStore((state) => state.allTags);
   const fetchAllTags = useServerListStore((state) => state.fetchAllTags);
 
-  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -21,13 +19,10 @@ const TagManagementPage: React.FC = () => {
   useEffect(() => {
     const loadInitialTags = async () => {
       try {
-        setIsLoading(true);
         await fetchAllTags();
       } catch (err) {
         toast.error('Failed to load tags.');
         console.error(err);
-      } finally {
-        setIsLoading(false);
       }
     };
     loadInitialTags();
@@ -105,13 +100,6 @@ const TagManagementPage: React.FC = () => {
   }, [tags, searchQuery]);
 
   const renderContent = () => {
-    if (isLoading) {
-      return (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {Array.from({ length: 8 }).map((_, i) => <TagSkeletonCard key={i} />)}
-        </div>
-      );
-    }
 
     if (!tags || tags.length === 0) {
       return (

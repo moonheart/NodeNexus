@@ -15,6 +15,7 @@ import ServiceMonitoringPage from './pages/ServiceMonitoringPage'; // Import the
 import ServiceMonitorDetailPage from './pages/ServiceMonitorDetailPage'; // Import the new page
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout'; // Import the new Layout component
+import SettingsLayout from './components/SettingsLayout'; // Import the SettingsLayout component
 import { useAuthStore } from './store/authStore';
 import { useServerListStore } from './store/serverListStore';
 
@@ -46,13 +47,20 @@ function App() {
           <Route element={<Layout />}>
             <Route path="/" element={<HomePage />} />
             <Route path="/vps/:vpsId" element={<VpsDetailPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/tags" element={<TagManagementPage />} />
-            <Route path="/batch-command" element={<BatchCommandPage />} /> {/* Add new route */}
-            <Route path="/notifications" element={<NotificationsPage />} /> {/* Add new route */}
+            <Route path="/tasks" element={<BatchCommandPage />} />
             <Route path="/monitors" element={<ServiceMonitoringPage />} />
             <Route path="/monitors/:monitorId" element={<ServiceMonitorDetailPage />} />
-            {/* Add other protected routes that need the layout here */}
+            
+            {/* Settings Section with Nested Routes */}
+            <Route path="/settings" element={<SettingsLayout />}>
+              <Route index element={<Navigate to="/settings/global" replace />} />
+              <Route path="global" element={<SettingsPage />} />
+              <Route path="notifications" element={<NotificationsPage />} />
+              <Route path="alerts" element={<SettingsPage />} /> {/* Placeholder, assuming alerts are on settings page for now */}
+              <Route path="tags" element={<TagManagementPage />} />
+              <Route path="scripts" element={<div>Script Management Page (TODO)</div>} />
+              <Route path="account" element={<div>Account Settings Page (TODO)</div>} />
+            </Route>
           </Route>
         </Route>
 
