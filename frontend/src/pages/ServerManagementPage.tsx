@@ -1,26 +1,15 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import EditVpsModal from '../components/EditVpsModal';
 import CreateVpsModal from '../components/CreateVpsModal';
-import type { Vps, VpsListItemResponse, ServerStatus as ServerStatusType, ViewMode, Tag } from '../types';
+import type { Vps, VpsListItemResponse, Tag } from '../types';
 import { useServerListStore, type ServerListState, type ConnectionStatus } from '../store/serverListStore';
 import { useShallow } from 'zustand/react/shallow';
-import StatCard from '../components/StatCard';
 import {
-  ServerIcon,
-  CheckCircleIcon,
-  ExclamationTriangleIcon,
-  XCircleIcon,
-  ArrowUpIcon,
-  ArrowDownIcon,
-  ListBulletIcon,
-  Squares2X2Icon,
   PencilSquareIcon,
   XMarkIcon,
   CheckIcon,
 } from '../components/Icons';
-import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_ERROR, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_UNKNOWN } from '../types';
-import VpsCard from '../components/VpsCard';
-import VpsTableRow from '../components/VpsTableRow';
+import ServerManagementTableRow from '../components/ServerManagementTableRow';
 import BulkEditTagsModal from '../components/BulkEditTagsModal';
 import * as tagService from '../services/tagService';
 
@@ -29,8 +18,6 @@ interface ServerManagementPageStateSlice {
   isLoading: boolean;
   error: string | null;
   connectionStatus: ConnectionStatus;
-  viewMode: ViewMode;
-  setViewMode: (mode: ViewMode) => void;
 }
 
 const selectServerManagementPageData = (state: ServerListState): ServerManagementPageStateSlice => ({
@@ -38,18 +25,8 @@ const selectServerManagementPageData = (state: ServerListState): ServerManagemen
   isLoading: state.isLoading,
   error: state.error,
   connectionStatus: state.connectionStatus,
-  viewMode: state.viewMode,
-  setViewMode: state.setViewMode,
 });
 
-const statusColorMap: Record<ServerStatusType, string> = {
-  [STATUS_ONLINE]: 'text-green-500',
-  [STATUS_OFFLINE]: 'text-red-500',
-  [STATUS_REBOOTING]: 'text-yellow-500',
-  [STATUS_PROVISIONING]: 'text-blue-500',
-  [STATUS_ERROR]: 'text-red-700',
-  [STATUS_UNKNOWN]: 'text-slate-500',
-};
 
 const getContrastingTextColor = (hexColor: string): string => {
     if (!hexColor) return '#000000';
@@ -67,7 +44,6 @@ const ServerManagementPage: React.FC = () => {
   const [isCreateVpsModalOpen, setIsCreateVpsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingVps, setEditingVps] = useState<VpsListItemResponse | null>(null);
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<ServerStatusType | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<string>('ALL');
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<Set<number>>(new Set());
@@ -82,8 +58,6 @@ const ServerManagementPage: React.FC = () => {
     isLoading: isLoadingServers,
     error: wsError,
     connectionStatus,
-    viewMode,
-    setViewMode,
   } = useServerListStore(useShallow(selectServerManagementPageData));
 
   useEffect(() => {
@@ -118,41 +92,15 @@ const ServerManagementPage: React.FC = () => {
     return vpsList.filter(s => s.group === selectedGroup);
   }, [vpsList, selectedGroup]);
 
-  const statusFilteredServers = useMemo(() => {
-    if (!selectedStatusFilter) return groupFilteredServers;
-    return groupFilteredServers.filter(s => s.status === selectedStatusFilter);
-  }, [groupFilteredServers, selectedStatusFilter]);
-
   const tagFilteredServers = useMemo(() => {
-    if (selectedTagIds.size === 0) return statusFilteredServers;
-    return statusFilteredServers.filter(server =>
+    if (selectedTagIds.size === 0) return groupFilteredServers;
+    return groupFilteredServers.filter(server =>
       server.tags?.some(tag => selectedTagIds.has(tag.id))
     );
-  }, [statusFilteredServers, selectedTagIds]);
+  }, [groupFilteredServers, selectedTagIds]);
 
   const displayedServers = tagFilteredServers;
 
-  // --- Selection Logic ---
-  const handleVpsSelectionChange = (vpsId: number, isSelected: boolean) => {
-    const newSet = new Set(selectedVpsIds);
-    if (isSelected) {
-      newSet.add(vpsId);
-    } else {
-      newSet.delete(vpsId);
-    }
-    setSelectedVpsIds(newSet);
-  };
-
-  const handleSelectAllClick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-      const allVpsIds = new Set(displayedServers.map(s => s.id));
-      setSelectedVpsIds(allVpsIds);
-    } else {
-      setSelectedVpsIds(new Set());
-    }
-  };
-
-  const isAllDisplayedSelected = displayedServers.length > 0 && selectedVpsIds.size === displayedServers.length;
 
   // --- Modal Handlers ---
   const handleOpenCreateVpsModal = () => setIsCreateVpsModalOpen(true);
@@ -182,26 +130,10 @@ const ServerManagementPage: React.FC = () => {
 
 
   // --- Derived Data for Display ---
-  const serverStats = useMemo(() => {
-    const stats = { total: vpsList.length, [STATUS_ONLINE]: 0, [STATUS_OFFLINE]: 0, [STATUS_REBOOTING]: 0, [STATUS_PROVISIONING]: 0, [STATUS_ERROR]: 0, [STATUS_UNKNOWN]: 0 };
-    vpsList.forEach(server => { stats[server.status as ServerStatusType] = (stats[server.status as ServerStatusType] || 0) + 1; });
-    return stats;
-  }, [vpsList]);
-
   const uniqueGroups = useMemo(() => {
     const groups = new Set(vpsList.map(s => s.group).filter((g): g is string => !!g));
     return ['ALL', ...Array.from(groups).sort()];
   }, [vpsList]);
-
-  const onlineServersForNetworkTotals = useMemo(() => displayedServers.filter(s => s.status === STATUS_ONLINE && s.latestMetrics), [displayedServers]);
-  const totalNetworkUp = useMemo(() => onlineServersForNetworkTotals.reduce((acc, server) => acc + (server.latestMetrics?.networkTxInstantBps || 0), 0), [onlineServersForNetworkTotals]);
-  const totalNetworkDown = useMemo(() => onlineServersForNetworkTotals.reduce((acc, server) => acc + (server.latestMetrics?.networkRxInstantBps || 0), 0), [onlineServersForNetworkTotals]);
-  const formatNetworkSpeedForDisplay = (bps: number): string => {
-    if (bps < 1024) return `${bps.toFixed(0)} Bps`;
-    if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KBps`;
-    if (bps < 1024 * 1024 * 1024) return `${(bps / (1024 * 1024)).toFixed(1)} MBps`;
-    return `${(bps / (1024 * 1024 * 1024)).toFixed(1)} GBps`;
-  };
 
   if (isLoadingServers && vpsList.length === 0) {
     return <div className="flex flex-col items-center justify-center h-64"><p className="mt-4 text-slate-600">Loading servers...</p></div>;
@@ -225,29 +157,10 @@ const ServerManagementPage: React.FC = () => {
       {/* Connection Status */}
       {statusMessage && <div className={`p-3 rounded-md text-sm text-center ${connectionStatus === 'error' || connectionStatus === 'permanently_failed' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{statusMessage}</div>}
 
-      {/* Overview Stats */}
-      <section>
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
-            <h2 className="text-2xl font-semibold text-slate-700">概览</h2>
-            <div className="flex items-center space-x-1 mt-3 sm:mt-0 p-1 bg-slate-200 rounded-lg">
-                <button onClick={() => setViewMode('card')} aria-pressed={viewMode === 'card'} className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'card' ? 'bg-white text-indigo-600 shadow' : 'text-slate-600 hover:bg-slate-300'}`}><Squares2X2Icon className="w-5 h-5 inline mr-1.5" /> 卡片视图</button>
-                <button onClick={() => setViewMode('list')} aria-pressed={viewMode === 'list'} className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'list' ? 'bg-white text-indigo-600 shadow' : 'text-slate-600 hover:bg-slate-300'}`}><ListBulletIcon className="w-5 h-5 inline mr-1.5" /> 列表视图</button>
-            </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 md:gap-6">
-          <StatCard title="总服务器数" value={serverStats.total} icon={<ServerIcon className="w-6 h-6" />} colorClass="text-indigo-600" onClick={() => setSelectedStatusFilter(null)} isActive={selectedStatusFilter === null} />
-          <StatCard title="在线" value={serverStats[STATUS_ONLINE]} icon={<CheckCircleIcon className="w-6 h-6" />} colorClass={statusColorMap[STATUS_ONLINE]} onClick={() => setSelectedStatusFilter(STATUS_ONLINE)} isActive={selectedStatusFilter === STATUS_ONLINE} />
-          <StatCard title="离线" value={serverStats[STATUS_OFFLINE]} icon={<XCircleIcon className="w-6 h-6" />} colorClass={statusColorMap[STATUS_OFFLINE]} onClick={() => setSelectedStatusFilter(STATUS_OFFLINE)} isActive={selectedStatusFilter === STATUS_OFFLINE} />
-          {serverStats[STATUS_REBOOTING] > 0 && <StatCard title="重启中" value={serverStats[STATUS_REBOOTING]} icon={<ExclamationTriangleIcon className="w-6 h-6" />} colorClass={statusColorMap[STATUS_REBOOTING]} onClick={() => setSelectedStatusFilter(STATUS_REBOOTING)} isActive={selectedStatusFilter === STATUS_REBOOTING} />}
-          {serverStats[STATUS_ERROR] > 0 && <StatCard title="错误" value={serverStats[STATUS_ERROR]} icon={<ExclamationTriangleIcon className="w-6 h-6" />} colorClass={statusColorMap[STATUS_ERROR]} onClick={() => setSelectedStatusFilter(STATUS_ERROR)} isActive={selectedStatusFilter === STATUS_ERROR} />}
-          <StatCard title="总上传" value={formatNetworkSpeedForDisplay(totalNetworkUp)} icon={<ArrowUpIcon className="w-6 h-6" />} colorClass="text-emerald-500" description="在线服务器" />
-          <StatCard title="总下载" value={formatNetworkSpeedForDisplay(totalNetworkDown)} icon={<ArrowDownIcon className="w-6 h-6" />} colorClass="text-sky-500" description="在线服务器" />
-        </div>
-      </section>
 
       {/* Server Fleet */}
       <section>
-        <div className="mb-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
           <h2 className="text-2xl font-semibold text-slate-700">服务器列表</h2>
         </div>
         <div className="p-4 bg-white rounded-lg shadow-sm mb-6">
@@ -347,41 +260,54 @@ const ServerManagementPage: React.FC = () => {
 
         {displayedServers.length === 0 && !isLoadingServers ? (
           <p className="text-slate-500 text-center py-8 bg-white rounded-lg shadow">没有找到符合当前筛选条件的服务器。</p>
-        ) : viewMode === 'card' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {displayedServers.map(server => <VpsCard key={server.id} server={server} onEdit={handleOpenEditModal} isSelected={selectedVpsIds.has(server.id)} onSelectionChange={handleVpsSelectionChange} />)}
-          </div>
         ) : (
           <div className="bg-white rounded-xl shadow-lg overflow-x-auto">
             <table className="w-full min-w-[1000px]">
               <thead className="bg-slate-100">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        className="checkbox checkbox-primary checkbox-sm mr-4"
-                        onChange={handleSelectAllClick}
-                        checked={isAllDisplayedSelected}
-                        aria-label="Select all servers"
-                      />
-                      <span>名称</span>
-                    </div>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-1/12">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"
+                      onChange={(e) => {
+                        const allIds = new Set(displayedServers.map(s => s.id));
+                        setSelectedVpsIds(e.target.checked ? allIds : new Set());
+                      }}
+                      checked={selectedVpsIds.size > 0 && selectedVpsIds.size === displayedServers.length}
+                      ref={el => {
+                        if (el) {
+                          el.indeterminate = selectedVpsIds.size > 0 && selectedVpsIds.size < displayedServers.length;
+                        }
+                      }}
+                    />
                   </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">名称</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">状态</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">IP 地址</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">操作系统</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">CPU</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">内存</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">流量使用</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">分组</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">续费状态</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">上传</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">下载</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {displayedServers.map(server => <VpsTableRow key={server.id} server={server} onEdit={handleOpenEditModal} isSelected={selectedVpsIds.has(server.id)} onSelectionChange={handleVpsSelectionChange} />)}
+                {displayedServers.map(server => (
+                  <ServerManagementTableRow
+                    key={server.id}
+                    server={server}
+                    onEdit={handleOpenEditModal}
+                    isSelected={selectedVpsIds.has(server.id)}
+                    onSelectionChange={(vpsId, isSelected) => {
+                      const newSet = new Set(selectedVpsIds);
+                      if (isSelected) {
+                        newSet.add(vpsId);
+                      } else {
+                        newSet.delete(vpsId);
+                      }
+                      setSelectedVpsIds(newSet);
+                    }}
+                  />
+                ))}
               </tbody>
             </table>
           </div>

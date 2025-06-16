@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import EditVpsModal from '../components/EditVpsModal';
-import CreateVpsModal from '../components/CreateVpsModal';
-import type { Vps, VpsListItemResponse, ServerStatus as ServerStatusType, ViewMode, Tag } from '../types';
+import type { VpsListItemResponse, ServerStatus as ServerStatusType, ViewMode, Tag } from '../types';
 import { useServerListStore, type ServerListState, type ConnectionStatus } from '../store/serverListStore';
 import { useAuthStore } from '../store/authStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -68,9 +66,6 @@ const HomePage: React.FC = () => {
   // which listens to authStore changes. This component is now only responsible for
   // displaying the state from the store.
 
-  const [isCreateVpsModalOpen, setIsCreateVpsModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editingVps, setEditingVps] = useState<VpsListItemResponse | null>(null);
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<ServerStatusType | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<string>('ALL');
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
@@ -145,28 +140,6 @@ const HomePage: React.FC = () => {
 
   const displayedServers = tagFilteredServers;
 
-  // --- Modal Handlers ---
-  const handleOpenCreateVpsModal = () => setIsCreateVpsModalOpen(true);
-  const handleCloseCreateVpsModal = () => setIsCreateVpsModalOpen(false);
-  const handleVpsCreated = (newVps: Vps) => {
-    console.log('VPS 已创建:', newVps);
-    handleCloseCreateVpsModal();
-  };
-
-  const handleOpenEditModal = (server: VpsListItemResponse) => {
-    setEditingVps(server);
-    setIsEditModalOpen(true);
-  };
-
-  const handleCloseEditModal = () => {
-    setIsEditModalOpen(false);
-    setEditingVps(null);
-  };
-
-  const handleVpsUpdated = () => {
-    console.log('VPS 已更新，状态将通过 WebSocket 刷新。');
-    handleCloseEditModal();
-  };
 
   // --- Bulk Edit Logic ---
   // This logic is now encapsulated within the BulkEditTagsModal component.
@@ -213,20 +186,10 @@ const HomePage: React.FC = () => {
   else if (wsError && (connectionStatus === 'error' || connectionStatus === 'permanently_failed')) statusMessage = `无法连接到实时服务器: ${wsError}`;
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 space-y-8 bg-slate-50 min-h-screen">
+    <div className="p-4 md:p-6 lg:p-8 space-y-6 bg-slate-50 min-h-screen">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-        <h1 className="text-3xl font-bold text-slate-800">{isAuthenticated ? "VPS 管理面板" : "服务器状态"}</h1>
-        {isAuthenticated && (
-          <button onClick={handleOpenCreateVpsModal} className="mt-3 sm:mt-0 btn btn-primary">创建新的VPS</button>
-        )}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center h-0">
       </div>
-      {isAuthenticated && (
-        <>
-          <CreateVpsModal isOpen={isCreateVpsModalOpen} onClose={handleCloseCreateVpsModal} onVpsCreated={handleVpsCreated} />
-          <EditVpsModal isOpen={isEditModalOpen} onClose={handleCloseEditModal} vps={editingVps} allVps={vpsList} onVpsUpdated={handleVpsUpdated} />
-        </>
-      )}
 
       {/* Connection Status */}
       {statusMessage && <div className={`p-3 rounded-md text-sm text-center ${connectionStatus === 'error' || connectionStatus === 'permanently_failed' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{statusMessage}</div>}
@@ -345,7 +308,7 @@ const HomePage: React.FC = () => {
           <p className="text-slate-500 text-center py-8 bg-white rounded-lg shadow">没有找到符合当前筛选条件的服务器。</p>
         ) : viewMode === 'card' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {displayedServers.map(server => <VpsCard key={server.id} server={server} onEdit={isAuthenticated ? handleOpenEditModal : undefined} />)}
+            {displayedServers.map(server => <VpsCard key={server.id} server={server} />)}
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-lg overflow-x-auto">
@@ -364,11 +327,10 @@ const HomePage: React.FC = () => {
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">续费状态</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">上传</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">下载</th>
-                  {isAuthenticated && <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">操作</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {displayedServers.map(server => <VpsTableRow key={server.id} server={server} onEdit={isAuthenticated ? handleOpenEditModal : undefined} showActions={isAuthenticated} />)}
+                {displayedServers.map(server => <VpsTableRow key={server.id} server={server} />)}
               </tbody>
             </table>
           </div>

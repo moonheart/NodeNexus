@@ -7,7 +7,6 @@ import {
   HardDiskIcon,
   ArrowUpIcon,
   ArrowDownIcon,
-  PencilIcon,
   SignalIcon,
 } from './Icons';
 import {
@@ -23,11 +22,9 @@ import {
 
 interface VpsCardProps {
   server: VpsListItemResponse;
-  onEdit?: (server: VpsListItemResponse) => void;
-  onSelectionChange?: (vpsId: number, isSelected: boolean) => void;
 }
 
-const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit }) => {
+const VpsCard: React.FC<VpsCardProps> = ({ server }) => {
   const { cardBorderClass, cardBadgeBgClass, cardTextClass } = getVpsStatusAppearance(server.status);
   const metrics = server.latestMetrics;
 
@@ -52,12 +49,10 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit }) => {
 
   return (
     <div className={`bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300 overflow-hidden flex flex-col border-l-4 ${cardBorderClass}`}>
-      <div className="p-4">
+      <RouterLink to={`/vps/${server.id}`} className="p-4 block hover:bg-slate-50 transition-colors">
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-base font-semibold text-slate-800 truncate" title={server.name}>
-            <RouterLink to={`/vps/${server.id}`} className="hover:text-indigo-600 transition-colors">
-              {server.name}
-            </RouterLink>
+            {server.name}
           </h3>
           <span className={`px-2 py-0.5 text-xs font-semibold rounded-full text-white ${cardBadgeBgClass}`}>
             {server.status.toUpperCase()}
@@ -79,101 +74,85 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit }) => {
             CPU: {server.metadata.cpu_static_info.brand}
           </p>
         )}
+      </RouterLink>
+      <div className="px-4 pb-4">
         <RenderVpsTags tags={server.tags} />
-        {/* Optional: Add OS Type or other quick info if available and desired */}
-        {/* <p className="text-xs text-slate-500">{server.osType || 'Unknown OS'}</p> */}
       </div>
 
       <div className="p-4 space-y-3 border-t border-slate-200 flex-grow">
-        {cpuUsage !== null && (
-          <div className="text-xs text-slate-600">
-            <div className="flex items-center mb-0.5">
-              <CpuChipIcon className="w-4 h-4 mr-1.5 text-indigo-500 flex-shrink-0" />
-              <span>CPU: <span className={`font-semibold ${cardTextClass}`}>{cpuUsage.toFixed(1)}%</span></span>
-            </div>
-            <SharedProgressBar value={cpuUsage} colorClass={getUsageColorClass(cpuUsage)} />
-          </div>
-        )}
-
-        {memoryUsagePercent !== null && memoryTotalBytes !== null && memoryUsageBytes !== null && (
-          <div className="text-xs text-slate-600">
-            <div className="flex items-center mb-0.5">
-              <MemoryStickIcon className="w-4 h-4 mr-1.5 text-purple-500 flex-shrink-0" />
-              <span>RAM: <span className={`font-semibold ${cardTextClass}`}>{memoryUsagePercent.toFixed(1)}%</span>
-                <span className="text-slate-500 text-xxs"> ({formatBytesForDisplay(memoryUsageBytes, 1)} / {formatBytesForDisplay(memoryTotalBytes, 1)})</span>
-              </span>
-            </div>
-            <SharedProgressBar value={memoryUsagePercent} colorClass={getUsageColorClass(memoryUsagePercent)} />
-          </div>
-        )}
-        
-        {diskUsagePercent !== null && diskTotalBytes !== null && diskUsedBytes !== null && (
-          <div className="text-xs text-slate-600">
-            <div className="flex items-center mb-0.5">
-              <HardDiskIcon className="w-4 h-4 mr-1.5 text-orange-500 flex-shrink-0" />
-              <span>Disk: <span className={`font-semibold ${cardTextClass}`}>{diskUsagePercent.toFixed(1)}%</span>
-              <span className="text-slate-500 text-xxs"> ({ (diskUsedBytes / (1024*1024*1024)).toFixed(1) }GB / { (diskTotalBytes / (1024*1024*1024)).toFixed(1) }GB)</span>
-              </span>
-            </div>
-            <SharedProgressBar value={diskUsagePercent} colorClass={getUsageColorClass(diskUsagePercent)} />
-          </div>
-        )}
-
-        {/* Traffic Usage Progress Bar */}
-        {server.trafficLimitBytes && server.trafficLimitBytes > 0 && trafficUsagePercent !== null && usedTrafficBytes !== null && (
-          <div className="text-xs text-slate-600">
-            <div className="flex items-center justify-between mb-0.5">
-              <div className="flex items-center">
-                <SignalIcon className="w-4 h-4 mr-1.5 text-cyan-500 flex-shrink-0" />
-                <span>流量: <span className={`font-semibold ${cardTextClass}`}>{trafficUsagePercent.toFixed(1)}%</span></span>
+        <div className="space-y-3">
+          {cpuUsage !== null && (
+            <div className="text-xs text-slate-600">
+              <div className="flex items-center mb-0.5">
+                <CpuChipIcon className="w-4 h-4 mr-1.5 text-indigo-500 flex-shrink-0" />
+                <span>CPU: <span className={`font-semibold ${cardTextClass}`}>{cpuUsage.toFixed(1)}%</span></span>
               </div>
-              <span className="text-slate-500 text-xxs">
-                {formatBytesForDisplay(usedTrafficBytes)} / {formatBytesForDisplay(server.trafficLimitBytes)}
-              </span>
+              <SharedProgressBar value={cpuUsage} colorClass={getUsageColorClass(cpuUsage)} />
             </div>
-            <SharedProgressBar value={trafficUsagePercent} colorClass={getUsageColorClass(trafficUsagePercent)} />
-          </div>
-        )}
+          )}
 
-        {/* Renewal Progress Bar */}
-        {renewalInfo.isApplicable && renewalInfo.progressPercent !== null && (
-          <div className="text-xs text-slate-600">
-            <div className="flex items-center justify-between mb-0.5">
-              <div className="flex items-center">
-                 <SignalIcon className="w-4 h-4 mr-1.5 text-blue-500 flex-shrink-0" /> {/* Placeholder Icon */}
-                <span>续费: <span className={`font-semibold ${renewalInfo.colorClass.replace('bg-', 'text-')}`}>{renewalInfo.statusText}</span></span>
+          {memoryUsagePercent !== null && memoryTotalBytes !== null && memoryUsageBytes !== null && (
+            <div className="text-xs text-slate-600">
+              <div className="flex items-center mb-0.5">
+                <MemoryStickIcon className="w-4 h-4 mr-1.5 text-purple-500 flex-shrink-0" />
+                <span>RAM: <span className={`font-semibold ${cardTextClass}`}>{memoryUsagePercent.toFixed(1)}%</span>
+                  <span className="text-slate-500 text-xxs"> ({formatBytesForDisplay(memoryUsageBytes, 1)} / {formatBytesForDisplay(memoryTotalBytes, 1)})</span>
+                </span>
               </div>
+              <SharedProgressBar value={memoryUsagePercent} colorClass={getUsageColorClass(memoryUsagePercent)} />
             </div>
-            <SharedProgressBar value={renewalInfo.progressPercent} colorClass={renewalInfo.colorClass} />
-          </div>
-        )}
+          )}
+          
+          {diskUsagePercent !== null && diskTotalBytes !== null && diskUsedBytes !== null && (
+            <div className="text-xs text-slate-600">
+              <div className="flex items-center mb-0.5">
+                <HardDiskIcon className="w-4 h-4 mr-1.5 text-orange-500 flex-shrink-0" />
+                <span>Disk: <span className={`font-semibold ${cardTextClass}`}>{diskUsagePercent.toFixed(1)}%</span>
+                <span className="text-slate-500 text-xxs"> ({ (diskUsedBytes / (1024*1024*1024)).toFixed(1) }GB / { (diskTotalBytes / (1024*1024*1024)).toFixed(1) }GB)</span>
+                </span>
+              </div>
+              <SharedProgressBar value={diskUsagePercent} colorClass={getUsageColorClass(diskUsagePercent)} />
+            </div>
+          )}
 
-        <div className="flex justify-between text-xs text-slate-600 pt-1">
-            <div className="flex items-center">
-                <ArrowUpIcon className="w-3.5 h-3.5 mr-1 text-emerald-500"/> {formatNetworkSpeed(metrics?.networkTxInstantBps)}
+          {/* Traffic Usage Progress Bar */}
+          {server.trafficLimitBytes && server.trafficLimitBytes > 0 && trafficUsagePercent !== null && usedTrafficBytes !== null && (
+            <div className="text-xs text-slate-600">
+              <div className="flex items-center justify-between mb-0.5">
+                <div className="flex items-center">
+                  <SignalIcon className="w-4 h-4 mr-1.5 text-cyan-500 flex-shrink-0" />
+                  <span>流量: <span className={`font-semibold ${cardTextClass}`}>{trafficUsagePercent.toFixed(1)}%</span></span>
+                </div>
+                <span className="text-slate-500 text-xxs">
+                  {formatBytesForDisplay(usedTrafficBytes)} / {formatBytesForDisplay(server.trafficLimitBytes)}
+                </span>
+              </div>
+              <SharedProgressBar value={trafficUsagePercent} colorClass={getUsageColorClass(trafficUsagePercent)} />
             </div>
-            <div className="flex items-center">
-                <ArrowDownIcon className="w-3.5 h-3.5 mr-1 text-sky-500"/> {formatNetworkSpeed(metrics?.networkRxInstantBps)}
+          )}
+
+          {/* Renewal Progress Bar */}
+          {renewalInfo.isApplicable && renewalInfo.progressPercent !== null && (
+            <div className="text-xs text-slate-600">
+              <div className="flex items-center justify-between mb-0.5">
+                <div className="flex items-center">
+                   <SignalIcon className="w-4 h-4 mr-1.5 text-blue-500 flex-shrink-0" /> {/* Placeholder Icon */}
+                  <span>续费: <span className={`font-semibold ${renewalInfo.colorClass.replace('bg-', 'text-')}`}>{renewalInfo.statusText}</span></span>
+                </div>
+              </div>
+              <SharedProgressBar value={renewalInfo.progressPercent} colorClass={renewalInfo.colorClass} />
             </div>
+          )}
+
+          <div className="flex justify-between text-xs text-slate-600 pt-1">
+              <div className="flex items-center">
+                  <ArrowUpIcon className="w-3.5 h-3.5 mr-1 text-emerald-500"/> {formatNetworkSpeed(metrics?.networkTxInstantBps)}
+              </div>
+              <div className="flex items-center">
+                  <ArrowDownIcon className="w-3.5 h-3.5 mr-1 text-sky-500"/> {formatNetworkSpeed(metrics?.networkRxInstantBps)}
+              </div>
+          </div>
         </div>
-      </div>
-
-      <div className={`p-3 bg-slate-50 border-t border-slate-200 grid ${onEdit ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
-       <RouterLink
-         to={`/vps/${server.id}`}
-         className="block w-full text-center bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-1.5 px-3 rounded-md transition-colors duration-200 text-sm"
-       >
-         查看详情
-       </RouterLink>
-       {onEdit && (
-        <button
-          onClick={() => onEdit(server)}
-          className="w-full text-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3 rounded-md transition-colors duration-200 text-sm flex items-center justify-center"
-        >
-          <PencilIcon className="w-4 h-4 mr-1.5" />
-          编辑
-        </button>
-       )}
       </div>
     </div>
   );

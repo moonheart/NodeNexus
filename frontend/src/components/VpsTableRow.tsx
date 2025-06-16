@@ -4,7 +4,6 @@ import type { VpsListItemResponse } from '../types';
 import {
   ArrowUpIcon,
   ArrowDownIcon,
-  PencilIcon,
 } from './Icons';
 import {
   formatBytesForDisplay,
@@ -19,12 +18,10 @@ import {
 
 interface VpsTableRowProps {
   server: VpsListItemResponse;
-  onEdit?: (server: VpsListItemResponse) => void;
   onSelectionChange?: (vpsId: number, isSelected: boolean) => void;
-  showActions?: boolean;
 }
 
-const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, showActions = true }) => {
+const VpsTableRow: React.FC<VpsTableRowProps> = ({ server }) => {
   const { tableRowBadgeClass, tableRowTextClass, icon } = getVpsStatusAppearance(server.status);
   const metrics = server.latestMetrics;
 
@@ -146,22 +143,6 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, showActions =
           <span>{downSpeed}</span>
         </div>
       </td>
-      {showActions && (
-        <td className="px-4 py-3 text-center">
-         <div className="flex items-center justify-center space-x-2">
-           {onEdit && (
-            <button
-              onClick={() => onEdit(server)}
-              className="text-slate-600 hover:text-slate-800 font-medium text-xs py-1 px-3 rounded-md hover:bg-slate-100 transition-colors flex items-center"
-              aria-label={`Edit ${server.name}`}
-            >
-              <PencilIcon className="w-3.5 h-3.5 mr-1" />
-              编辑
-            </button>
-           )}
-         </div>
-        </td>
-      )}
     </tr>
   );
 };

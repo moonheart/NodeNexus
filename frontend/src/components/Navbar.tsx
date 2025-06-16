@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { ServerIcon } from './Icons';
 
@@ -25,30 +25,46 @@ const Navbar: React.FC = () => {
           <nav className="flex items-center space-x-4">
             {isAuthenticated ? (
               <>
-                <Link
+                <NavLink
                   to="/servers"
-                  className="px-3 py-2 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+                  className={({ isActive }) =>
+                    `px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isActive ? 'bg-slate-100 text-indigo-600' : 'text-slate-700 hover:bg-slate-100'
+                    }`
+                  }
                 >
                   服务器管理
-                </Link>
-                <Link
+                </NavLink>
+                <NavLink
                   to="/tasks"
-                  className="px-3 py-2 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+                  className={({ isActive }) =>
+                    `px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isActive ? 'bg-slate-100 text-indigo-600' : 'text-slate-700 hover:bg-slate-100'
+                    }`
+                  }
                 >
                   任务
-                </Link>
-                <Link
+                </NavLink>
+                <NavLink
                   to="/monitors"
-                  className="px-3 py-2 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+                  className={({ isActive }) =>
+                    `px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isActive ? 'bg-slate-100 text-indigo-600' : 'text-slate-700 hover:bg-slate-100'
+                    }`
+                  }
                 >
                   服务监控
-                </Link>
-                <Link
+                </NavLink>
+                <NavLink
                   to="/settings"
-                  className="px-3 py-2 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+                  className={({ isActive }) =>
+                    `px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isActive ? 'bg-slate-100 text-indigo-600' : 'text-slate-700 hover:bg-slate-100'
+                    }`
+                  }
                 >
                   设置
-                </Link>
+                </NavLink>
                 <button
                   onClick={handleLogout}
                   className="px-3 py-2 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
