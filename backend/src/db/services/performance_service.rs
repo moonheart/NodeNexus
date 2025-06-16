@@ -186,6 +186,10 @@ pub async fn save_performance_snapshot_batch(
     vps_id: i32,
     batch: &PerformanceSnapshotBatch,
 ) -> Result<(), DbErr> {
+    if batch.snapshots.is_empty() {
+        return Ok(());
+    }
+
     let txn = db.begin().await?;
 
     for snapshot in &batch.snapshots {
@@ -204,8 +208,12 @@ pub async fn save_performance_snapshot_batch(
             swap_total_bytes: Set(snapshot.swap_total_bytes as i64),
             disk_io_read_bps: Set(snapshot.disk_total_io_read_bytes_per_sec as i64),
             disk_io_write_bps: Set(snapshot.disk_total_io_write_bytes_per_sec as i64),
-            network_rx_bps: Set(snapshot.network_rx_bytes_cumulative as i64),
-            network_tx_bps: Set(snapshot.network_tx_bytes_cumulative as i64),
+            // Note: network_rx_bps and network_tx_bps store CUMULATIVE bytes, despite the "bps" name.
+            // This is because the traffic calculation logic depends on the cumulative value.
+            // Note: network_rx_bps and network_tx_bps store CUMULATIVE bytes, despite the "bps" name.
+            // This is because the traffic calculation logic depends on the cumulative value.
+            network_rx_cumulative: Set(snapshot.network_rx_bytes_cumulative as i64),
+            network_tx_cumulative: Set(snapshot.network_tx_bytes_cumulative as i64),
             network_rx_instant_bps: Set(snapshot.network_rx_bytes_per_sec as i64),
             network_tx_instant_bps: Set(snapshot.network_tx_bytes_per_sec as i64),
             uptime_seconds: Set(snapshot.uptime_seconds as i64),
@@ -222,20 +230,22 @@ pub async fn save_performance_snapshot_batch(
                 mount_point: Set(disk_usage.mount_point.clone()),
                 used_bytes: Set(disk_usage.used_bytes as i64),
                 total_bytes: Set(disk_usage.total_bytes as i64),
-                fstype: Set(Some(disk_usage.fstype.clone())), // Corrected: Wrapped with Some()
+                fstype: Set(Some(disk_usage.fstype.clone())),
                 usage_percent: Set(disk_usage.usage_percent as f64),
                 ..Default::default() // For id
             };
             disk_usage_active_model.insert(&txn).await?;
         }
+    }
 
-        // After saving the metric and its related disk usages, update VPS traffic stats
-        // Assuming vps_traffic_service is correctly imported and its function signature is updated
+    // After saving all metrics in the batch, update the traffic stats ONCE
+    // using the LATEST cumulative values from the last snapshot in the batch.
+    if let Some(last_snapshot) = batch.snapshots.last() {
         if let Err(e) = vps_traffic_service::update_vps_traffic_stats_after_metric(
-            &txn, // Pass the transaction
+            &txn,
             vps_id,
-            snapshot.network_rx_bytes_cumulative as i64,
-            snapshot.network_tx_bytes_cumulative as i64,
+            last_snapshot.network_rx_bytes_cumulative as i64,
+            last_snapshot.network_tx_bytes_cumulative as i64,
         )
         .await
         {

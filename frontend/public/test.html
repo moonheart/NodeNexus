@@ -1,0 +1,183 @@
+<html><head>
+<link crossorigin="" href="https://fonts.gstatic.com/" rel="preconnect"/>
+<link as="style" href="https://fonts.googleapis.com/css2?display=swap&amp;family=Noto+Sans%3Awght%40400%3B500%3B700%3B900&amp;family=Space+Grotesk%3Awght%40400%3B500%3B700" onload="this.rel='stylesheet'" rel="stylesheet"/>
+<title>Stitch Design</title>
+<link href="data:image/x-icon;base64," rel="icon" type="image/x-icon"/>
+<meta charset="utf-8"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<style type="text/tailwindcss">
+      :root {
+        --primary-color: #1993e5;
+        --background-dark: #0F172A;--surface-dark: #1E293B;--border-dark: #334155;--text-primary-dark: #E2E8F0;--text-secondary-dark: #94A3B8;--accent-cyan: #22D3EE;
+        --accent-green: #34D399;
+        --accent-red: #F87171;
+      }
+      .cyberpunk-glow {
+        box-shadow: 0 0 5px var(--accent-cyan), 0 0 10px var(--accent-cyan), 0 0 15px var(--accent-cyan);
+      }
+      .cyberpunk-border {
+        border-image-slice: 1;
+        border-image-source: linear-gradient(to right, var(--accent-cyan), var(--accent-purple, #A78BFA));border-width: 2px;
+        border-style: solid;
+      }
+      .active-nav-link {
+        color: var(--accent-cyan) !important;
+        border-bottom: 2px solid var(--accent-cyan);
+        padding-bottom: 4px;}
+    </style>
+</head>
+<body class="bg-[var(--background-dark)] text-[var(--text-primary-dark)]" style='font-family: "Space Grotesk", "Noto Sans", sans-serif;'>
+<div class="relative flex size-full min-h-screen flex-col group/design-root overflow-x-hidden">
+<div class="layout-container flex h-full grow flex-col">
+<header class="flex items-center justify-between whitespace-nowrap border-b border-solid border-[var(--border-dark)] px-10 py-4 shadow-lg bg-[var(--surface-dark)]/50 backdrop-blur-md sticky top-0 z-50">
+<div class="flex items-center gap-4">
+<div class="size-7 text-[var(--accent-cyan)]">
+<svg fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+<path d="M13.8261 17.4264C16.7203 18.1174 20.2244 18.5217 24 18.5217C27.7756 18.5217 31.2797 18.1174 34.1739 17.4264C36.9144 16.7722 39.9967 15.2331 41.3563 14.1648L24.8486 40.6391C24.4571 41.267 23.5429 41.267 23.1514 40.6391L6.64374 14.1648C8.00331 15.2331 11.0856 16.7722 13.8261 17.4264Z" fill="currentColor"></path>
+<path clip-rule="evenodd" d="M39.998 12.236C39.9944 12.2537 39.9875 12.2845 39.9748 12.3294C39.9436 12.4399 39.8949 12.5741 39.8346 12.7175C39.8168 12.7597 39.7989 12.8007 39.7813 12.8398C38.5103 13.7113 35.9788 14.9393 33.7095 15.4811C30.9875 16.131 27.6413 16.5217 24 16.5217C20.3587 16.5217 17.0125 16.131 14.2905 15.4811C12.0012 14.9346 9.44505 13.6897 8.18538 12.8168C8.17384 12.7925 8.16216 12.767 8.15052 12.7408C8.09919 12.6249 8.05721 12.5114 8.02977 12.411C8.00356 12.3152 8.00039 12.2667 8.00004 12.2612C8.00004 12.261 8 12.2607 8.00004 12.2612C8.00004 12.2359 8.0104 11.9233 8.68485 11.3686C9.34546 10.8254 10.4222 10.2469 11.9291 9.72276C14.9242 8.68098 19.1919 8 24 8C28.8081 8 33.0758 8.68098 36.0709 9.72276C37.5778 10.2469 38.6545 10.8254 39.3151 11.3686C39.9006 11.8501 39.9857 12.1489 39.998 12.236ZM4.95178 15.2312L21.4543 41.6973C22.6288 43.5809 25.3712 43.5809 26.5457 41.6973L43.0534 15.223C43.0709 15.1948 43.0878 15.1662 43.104 15.1371L41.3563 14.1648C43.104 15.1371 43.1038 15.1374 43.104 15.1371L43.1051 15.135L43.1065 15.1325L43.1101 15.1261L43.1199 15.1082C43.1276 15.094 43.1377 15.0754 43.1497 15.0527C43.1738 15.0075 43.2062 14.9455 43.244 14.8701C43.319 14.7208 43.4196 14.511 43.5217 14.2683C43.6901 13.8679 44 13.0689 44 12.2609C44 10.5573 43.003 9.22254 41.8558 8.2791C40.6947 7.32427 39.1354 6.55361 37.385 5.94477C33.8654 4.72057 29.133 4 24 4C18.867 4 14.1346 4.72057 10.615 5.94478C8.86463 6.55361 7.30529 7.32428 6.14419 8.27911C4.99695 9.22255 3.99999 10.5573 3.99999 12.2609C3.99999 13.1275 4.29264 13.9078 4.49321 14.3607C4.60375 14.6102 4.71348 14.8196 4.79687 14.9689C4.83898 15.0444 4.87547 15.1065 4.9035 15.1529C4.91754 15.1762 4.92954 15.1957 4.93916 15.2111L4.94662 15.223L4.95178 15.2312ZM35.9868 18.996L24 38.22L12.0131 18.996C12.4661 19.1391 12.9179 19.2658 13.3617 19.3718C16.4281 20.1039 20.0901 20.5217 24 20.5217C27.9099 20.5217 31.5719 20.1039 34.6383 19.3718C35.082 19.2658 35.5339 19.1391 35.9868 18.996Z" fill="currentColor" fill-rule="evenodd"></path>
+</svg>
+</div>
+<h2 class="text-[var(--text-primary-dark)] text-xl font-bold leading-tight tracking-[-0.015em]">CloudSphere</h2>
+</div>
+<nav class="flex flex-1 justify-end gap-8 items-center">
+<div class="flex items-center gap-9">
+<a class="text-[var(--text-secondary-dark)] hover:text-[var(--accent-cyan)] text-sm font-medium leading-normal transition-colors duration-200 active-nav-link" href="#">Dashboard</a>
+<a class="text-[var(--text-secondary-dark)] hover:text-[var(--accent-cyan)] text-sm font-medium leading-normal transition-colors duration-200" href="#">Servers</a>
+<a class="text-[var(--text-secondary-dark)] hover:text-[var(--accent-cyan)] text-sm font-medium leading-normal transition-colors duration-200" href="#">Network</a>
+<a class="text-[var(--text-secondary-dark)] hover:text-[var(--accent-cyan)] text-sm font-medium leading-normal transition-colors duration-200" href="#">Storage</a>
+<a class="text-[var(--text-secondary-dark)] hover:text-[var(--accent-cyan)] text-sm font-medium leading-normal transition-colors duration-200" href="#">Security</a>
+<a class="text-[var(--text-secondary-dark)] hover:text-[var(--accent-cyan)] text-sm font-medium leading-normal transition-colors duration-200" href="#">Support</a>
+</div>
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 border-2 border-[var(--accent-cyan)] cyberpunk-glow" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuAayCHNezD4Wen8m2zslmqTnmTaydp1yuWUY0RxWNjZm1jx0IJfPgArAU2ROqLIzyKfrQzOD2NL7XEAD-aEBwwb0XekpT7cXSuLmQHB2YkHWwabSD5DbKokhAFqJy0hnLET8sJRfSjq-qBs5vUDHjMPXJVUg104Gb-fLUk1xnVG0SIfbVGL_T5IOSucHYLv93oLbYAensM6unxP0kKu7vk0bj2Td9nvg7mkxmNM_YVu9qaKT0S9OPbHcDd04sitLxSWz0ABMEgpcZo");'></div>
+</nav>
+</header>
+<main class="px-10 sm:px-20 lg:px-40 flex flex-1 justify-center py-8">
+<div class="layout-content-container flex flex-col max-w-screen-xl w-full flex-1">
+<div class="flex flex-wrap justify-between items-center gap-4 p-4 mb-6">
+<div class="flex flex-col gap-2">
+<h1 class="text-[var(--text-primary-dark)] tracking-tight text-4xl font-bold leading-tight">CyberCore Dashboard</h1>
+<p class="text-[var(--text-secondary-dark)] text-base font-normal leading-normal">Real-time overview of your virtual infrastructure.</p>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 p-4 mb-8">
+<div class="flex flex-col gap-3 rounded-lg p-6 bg-[var(--surface-dark)] cyberpunk-border transition-all duration-300 hover:shadow-[0_0_20px_var(--accent-cyan)]">
+<p class="text-[var(--text-primary-dark)] text-lg font-medium leading-normal">Total Servers</p>
+<p class="text-[var(--accent-cyan)] tracking-tight text-4xl font-bold leading-tight">15</p>
+</div>
+<div class="flex flex-col gap-3 rounded-lg p-6 bg-[var(--surface-dark)] cyberpunk-border transition-all duration-300 hover:shadow-[0_0_20px_var(--accent-green)]">
+<p class="text-[var(--text-primary-dark)] text-lg font-medium leading-normal">Active Servers</p>
+<p class="text-[var(--accent-green)] tracking-tight text-4xl font-bold leading-tight">12</p>
+</div>
+<div class="flex flex-col gap-3 rounded-lg p-6 bg-[var(--surface-dark)] cyberpunk-border transition-all duration-300 hover:shadow-[0_0_20px_var(--accent-red)]">
+<p class="text-[var(--text-primary-dark)] text-lg font-medium leading-normal">Inactive Servers</p>
+<p class="text-[var(--accent-red)] tracking-tight text-4xl font-bold leading-tight">3</p>
+</div>
+</div>
+<h2 class="text-[var(--text-primary-dark)] text-2xl font-bold leading-tight tracking-[-0.015em] px-4 pb-4 pt-6">Global Server Deployment</h2>
+<div class="@container flex flex-col h-full flex-1 mb-8">
+<div class="flex flex-1 flex-col @[480px]:px-4 @[480px]:py-3">
+<div class="bg-cover bg-center flex min-h-[400px] md:min-h-[500px] flex-1 flex-col justify-between p-4 @[480px]:rounded-xl @[480px]:p-8 cyberpunk-border" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuAaJOgRwue5KhsuC3vxK66myVTBXOBFnV6znjsVkReMIjpPU2N8UJPmkRvmrg05tyTHyGmzYuCNGpts3lp-20m1x93j-fKLNUhOEV2D7tCjBwBKbSS4AlORqT4GwoLdq-yzeOGIggdXDk7iklHO6Gw7IrtflDKuW0biLWfN7HPH1lp6UVjE14LdLOhLK_Eev6xuzZlFat6P9pQMWQg6zGz262fyNBKvaqFkX208pFwrA0awt4kZZlzw4v71gn1lJChoWLgGFvpwPfA"); box-shadow: inset 0 0 100px 20px var(--background-dark);'>
+<label class="flex flex-col min-w-60 sm:min-w-80 h-12 self-start">
+<div class="flex w-full flex-1 items-stretch rounded-lg h-full bg-[var(--surface-dark)]/80 backdrop-blur-sm border border-[var(--border-dark)] focus-within:border-[var(--accent-cyan)] transition-colors duration-200">
+<div class="text-[var(--accent-cyan)] flex items-center justify-center pl-4">
+<svg fill="currentColor" height="24px" viewBox="0 0 256 256" width="24px" xmlns="http://www.w3.org/2000/svg">
+<path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"></path>
+</svg>
+</div>
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-r-lg text-[var(--text-primary-dark)] focus:outline-0 focus:ring-0 border-none bg-transparent h-full placeholder:text-[var(--text-secondary-dark)] px-4 text-base font-normal leading-normal" placeholder="Search location..." value=""/>
+</div>
+</label>
+<div class="flex flex-col items-end gap-3 self-end">
+<div class="flex flex-col gap-0.5">
+<button class="flex size-10 items-center justify-center rounded-t-lg bg-[var(--surface-dark)]/80 backdrop-blur-sm shadow-md hover:bg-[var(--accent-cyan)] hover:text-[var(--background-dark)] transition-colors duration-200 border border-[var(--border-dark)]">
+<div data-icon="Plus" data-size="24px" data-weight="regular">
+<svg fill="currentColor" height="24px" viewBox="0 0 256 256" width="24px" xmlns="http://www.w3.org/2000/svg">
+<path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"></path>
+</svg>
+</div>
+</button>
+<button class="flex size-10 items-center justify-center rounded-b-lg bg-[var(--surface-dark)]/80 backdrop-blur-sm shadow-md hover:bg-[var(--accent-cyan)] hover:text-[var(--background-dark)] transition-colors duration-200 border border-[var(--border-dark)] border-t-0">
+<div data-icon="Minus" data-size="24px" data-weight="regular">
+<svg fill="currentColor" height="24px" viewBox="0 0 256 256" width="24px" xmlns="http://www.w3.org/2000/svg">
+<path d="M224,128a8,8,0,0,1-8,8H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128Z"></path>
+</svg>
+</div>
+</button>
+</div>
+<button class="flex size-10 items-center justify-center rounded-lg bg-[var(--surface-dark)]/80 backdrop-blur-sm shadow-md hover:bg-[var(--accent-cyan)] hover:text-[var(--background-dark)] transition-colors duration-200 border border-[var(--border-dark)]">
+<div data-icon="NavigationArrow" data-size="24px" data-weight="regular">
+<svg fill="currentColor" height="24px" transform="scale(-1, 1)" viewBox="0 0 256 256" width="24px" xmlns="http://www.w3.org/2000/svg">
+<path d="M229.33,98.21,53.41,33l-.16-.05A16,16,0,0,0,32.9,53.25a1,1,0,0,0,.05.16L98.21,229.33A15.77,15.77,0,0,0,113.28,240h.3a15.77,15.77,0,0,0,15-11.29l23.56-76.56,76.56-23.56a16,16,0,0,0,.62-30.38ZM224,113.3l-76.56,23.56a16,16,0,0,0-10.58,10.58L113.3,224h0l-.06-.17L48,48l175.82,65.22.16.06Z"></path>
+</svg>
+</div>
+</button>
+</div>
+</div>
+</div>
+</div>
+<h2 class="text-[var(--text-primary-dark)] text-2xl font-bold leading-tight tracking-[-0.015em] px-4 pb-4 pt-6">Network Performance</h2>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 px-4 py-6">
+<div class="flex flex-col gap-4 rounded-lg p-6 bg-[var(--surface-dark)] cyberpunk-border">
+<div class="flex justify-between items-center">
+<p class="text-[var(--text-primary-dark)] text-lg font-medium leading-normal">Network Speed (Mbps)</p>
+<p class="text-[var(--text-secondary-dark)] text-sm">Last 24 Hours</p>
+</div>
+<div class="flex items-baseline gap-2">
+<p class="text-[var(--accent-cyan)] tracking-tight text-4xl font-bold leading-tight truncate">120 Mbps</p>
+<p class="text-[var(--accent-green)] text-base font-medium leading-normal">+15%</p>
+</div>
+<div class="flex min-h-[200px] flex-1 flex-col gap-6 py-4">
+<svg fill="none" height="100%" preserveAspectRatio="xMidYMid meet" viewBox="-3 0 478 150" width="100%" xmlns="http://www.w3.org/2000/svg">
+<path d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25V149H326.769H0V109Z" fill="url(#paint0_linear_1131_5935_v2)"></path>
+<path d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25" stroke="var(--accent-cyan)" stroke-linecap="round" stroke-width="3"></path>
+<defs>
+<linearGradient gradientUnits="userSpaceOnUse" id="paint0_linear_1131_5935_v2" x1="236" x2="236" y1="1" y2="149">
+<stop stop-color="var(--accent-cyan)" stop-opacity="0.3"></stop>
+<stop offset="1" stop-color="var(--accent-cyan)" stop-opacity="0"></stop>
+</linearGradient>
+</defs>
+</svg>
+<div class="flex justify-around">
+<p class="text-[var(--text-secondary-dark)] text-xs font-medium leading-normal tracking-[0.015em]">00:00</p>
+<p class="text-[var(--text-secondary-dark)] text-xs font-medium leading-normal tracking-[0.015em]">04:00</p>
+<p class="text-[var(--text-secondary-dark)] text-xs font-medium leading-normal tracking-[0.015em]">08:00</p>
+<p class="text-[var(--text-secondary-dark)] text-xs font-medium leading-normal tracking-[0.015em]">12:00</p>
+<p class="text-[var(--text-secondary-dark)] text-xs font-medium leading-normal tracking-[0.015em]">16:00</p>
+<p class="text-[var(--text-secondary-dark)] text-xs font-medium leading-normal tracking-[0.015em]">20:00</p>
+<p class="text-[var(--text-secondary-dark)] text-xs font-medium leading-normal tracking-[0.015em]">24:00</p>
+</div>
+</div>
+</div>
+<div class="flex flex-col gap-4 rounded-lg p-6 bg-[var(--surface-dark)] cyberpunk-border">
+<div class="flex justify-between items-center">
+<p class="text-[var(--text-primary-dark)] text-lg font-medium leading-normal">Data Transfer (GB)</p>
+<p class="text-[var(--text-secondary-dark)] text-sm">Last 7 Days</p>
+</div>
+<div class="flex items-baseline gap-2">
+<p class="text-[var(--accent-cyan)] tracking-tight text-4xl font-bold leading-tight truncate">500 GB</p>
+<p class="text-[var(--accent-red)] text-base font-medium leading-normal">-5%</p>
+</div>
+<div class="grid min-h-[200px] grid-flow-col gap-4 grid-rows-[1fr_auto] items-end justify-items-center p-3">
+<div class="bg-[var(--accent-cyan)] opacity-50 w-full rounded-t-sm transition-all duration-300 hover:opacity-100" style="height: 60%;"></div>
+<p class="text-[var(--text-secondary-dark)] text-xs font-medium leading-normal tracking-[0.015em]">Srv A</p>
+<div class="bg-[var(--accent-cyan)] opacity-50 w-full rounded-t-sm transition-all duration-300 hover:opacity-100" style="height: 100%;"></div>
+<p class="text-[var(--text-secondary-dark)] text-xs font-medium leading-normal tracking-[0.015em]">Srv B</p>
+<div class="bg-[var(--accent-cyan)] opacity-50 w-full rounded-t-sm transition-all duration-300 hover:opacity-100" style="height: 50%;"></div>
+<p class="text-[var(--text-secondary-dark)] text-xs font-medium leading-normal tracking-[0.015em]">Srv C</p>
+<div class="bg-[var(--accent-cyan)] opacity-50 w-full rounded-t-sm transition-all duration-300 hover:opacity-100" style="height: 40%;"></div>
+<p class="text-[var(--text-secondary-dark)] text-xs font-medium leading-normal tracking-[0.015em]">Srv D</p>
+<div class="bg-[var(--accent-cyan)] opacity-50 w-full rounded-t-sm transition-all duration-300 hover:opacity-100" style="height: 40%;"></div>
+<p class="text-[var(--text-secondary-dark)] text-xs font-medium leading-normal tracking-[0.015em]">Srv E</p>
+<div class="bg-[var(--accent-cyan)] opacity-50 w-full rounded-t-sm transition-all duration-300 hover:opacity-100" style="height: 20%;"></div>
+<p class="text-[var(--text-secondary-dark)] text-xs font-medium leading-normal tracking-[0.015em]">Srv F</p>
+<div class="bg-[var(--accent-cyan)] opacity-50 w-full rounded-t-sm transition-all duration-300 hover:opacity-100" style="height: 40%;"></div>
+<p class="text-[var(--text-secondary-dark)] text-xs font-medium leading-normal tracking-[0.015em]">Srv G</p>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</div>
+
+</body></html>

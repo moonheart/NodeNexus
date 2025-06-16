@@ -20,19 +20,17 @@ import {
 interface VpsTableRowProps {
   server: VpsListItemResponse;
   onEdit?: (server: VpsListItemResponse) => void;
-  isSelected?: boolean;
   onSelectionChange?: (vpsId: number, isSelected: boolean) => void;
   showActions?: boolean;
 }
 
-const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, onSelectionChange, showActions = true }) => {
+const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, showActions = true }) => {
   const { tableRowBadgeClass, tableRowTextClass, icon } = getVpsStatusAppearance(server.status);
   const metrics = server.latestMetrics;
 
-  const cpuUsage = metrics ? `${metrics.cpuUsagePercent.toFixed(1)}%` : 'N/A';
-  const memUsage = metrics && metrics.memoryTotalBytes > 0
-    ? `${formatBytesForDisplay(metrics.memoryUsageBytes, 1)} / ${formatBytesForDisplay(metrics.memoryTotalBytes, 1)}`
-    : 'N/A';
+  const memUsagePercent = metrics && metrics.memoryTotalBytes > 0
+    ? (metrics.memoryUsageBytes / metrics.memoryTotalBytes) * 100
+    : null;
   const upSpeed = metrics ? formatNetworkSpeed(metrics.networkTxInstantBps) : 'N/A';
   const downSpeed = metrics ? formatNetworkSpeed(metrics.networkRxInstantBps) : 'N/A';
 
@@ -50,15 +48,6 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, o
     <tr className="bg-white hover:bg-slate-50 transition-colors duration-150 border-b border-slate-200 last:border-b-0">
       <td className="px-4 py-3 text-sm font-medium text-slate-800">
         <div className="flex items-center">
-          {onSelectionChange && (
-            <input
-              type="checkbox"
-              className="checkbox checkbox-primary checkbox-sm mr-4"
-              checked={!!isSelected}
-              onChange={(e) => onSelectionChange(server.id, e.target.checked)}
-              aria-label={`Select ${server.name}`}
-            />
-          )}
           <div className="truncate" title={server.name}>
             <RouterLink to={`/vps/${server.id}`} className="text-indigo-600 hover:text-indigo-700 hover:underline">
               {server.name}
@@ -84,14 +73,43 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, o
       <td className="px-4 py-3 text-sm text-slate-600 truncate" title={server.osType ?? 'N/A'}>
         {server.osType ?? 'N/A'}
       </td>
-      <td className="px-4 py-3 text-sm text-slate-600">{cpuUsage}</td>
-      <td className="px-4 py-3 text-sm text-slate-600">{memUsage}</td>
+      <td className="px-4 py-3 text-sm text-slate-600">
+        {metrics ? (
+          <div className="w-28">
+            <div className="flex items-center justify-between text-xs mb-0.5">
+              <span className={`font-semibold ${getUsageColorClass(metrics.cpuUsagePercent).replace('bg-', 'text-')}`}>
+                {metrics.cpuUsagePercent.toFixed(1)}%
+              </span>
+            </div>
+            <SharedProgressBar value={metrics.cpuUsagePercent} colorClass={getUsageColorClass(metrics.cpuUsagePercent)} heightClass="h-1.5" />
+          </div>
+        ) : (
+          <span className="text-xs text-slate-400">N/A</span>
+        )}
+      </td>
+      <td className="px-4 py-3 text-sm text-slate-600">
+        {memUsagePercent !== null && metrics ? (
+          <div className="w-28">
+            <div className="flex items-center justify-between text-xs mb-0.5">
+              <span className={`font-semibold ${getUsageColorClass(memUsagePercent).replace('bg-', 'text-')}`}>
+                {memUsagePercent.toFixed(1)}%
+              </span>
+              <span className="text-slate-500 text-xxs">
+                {formatBytesForDisplay(metrics.memoryUsageBytes, 0)}/{formatBytesForDisplay(metrics.memoryTotalBytes, 0)}
+              </span>
+            </div>
+            <SharedProgressBar value={memUsagePercent} colorClass={getUsageColorClass(memUsagePercent)} heightClass="h-1.5" />
+          </div>
+        ) : (
+          <span className="text-xs text-slate-400">N/A</span>
+        )}
+      </td>
       {/* Traffic Usage Column */}
       <td className="px-4 py-3 text-sm text-slate-600">
         {server.trafficLimitBytes && server.trafficLimitBytes > 0 && trafficUsagePercent !== null && usedTrafficBytes !== null ? (
           <div className="w-28"> {/* Fixed width for the progress bar and text container */}
             <div className="flex items-center justify-between text-xs mb-0.5">
-              <span className={`font-semibold ${tableRowTextClass}`}>{trafficUsagePercent.toFixed(1)}%</span>
+              <span className={`font-semibold ${getUsageColorClass(trafficUsagePercent).replace('bg-', 'text-')}`}>{trafficUsagePercent.toFixed(1)}%</span>
               <span className="text-slate-500 text-xxs">
                 {formatBytesForDisplay(usedTrafficBytes, 0)}/{formatBytesForDisplay(server.trafficLimitBytes, 0)}
               </span>
@@ -116,22 +134,21 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server, onEdit, isSelected, o
           <span className="text-xs text-slate-400">未配置</span>
         )}
       </td>
-      <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
-        <ArrowUpIcon className="w-3.5 h-3.5 mr-1 text-emerald-500 inline-block" /> {upSpeed}
+      <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap w-28">
+        <div className="flex items-center">
+          <ArrowUpIcon className="w-3.5 h-3.5 mr-1 text-emerald-500 inline-block flex-shrink-0" />
+          <span>{upSpeed}</span>
+        </div>
       </td>
-      <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
-        <ArrowDownIcon className="w-3.5 h-3.5 mr-1 text-sky-500 inline-block" /> {downSpeed}
+      <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap w-28">
+        <div className="flex items-center">
+          <ArrowDownIcon className="w-3.5 h-3.5 mr-1 text-sky-500 inline-block flex-shrink-0" />
+          <span>{downSpeed}</span>
+        </div>
       </td>
       {showActions && (
         <td className="px-4 py-3 text-center">
          <div className="flex items-center justify-center space-x-2">
-           <RouterLink
-             to={`/vps/${server.id}`}
-             className="text-indigo-600 hover:text-indigo-700 font-medium text-xs py-1 px-3 rounded-md hover:bg-indigo-50 transition-colors"
-             aria-label={`View details for ${server.name}`}
-           >
-             详情
-           </RouterLink>
            {onEdit && (
             <button
               onClick={() => onEdit(server)}

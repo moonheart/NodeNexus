@@ -15,14 +15,12 @@ import {
   ArrowDownIcon,
   ListBulletIcon,
   Squares2X2Icon,
-  PencilSquareIcon,
   XMarkIcon,
   CheckIcon,
 } from '../components/Icons';
 import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_ERROR, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_UNKNOWN } from '../types';
 import VpsCard from '../components/VpsCard';
 import VpsTableRow from '../components/VpsTableRow';
-import BulkEditTagsModal from '../components/BulkEditTagsModal';
 import * as tagService from '../services/tagService';
 
 interface HomePageStateSlice {
@@ -77,8 +75,6 @@ const HomePage: React.FC = () => {
   const [selectedGroup, setSelectedGroup] = useState<string>('ALL');
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<Set<number>>(new Set());
-  const [selectedVpsIds, setSelectedVpsIds] = useState<Set<number>>(new Set());
-  const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
   const [isTagDropdownOpen, setIsTagDropdownOpen] = useState(false);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -148,28 +144,6 @@ const HomePage: React.FC = () => {
   }, [statusFilteredServers, selectedTagIds]);
 
   const displayedServers = tagFilteredServers;
-
-  // --- Selection Logic ---
-  const handleVpsSelectionChange = (vpsId: number, isSelected: boolean) => {
-    const newSet = new Set(selectedVpsIds);
-    if (isSelected) {
-      newSet.add(vpsId);
-    } else {
-      newSet.delete(vpsId);
-    }
-    setSelectedVpsIds(newSet);
-  };
-
-  const handleSelectAllClick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-      const allVpsIds = new Set(displayedServers.map(s => s.id));
-      setSelectedVpsIds(allVpsIds);
-    } else {
-      setSelectedVpsIds(new Set());
-    }
-  };
-
-  const isAllDisplayedSelected = displayedServers.length > 0 && selectedVpsIds.size === displayedServers.length;
 
   // --- Modal Handlers ---
   const handleOpenCreateVpsModal = () => setIsCreateVpsModalOpen(true);
@@ -261,10 +235,6 @@ const HomePage: React.FC = () => {
       <section>
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
             <h2 className="text-2xl font-semibold text-slate-700">概览</h2>
-            <div className="flex items-center space-x-1 mt-3 sm:mt-0 p-1 bg-slate-200 rounded-lg">
-                <button onClick={() => setViewMode('card')} aria-pressed={viewMode === 'card'} className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'card' ? 'bg-white text-indigo-600 shadow' : 'text-slate-600 hover:bg-slate-300'}`}><Squares2X2Icon className="w-5 h-5 inline mr-1.5" /> 卡片视图</button>
-                <button onClick={() => setViewMode('list')} aria-pressed={viewMode === 'list'} className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'list' ? 'bg-white text-indigo-600 shadow' : 'text-slate-600 hover:bg-slate-300'}`}><ListBulletIcon className="w-5 h-5 inline mr-1.5" /> 列表视图</button>
-            </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 md:gap-6">
           <StatCard title="总服务器数" value={serverStats.total} icon={<ServerIcon className="w-6 h-6" />} colorClass="text-indigo-600" onClick={() => setSelectedStatusFilter(null)} isActive={selectedStatusFilter === null} />
@@ -279,8 +249,12 @@ const HomePage: React.FC = () => {
 
       {/* Server Fleet */}
       <section>
-        <div className="mb-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
           <h2 className="text-2xl font-semibold text-slate-700">服务器列表</h2>
+          <div className="flex items-center space-x-1 mt-3 sm:mt-0 p-1 bg-slate-200 rounded-lg">
+              <button onClick={() => setViewMode('card')} aria-pressed={viewMode === 'card'} className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'card' ? 'bg-white text-indigo-600 shadow' : 'text-slate-600 hover:bg-slate-300'}`}><Squares2X2Icon className="w-5 h-5 inline mr-1.5" /> 卡片视图</button>
+              <button onClick={() => setViewMode('list')} aria-pressed={viewMode === 'list'} className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'list' ? 'bg-white text-indigo-600 shadow' : 'text-slate-600 hover:bg-slate-300'}`}><ListBulletIcon className="w-5 h-5 inline mr-1.5" /> 列表视图</button>
+          </div>
         </div>
         <div className="p-4 bg-white rounded-lg shadow-sm mb-6">
             <div className="flex flex-wrap gap-4 items-center justify-between">
@@ -364,15 +338,6 @@ const HomePage: React.FC = () => {
                         </div>
                     )}
                 </div>
-                {isAuthenticated && selectedVpsIds.size > 0 && (
-                  <button
-                    onClick={() => setIsBulkEditModalOpen(true)}
-                    className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-4 rounded-md transition-colors duration-200 text-sm flex items-center"
-                  >
-                      <PencilSquareIcon className="w-4 h-4 mr-2" />
-                      批量编辑标签 ({selectedVpsIds.size})
-                  </button>
-                )}
             </div>
         </div>
 
@@ -380,7 +345,7 @@ const HomePage: React.FC = () => {
           <p className="text-slate-500 text-center py-8 bg-white rounded-lg shadow">没有找到符合当前筛选条件的服务器。</p>
         ) : viewMode === 'card' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {displayedServers.map(server => <VpsCard key={server.id} server={server} onEdit={isAuthenticated ? handleOpenEditModal : undefined} isSelected={selectedVpsIds.has(server.id)} onSelectionChange={handleVpsSelectionChange} />)}
+            {displayedServers.map(server => <VpsCard key={server.id} server={server} onEdit={isAuthenticated ? handleOpenEditModal : undefined} />)}
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-lg overflow-x-auto">
@@ -388,18 +353,7 @@ const HomePage: React.FC = () => {
               <thead className="bg-slate-100">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                    <div className="flex items-center">
-                      {isAuthenticated && (
-                        <input
-                          type="checkbox"
-                          className="checkbox checkbox-primary checkbox-sm mr-4"
-                          onChange={handleSelectAllClick}
-                          checked={isAllDisplayedSelected}
-                          aria-label="选择所有服务器"
-                        />
-                      )}
                       <span>名称</span>
-                    </div>
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">状态</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">IP 地址</th>
@@ -414,25 +368,13 @@ const HomePage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {displayedServers.map(server => <VpsTableRow key={server.id} server={server} onEdit={isAuthenticated ? handleOpenEditModal : undefined} isSelected={selectedVpsIds.has(server.id)} onSelectionChange={handleVpsSelectionChange} showActions={isAuthenticated} />)}
+                {displayedServers.map(server => <VpsTableRow key={server.id} server={server} onEdit={isAuthenticated ? handleOpenEditModal : undefined} showActions={isAuthenticated} />)}
               </tbody>
             </table>
           </div>
         )}
       </section>
 
-      {isAuthenticated && (
-        <BulkEditTagsModal
-          isOpen={isBulkEditModalOpen}
-          onClose={() => setIsBulkEditModalOpen(false)}
-          vpsIds={Array.from(selectedVpsIds)}
-          onTagsUpdated={() => {
-            // The backend will push updates via WebSocket.
-            // Clearing selection is a good practice after the action is done.
-            setSelectedVpsIds(new Set());
-          }}
-        />
-      )}
     </div>
   );
 };

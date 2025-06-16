@@ -62,8 +62,8 @@ pub struct ServerMetricsSnapshot {
     // Additional fields to align with frontend's LatestPerformanceMetric
     pub swap_usage_bytes: Option<u64>,
     pub swap_total_bytes: Option<u64>,
-    pub network_rx_bps: Option<u64>, // Cumulative RX bytes
-    pub network_tx_bps: Option<u64>, // Cumulative TX bytes
+    pub network_rx_cumulative: Option<u64>, // Cumulative RX bytes
+    pub network_tx_cumulative: Option<u64>, // Cumulative TX bytes
     pub total_processes_count: Option<u32>,
     pub running_processes_count: Option<u32>,
     pub tcp_established_connection_count: Option<u32>,

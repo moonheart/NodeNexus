@@ -24,11 +24,10 @@ import {
 interface VpsCardProps {
   server: VpsListItemResponse;
   onEdit?: (server: VpsListItemResponse) => void;
-  isSelected?: boolean;
   onSelectionChange?: (vpsId: number, isSelected: boolean) => void;
 }
 
-const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelectionChange }) => {
+const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit }) => {
   const { cardBorderClass, cardBadgeBgClass, cardTextClass } = getVpsStatusAppearance(server.status);
   const metrics = server.latestMetrics;
 
@@ -52,18 +51,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server, onEdit, isSelected, onSelecti
   );
 
   return (
-    <div className={`relative bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300 overflow-hidden flex flex-col border-l-4 ${cardBorderClass}`}>
-      {onSelectionChange && (
-        <div className="absolute top-2 right-2 z-10">
-          <input
-            type="checkbox"
-            className="checkbox checkbox-primary"
-            checked={!!isSelected}
-            onChange={(e) => onSelectionChange(server.id, e.target.checked)}
-            aria-label={`Select ${server.name}`}
-          />
-        </div>
-      )}
+    <div className={`bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300 overflow-hidden flex flex-col border-l-4 ${cardBorderClass}`}>
       <div className="p-4">
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-base font-semibold text-slate-800 truncate" title={server.name}>
