@@ -1,0 +1,18 @@
+# Git
+.git
+.gitignore
+
+# Rust build artifacts
+backend/target/
+
+# Frontend dependencies
+frontend/node_modules/
+
+# Documentation
+docs/
+
+# Release binaries
+release/
+
+# IDE specific
+.vscode/

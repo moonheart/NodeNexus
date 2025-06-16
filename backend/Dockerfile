@@ -17,6 +17,14 @@ RUN npm run build
 # ---- Stage 2: Build Backend ----
 FROM rust:1.87-slim AS backend-builder
 
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    protobuf-compiler \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install cargo-chef for cached builds
 RUN cargo install cargo-chef
 

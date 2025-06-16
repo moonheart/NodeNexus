@@ -159,7 +159,7 @@ pub async fn handle_update_check(update_lock: Arc<Mutex<()>>) {
                             {
                                 use std::os::unix::fs::PermissionsExt;
                                 info!("Setting executable permissions on downloaded file.");
-                                if let Err(e) = fs::set_permissions(&temp_file_path, fs::Permissions::from_mode(0o755)).await {
+                                if let Err(e) = fs::set_permissions(&temp_file_path, fs::Permissions::from_mode(0o755)) {
                                     error!(error = %e, "Failed to set executable permissions.");
                                     return; // Can't proceed without executable permissions
                                 }
