@@ -283,6 +283,7 @@ pub async fn update_vps_info_on_handshake(
     let result = vps::Entity::update_many()
         .col_expr(vps::Column::OsType, Expr::value(sea_orm::Value::String(Some(Box::new(os_type_str)))))
         .col_expr(vps::Column::IpAddress, Expr::value(sea_orm::Value::String(first_ipv4.map(Box::new))))
+        .col_expr(vps::Column::AgentVersion, Expr::value(sea_orm::Value::String(Some(Box::new(handshake_info.agent_version.clone())))))
         .col_expr(vps::Column::Metadata, Expr::value(sea_orm::Value::Json(Some(Box::new(merged_metadata)))))
         .col_expr(vps::Column::Status, Expr::value(sea_orm::Value::String(Some(Box::new("online".to_string())))))
         .col_expr(vps::Column::UpdatedAt, Expr::value(sea_orm::Value::ChronoDateTimeUtc(Some(Box::new(now)))))
@@ -294,4 +295,21 @@ pub async fn update_vps_info_on_handshake(
         warn!(vps_id = vps_id, "VPS info update on handshake affected 0 rows. This might indicate the VPS ID was not found for update.");
     }
     Ok(result.rows_affected)
+}
+
+/// Retrieves a list of VPS models that are owned by the specified user from a given list of IDs.
+pub async fn get_owned_vps_from_ids(
+    db: &DatabaseConnection,
+    user_id: i32,
+    vps_ids: &[i32],
+) -> Result<Vec<vps::Model>, DbErr> {
+    if vps_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    vps::Entity::find()
+        .filter(vps::Column::UserId.eq(user_id))
+        .filter(vps::Column::Id.is_in(vps_ids.to_vec()))
+        .all(db)
+        .await
 }

@@ -23,6 +23,7 @@ pub struct ServerBasicInfo {
     pub name: String,
     pub ip_address: Option<String>,
     pub status: String,
+    pub agent_version: Option<String>,
     #[serde(rename = "group")]
     pub group: Option<String>,
     pub tags: Option<Vec<Tag>>, // Changed from Option<String>

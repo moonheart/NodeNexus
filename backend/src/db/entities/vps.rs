@@ -11,6 +11,7 @@ pub struct Model {
     pub ip_address: Option<String>,
     pub os_type: Option<String>,
     pub agent_secret: String,
+    pub agent_version: Option<String>,
     pub status: String,
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub metadata: Option<Json>,

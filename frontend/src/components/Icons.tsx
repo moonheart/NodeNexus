@@ -22,6 +22,8 @@ import {
   Signal, // Added
   Eye,
   EyeOff,
+  Plus,
+  RefreshCw,
   type LucideProps,
 } from 'lucide-react';
 
@@ -48,6 +50,8 @@ export const CheckIcon = Check;
 export const SignalIcon = Signal; // Added
 export const EyeIcon = Eye;
 export const EyeOffIcon = EyeOff;
+export const PlusIcon = Plus;
+export const RefreshCwIcon = RefreshCw;
 
 export type { LucideProps as SVGProps };
 export const ChartBarIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (

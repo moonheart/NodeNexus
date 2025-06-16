@@ -69,8 +69,12 @@ message MessageToAgent {
     UpdateConfigRequest update_config_request = 7;
     BatchAgentCommandRequest batch_agent_command_request = 8;       // Added for batch command
     BatchTerminateCommandRequest batch_terminate_command_request = 9; // Added for batch command
+    TriggerUpdateCheckCommand trigger_update_check = 10;
   }
 }
+
+// Command from server to agent to trigger an immediate update check.
+message TriggerUpdateCheckCommand {}
 
 // Message for reporting the result of a single service monitor check
 message ServiceMonitorResult {

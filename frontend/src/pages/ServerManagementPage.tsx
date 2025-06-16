@@ -8,10 +8,14 @@ import {
   PencilSquareIcon,
   XMarkIcon,
   CheckIcon,
+  PlusIcon,
+  RefreshCwIcon,
 } from '../components/Icons';
 import ServerManagementTableRow from '../components/ServerManagementTableRow';
 import BulkEditTagsModal from '../components/BulkEditTagsModal';
 import * as tagService from '../services/tagService';
+import * as vpsService from '../services/vpsService';
+
 
 interface ServerManagementPageStateSlice {
   servers: VpsListItemResponse[];
@@ -125,6 +129,18 @@ const ServerManagementPage: React.FC = () => {
     handleCloseEditModal();
   };
 
+  const handleTriggerUpdate = async (vpsIds: number[]) => {
+    if (vpsIds.length === 0) return;
+    try {
+      const result = await vpsService.triggerAgentUpdate(vpsIds);
+      // TODO: Replace with a proper toast notification system
+      alert(`Update command sent. Success: ${result.successfulCount}, Failed: ${result.failedCount}`);
+    } catch (error) {
+      console.error("Failed to trigger agent update:", error);
+      alert("An error occurred while sending the update command.");
+    }
+  };
+
   // --- Bulk Edit Logic ---
   // This logic is now encapsulated within the BulkEditTagsModal component.
 
@@ -149,7 +165,13 @@ const ServerManagementPage: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
         <h1 className="text-3xl font-bold text-slate-800">服务器管理</h1>
-        <button onClick={handleOpenCreateVpsModal} className="mt-3 sm:mt-0 btn btn-primary">创建新的VPS</button>
+        <button
+          onClick={handleOpenCreateVpsModal}
+          className="mt-3 sm:mt-0 inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all duration-150"
+        >
+          <PlusIcon className="w-5 h-5 mr-2 -ml-1" />
+          创建新的VPS
+        </button>
       </div>
       <CreateVpsModal isOpen={isCreateVpsModalOpen} onClose={handleCloseCreateVpsModal} onVpsCreated={handleVpsCreated} />
       <EditVpsModal isOpen={isEditModalOpen} onClose={handleCloseEditModal} vps={editingVps} allVps={vpsList} onVpsUpdated={handleVpsUpdated} />
@@ -253,9 +275,18 @@ const ServerManagementPage: React.FC = () => {
                 >
                     <PencilSquareIcon className="w-4 h-4 mr-2" />
                     批量编辑标签 ({selectedVpsIds.size})
-                </button>
+               </button>
                 )}
-            </div>
+                {selectedVpsIds.size > 0 && (
+                  <button
+                    onClick={() => handleTriggerUpdate(Array.from(selectedVpsIds))}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-1.5 px-4 rounded-md transition-colors duration-200 text-sm flex items-center"
+                  >
+                    <RefreshCwIcon className="w-4 h-4 mr-2" />
+                    更新 Agent ({selectedVpsIds.size})
+                  </button>
+                )}
+           </div>
         </div>
 
         {displayedServers.length === 0 && !isLoadingServers ? (
@@ -285,6 +316,7 @@ const ServerManagementPage: React.FC = () => {
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">状态</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">IP 地址</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">操作系统</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Agent 版本</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">分组</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">续费状态</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">操作</th>
@@ -296,6 +328,7 @@ const ServerManagementPage: React.FC = () => {
                     key={server.id}
                     server={server}
                     onEdit={handleOpenEditModal}
+                    onTriggerUpdate={(vpsId) => handleTriggerUpdate([vpsId])}
                     isSelected={selectedVpsIds.has(server.id)}
                     onSelectionChange={(vpsId, isSelected) => {
                       const newSet = new Set(selectedVpsIds);

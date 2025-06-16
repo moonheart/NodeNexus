@@ -28,7 +28,8 @@ async fn spawn_and_monitor_core_tasks(
     handler: ConnectionHandler,
     agent_cli_config: &AgentCliConfig,
     shared_agent_config: Arc<RwLock<AgentConfig>>,
-    command_tracker: Arc<RunningCommandsTracker>, // Added command_tracker
+    command_tracker: Arc<RunningCommandsTracker>,
+    update_lock: Arc<tokio::sync::Mutex<()>>,
 ) -> Vec<JoinHandle<()>> {
     let (
         in_stream,
@@ -95,7 +96,8 @@ async fn spawn_and_monitor_core_tasks(
     let listener_agent_config = Arc::clone(&shared_agent_config);
     let listener_config_path = "agent_config.toml".to_string();
     let listener_command_tracker = command_tracker.clone(); // Clone command_tracker for the listener task
-
+    let listener_update_lock = update_lock.clone();
+ 
     // Note: server_message_handler_loop takes ownership of in_stream
     tasks.push(tokio::spawn(async move {
         let agent_id_for_log = listener_agent_id.clone();
@@ -109,6 +111,7 @@ async fn spawn_and_monitor_core_tasks(
             listener_agent_config,
             listener_config_path,
             listener_command_tracker, // Pass command_tracker
+            listener_update_lock,
         ).await;
         info!(agent_id = %agent_id_for_log, "Server message handler loop ended.");
     }));
@@ -175,6 +178,16 @@ fn init_logging() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    // --- Health Check Argument Handling ---
+    let args: Vec<String> = std::env::args().collect();
+    if args.contains(&"--health-check".to_string()) {
+        // This is a very basic health check. A real one might try to load config,
+        // or even briefly connect to the server. For now, just exiting successfully
+        // proves the binary is executable and not corrupt.
+        println!("Health check successful.");
+        std::process::exit(0);
+    }
+
     init_logging();
     info!("Starting agent...");
 
@@ -189,9 +202,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Create RunningCommandsTracker here, to be passed to tasks
     let command_tracker = Arc::new(RunningCommandsTracker::new());
-
-    // --- Removed setup for Agent's own gRPC Command Service ---
-    // The agent will handle commands received over the main communication stream.
+    let update_lock = Arc::new(tokio::sync::Mutex::new(()));
+ 
+     // --- Removed setup for Agent's own gRPC Command Service ---
+     // The agent will handle commands received over the main communication stream.
 
     let mut reconnect_delay_seconds = DEFAULT_RECONNECT_DELAY_SECONDS;
 
@@ -215,10 +229,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 // Create the shared, mutable configuration state
                 let shared_agent_config = Arc::new(RwLock::new(handler.initial_agent_config.clone()));
                 // Pass command_tracker to spawn_and_monitor_core_tasks
-                let task_handles = spawn_and_monitor_core_tasks(handler, &agent_cli_config, shared_agent_config, command_tracker.clone()).await;
-
-                // Monitor tasks. If any of them exit, it signifies a problem, and we should attempt to reconnect.
-                if !task_handles.is_empty() {
+                let task_handles = spawn_and_monitor_core_tasks(handler, &agent_cli_config, shared_agent_config, command_tracker.clone(), update_lock.clone()).await;
+ 
+                 // Monitor tasks. If any of them exit, it signifies a problem, and we should attempt to reconnect.
+                 if !task_handles.is_empty() {
                     // futures::future::select_all waits for the first task to complete.
                     // The result includes the completed task's output, its index, and the remaining futures.
                     let (first_task_result, _index, remaining_handles) = futures::future::select_all(task_handles).await;

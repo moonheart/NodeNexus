@@ -20,6 +20,7 @@ use tracing::{info, error, warn, debug};
 
 // Import the refactored helper functions
 use crate::agent_modules::agent_command_service_impl::{handle_batch_agent_command, handle_batch_terminate_command};
+use crate::agent_modules::updater; // Import the new updater module
 
 pub async fn heartbeat_loop(
     tx_to_server: mpsc::Sender<MessageToServer>,
@@ -65,6 +66,7 @@ pub async fn server_message_handler_loop(
     shared_agent_config: Arc<RwLock<AgentConfig>>,
     config_path: String,
     command_tracker: Arc<RunningCommandsTracker>,
+    update_lock: Arc<tokio::sync::Mutex<()>>,
 ) {
     info!("Listening for messages from server...");
     
@@ -175,6 +177,13 @@ pub async fn server_message_handler_loop(
                                     agent_secret_clone,
                                     id_provider_clone,
                                 ).await;
+                            });
+                        }
+                        AgentPayload::TriggerUpdateCheck(_cmd) => {
+                            info!("Received TriggerUpdateCheck command from server. Spawning update task.");
+                            let lock_clone = update_lock.clone();
+                            tokio::spawn(async move {
+                                updater::handle_update_check(lock_clone).await;
                             });
                         }
                         _ => {

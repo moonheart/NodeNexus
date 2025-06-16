@@ -90,6 +90,7 @@ async fn build_server_with_details(
         name: vps_model.name,
         ip_address: vps_model.ip_address,
         status: vps_model.status,
+        agent_version: vps_model.agent_version,
         group: vps_model.group,
         tags: ws_tags,
         config_status: vps_model.config_status,

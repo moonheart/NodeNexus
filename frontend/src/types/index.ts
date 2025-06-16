@@ -117,6 +117,7 @@ export interface VpsListItemResponse {
   name: string;
   ipAddress: string | null; // camelCase
   osType: string | null;    // camelCase
+  agentVersion?: string | null;
   agentSecret: string; // camelCase
   status: ServerStatus;
   metadata: VpsMetadata | null; // Refined metadata type
@@ -460,4 +461,10 @@ export interface CommandScript {
   working_directory: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface BulkActionResponse {
+  message: string;
+  successfulCount: number;
+  failedCount: number;
 }

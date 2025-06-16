@@ -1,6 +1,6 @@
 import apiClient from './apiClient.ts'; // Assuming you have an apiClient for making requests
 // VpsListItemResponse is the type returned by the backend for list and detail views now
-import type { Vps, VpsListItemResponse } from '../types';
+import type { Vps, VpsListItemResponse, BulkActionResponse } from '../types';
 
 export interface CreateVpsPayload {
   name: string;
@@ -105,3 +105,16 @@ export const dismissVpsRenewalReminder = async (vpsId: number): Promise<void> =>
 
 // You might want to add other VPS related API calls here in the future,
 // e.g., deleteVps, etc.
+
+/**
+ * Triggers an update check for one or more agents.
+ */
+export const triggerAgentUpdate = async (vpsIds: number[]): Promise<BulkActionResponse> => {
+  try {
+    const response = await apiClient.post<BulkActionResponse>('/vps/bulk-actions/trigger-update-check', { vpsIds });
+    return response.data;
+  } catch (error) {
+    console.error('Error triggering agent update:', error);
+    throw error;
+  }
+};

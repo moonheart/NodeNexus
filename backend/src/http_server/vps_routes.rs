@@ -83,6 +83,7 @@ pub struct VpsListItemResponse {
     pub ip_address: Option<String>,
     pub os_type: Option<String>,
     pub status: String,
+    pub agent_version: Option<String>,
     pub created_at: String,
     #[serde(rename = "group")]
     pub group: Option<String>,
@@ -130,6 +131,7 @@ impl From<crate::websocket_models::ServerWithDetails> for VpsListItemResponse {
             ip_address: details.basic_info.ip_address,
             os_type: details.os_type,
             status: details.basic_info.status,
+            agent_version: details.basic_info.agent_version,
             created_at: details.created_at.to_rfc3339(),
             group: details.basic_info.group,
             tags: details.basic_info.tags,
@@ -181,6 +183,20 @@ pub struct BulkUpdateTagsRequest {
     vps_ids: Vec<i32>,
     add_tag_ids: Vec<i32>,
     remove_tag_ids: Vec<i32>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkTriggerUpdateCheckRequest {
+    vps_ids: Vec<i32>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkActionResponse {
+    message: String,
+    successful_count: u32,
+    failed_count: u32,
 }
 
 async fn create_vps_handler(
@@ -478,6 +494,63 @@ async fn bulk_update_vps_tags_handler(
     }
 }
 
+async fn bulk_trigger_update_check_handler(
+    Extension(authenticated_user): Extension<AuthenticatedUser>,
+    State(app_state): State<Arc<AppState>>,
+    Json(payload): Json<BulkTriggerUpdateCheckRequest>,
+) -> Result<Json<BulkActionResponse>, AppError> {
+    let user_id = authenticated_user.id;
+
+    if payload.vps_ids.is_empty() {
+        return Ok(Json(BulkActionResponse {
+            message: "No VPS IDs provided.".to_string(),
+            successful_count: 0,
+            failed_count: 0,
+        }));
+    }
+
+    // Verify user owns all VPS IDs and get the valid models
+    let owned_vps_list = services::get_owned_vps_from_ids(&app_state.db_pool, user_id, &payload.vps_ids).await?;
+
+    if owned_vps_list.len() != payload.vps_ids.len() {
+        // This indicates a partial ownership, which we treat as a potential issue.
+        // For simplicity, we'll proceed with the ones they do own, but a stricter policy might be to error out.
+        // The service function already filters to only those owned.
+        error!(
+            "User {} attempted bulk update on VPS IDs they do not fully own. Requested: {:?}, Owned: {:?}",
+            user_id,
+            payload.vps_ids,
+            owned_vps_list.iter().map(|v| v.id).collect::<Vec<_>>()
+        );
+    }
+
+    let agents_guard = app_state.connected_agents.lock().await;
+    let mut successful_sends = 0;
+    let mut failed_sends = 0;
+
+    for vps in owned_vps_list {
+        if agents_guard.send_update_check_command(vps.id).await {
+            successful_sends += 1;
+        } else {
+            failed_sends += 1;
+        }
+    }
+
+    let total_requested = payload.vps_ids.len() as u32;
+    let not_owned_or_failed = total_requested - successful_sends;
+
+
+    Ok(Json(BulkActionResponse {
+        message: format!(
+            "Update commands sent. Success: {}, Failed/Not Found: {}.",
+            successful_sends, not_owned_or_failed
+        ),
+        successful_count: successful_sends,
+        failed_count: not_owned_or_failed,
+    }))
+}
+
+
 // --- Renewal Reminder Handler ---
 
 async fn dismiss_renewal_reminder_handler(
@@ -551,11 +624,38 @@ pub fn vps_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", post(create_vps_handler))
         .route("/", get(get_all_vps_handler))
-        .route("/bulk-actions", post(bulk_update_vps_tags_handler))
+        .route("/bulk-actions/update-tags", post(bulk_update_vps_tags_handler))
+        .route("/bulk-actions/trigger-update-check", post(bulk_trigger_update_check_handler))
         .route("/{vps_id}", get(get_vps_detail_handler))
         .route("/{vps_id}", put(update_vps_handler))
         .route("/{vps_id}/renewal/dismiss-reminder", post(dismiss_renewal_reminder_handler)) // New route
         .route("/{vps_id}/monitor-results", get(get_vps_monitor_results_handler)) // New route
+        .route("/{vps_id}/trigger-update-check", post(trigger_update_check_handler)) // New route for agent update
         .nest("/{vps_id}/tags", vps_tags_router()) // Nest the tags router
         .merge(config_routes::create_vps_config_router())
+}
+
+async fn trigger_update_check_handler(
+    Extension(authenticated_user): Extension<AuthenticatedUser>,
+    State(app_state): State<Arc<AppState>>,
+    Path(vps_id): Path<i32>,
+) -> Result<StatusCode, AppError> {
+    let user_id = authenticated_user.id;
+
+    // Authorize: Check if user owns the VPS
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await?
+        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
+    if vps.user_id != user_id {
+        return Err(AppError::Unauthorized("Access denied".to_string()));
+    }
+
+    // Send the command to the agent
+    let agents_guard = app_state.connected_agents.lock().await;
+    let sent = agents_guard.send_update_check_command(vps_id).await;
+
+    if sent {
+        Ok(StatusCode::ACCEPTED) // Accepted for processing
+    } else {
+        Err(AppError::NotFound("Agent not connected or command could not be sent".to_string()))
+    }
 }
