@@ -4,7 +4,7 @@
 $ErrorActionPreference = "Stop"
 
 # --- 定义变量 ---
-$ImageName = "mjjer-server"
+$ImageName = "node-nexus-server"
 $Tag = "latest"
 $Dockerfile = "backend/Dockerfile"
 
@@ -17,5 +17,5 @@ Write-Host "----------------------------------------"
 Write-Host "Docker image build process finished successfully!"
 Write-Host "Image created: $($ImageName):$($Tag)"
 Write-Host "To run the container, use the following command:"
-Write-Host "docker run -p 8080:8080 --name mjjer-container $($ImageName):$($Tag)"
+Write-Host "docker run -p 8080:8080 --name node-nexus-container $($ImageName):$($Tag)"
 Write-Host "----------------------------------------"

@@ -28,9 +28,9 @@ if (-not (Test-Path -Path "release")) {
     New-Item -ItemType Directory -Path "release" | Out-Null
 }
 # 复制可执行文件
-Copy-Item -Path "backend/target/release/server.exe" -Destination "release/mjjer-server.exe" -Force
+Copy-Item -Path "backend/target/release/server.exe" -Destination "release/node-nexus-server.exe" -Force
 
 Write-Host "----------------------------------------"
 Write-Host "Release process finished successfully!"
-Write-Host "Your application is ready at: release/mjjer-server.exe"
+Write-Host "Your application is ready at: release/node-nexus-server.exe"
 Write-Host "----------------------------------------"

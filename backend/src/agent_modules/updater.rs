@@ -9,7 +9,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use std::env;
 
-const GITHUB_REPO: &str = "mjjer/mjjer";
+const GITHUB_REPO: &str = "moonheart/NodeNexus";
 
 #[derive(Deserialize, Debug)]
 struct GitHubRelease {
@@ -32,7 +32,7 @@ async fn get_latest_github_release() -> Result<GitHubRelease, reqwest::Error> {
 
     let response = client
         .get(&url)
-        .header("User-Agent", "mjjer-agent-updater")
+        .header("User-Agent", "node-nexus-agent-updater")
         .send()
         .await?
         .error_for_status()?;

@@ -28,9 +28,9 @@ echo "Copying executable to release folder..."
 mkdir -p release
 # 复制可执行文件
 # 注意: 在Windows上，可执行文件是 .exe 后缀
-cp backend/target/release/server.exe release/mjjer-server.exe
+cp backend/target/release/server.exe release/node-nexus-server.exe
 
 echo "----------------------------------------"
 echo "Release process finished successfully!"
-echo "Your application is ready at: release/mjjer-server.exe"
+echo "Your application is ready at: release/node-nexus-server.exe"
 echo "----------------------------------------"

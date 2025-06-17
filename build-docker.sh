@@ -5,7 +5,7 @@
 set -e
 
 # --- 定义变量 ---
-IMAGE_NAME="mjjer-server"
+IMAGE_NAME="node-nexus-server"
 TAG="latest"
 DOCKERFILE_PATH="backend/Dockerfile"
 
@@ -18,5 +18,5 @@ echo "----------------------------------------"
 echo "Docker image build process finished successfully!"
 echo "Image created: $IMAGE_NAME:$TAG"
 echo "To run the container, use the following command:"
-echo "docker run -p 8080:8080 --name mjjer-container $IMAGE_NAME:$TAG"
+echo "docker run -p 8080:8080 --name node-nexus-container $IMAGE_NAME:$TAG"
 echo "----------------------------------------"
