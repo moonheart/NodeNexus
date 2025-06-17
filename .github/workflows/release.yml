@@ -94,6 +94,8 @@ jobs:
           path: backend/target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}-${{ matrix.target }}
       - name: Build backend
+        env:
+          APP_VERSION: ${{ github.ref_name }}
         run: cargo build --release --bin ${{ matrix.bin }} --target ${{ matrix.target }}
         working-directory: ./backend
       - name: Upload backend artifact

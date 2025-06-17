@@ -17,6 +17,7 @@ use backend::agent_modules::command_tracker::RunningCommandsTracker;
 use backend::agent_modules::service_monitor::ServiceMonitorManager;
 // Removed: use backend::agent_modules::agent_command_service_impl::create_agent_command_service;
 use backend::agent_service::AgentConfig;
+use backend::version::VERSION;
 
 
 const INITIAL_CLIENT_MESSAGE_ID: AtomicU64 = AtomicU64::new(1);
@@ -178,8 +179,13 @@ fn init_logging() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // --- Health Check Argument Handling ---
     let args: Vec<String> = std::env::args().collect();
+
+    if args.contains(&"--version".to_string()) {
+        println!("Agent version: {}", VERSION);
+        return Ok(());
+    }
+    // --- Health Check Argument Handling ---
     if args.contains(&"--health-check".to_string()) {
         // This is a very basic health check. A real one might try to load config,
         // or even briefly connect to the server. For now, just exiting successfully

@@ -8,6 +8,7 @@ use std::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use std::env;
+use crate::version::VERSION;
 
 const GITHUB_REPO: &str = "moonheart/NodeNexus";
 
@@ -118,7 +119,7 @@ pub async fn handle_update_check(update_lock: Arc<Mutex<()>>) {
 
     info!("Update lock acquired. Starting update process...");
 
-    let current_version = env!("CARGO_PKG_VERSION");
+    let current_version = VERSION;
     info!(version = current_version, "Current agent version");
 
     match get_latest_github_release().await {
@@ -126,7 +127,7 @@ pub async fn handle_update_check(update_lock: Arc<Mutex<()>>) {
             info!(latest_version = %latest_release.tag_name, "Found latest GitHub release.");
             let latest_version_normalized = latest_release.tag_name.trim_start_matches('v');
 
-            if latest_version_normalized != current_version {
+            if latest_version_normalized != current_version.trim_start_matches('v') {
                 info!("New version available! Current: {}, Latest: {}", current_version, latest_version_normalized);
                 
                 let arch = match std::env::consts::ARCH {

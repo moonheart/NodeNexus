@@ -10,6 +10,7 @@ use backend::alerting::evaluation_service::EvaluationService; // Added Evaluatio
 use backend::server::result_broadcaster::{ResultBroadcaster, BatchCommandUpdateMsg}; // Added ResultBroadcaster
 use backend::agent_service::agent_communication_service_server::AgentCommunicationServiceServer;
 use backend::http_server;
+use backend::version::VERSION;
 
 use sea_orm::{Database, DatabaseConnection, ConnectOptions};
 use std::net::SocketAddr;
@@ -56,7 +57,14 @@ fn init_logging() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Added Send + Sync for tokio::spawn
+    let args: Vec<String> = std::env::args().collect();
+    if args.contains(&"--version".to_string()) {
+        println!("Server version: {}", VERSION);
+        return Ok(());
+    }
+
     init_logging(); // Initialize logging first
+    info!("Starting server, version: {}", VERSION);
     dotenv().ok(); // Load .env file
 
     // --- Debounce Update Trigger Channel ---

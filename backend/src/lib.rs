@@ -17,3 +17,4 @@ pub mod axum_embed;
 
 pub mod notifications;
 pub mod alerting; // Added alerting module
+pub mod version;
