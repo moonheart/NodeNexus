@@ -2,7 +2,9 @@ import { EventEmitter } from './eventEmitter';
 import type { FullServerListPushType, ServiceMonitorResult } from '../types';
 import { throttle } from 'lodash';
 
-const WS_URL_BASE = import.meta.env.VITE_WS_BASE_URL || `ws://${window.location.host}`;
+const isSecure = window.location.protocol === 'https:';
+const defaultWsProtocol = isSecure ? 'wss://' : 'ws://';
+const WS_URL_BASE = import.meta.env.VITE_WS_BASE_URL || `${defaultWsProtocol}${window.location.host}`;
 
 // Define the events and their payload types
 interface WebSocketEvents {
@@ -40,11 +42,6 @@ class WebSocketService extends EventEmitter<WebSocketEvents> {
             url.searchParams.append('token', token);
         }
 
-        if (url.protocol === 'http:') {
-            url.protocol = 'ws:';
-        } else if (url.protocol === 'https:') {
-            url.protocol = 'wss:';
-        }
         return url.toString();
     }
 
