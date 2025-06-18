@@ -195,7 +195,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     init_logging();
-    info!("Starting agent...");
+    info!(version = VERSION, "Starting agent...");
 
     let config_path = "agent_config.toml"; // Relative to current working directory
     let agent_cli_config = match load_cli_config(config_path) {

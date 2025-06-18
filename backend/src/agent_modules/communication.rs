@@ -7,6 +7,7 @@ use crate::agent_service::{
     AgentConfig, AgentHandshake, Heartbeat, MessageToAgent, MessageToServer, OsType, // Enums used by batch messages
 };
 use crate::agent_modules::command_tracker::RunningCommandsTracker; // Added
+use crate::version::VERSION;
 use std::error::Error;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
@@ -256,7 +257,7 @@ impl ConnectionHandler {
 
         let handshake_payload = AgentHandshake {
             agent_id_hint: Uuid::new_v4().to_string(),
-            agent_version: env!("CARGO_PKG_VERSION").to_string(),
+            agent_version: VERSION.to_string(),
             os_type: i32::from(os_type_proto),
             os_name: System::name().unwrap_or_else(|| "N/A".to_string()),
             arch: System::cpu_arch(),

@@ -10,6 +10,11 @@ use tokio::process::Command;
 use std::env;
 use crate::version::VERSION;
 
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 const GITHUB_REPO: &str = "moonheart/NodeNexus";
 
 #[derive(Deserialize, Debug)]
@@ -58,51 +63,127 @@ async fn download_asset(asset_url: &str, temp_path: &Path) -> Result<(), Box<dyn
 }
 
 
-fn replace_and_restart(new_binary_path: &Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+/// Checks if the agent is likely running under systemd by checking for the INVOCATION_ID env var.
+fn is_running_under_systemd() -> bool {
+    env::var("INVOCATION_ID").is_ok()
+}
+
+/// Checks if the agent is likely running under launchd by checking for the LAUNCHD_SOCKET env var.
+fn is_running_under_launchd() -> bool {
+    env::var("LAUNCHD_SOCKET").is_ok()
+}
+
+async fn replace_and_restart(new_binary_path: &Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let current_exe = env::current_exe()?;
     info!(current = ?current_exe, new = ?new_binary_path, "Replacing current executable");
 
-    // This is a simplified version. A robust implementation would handle permissions,
-    // potential rollback, and different OS-specific edge cases.
-    // The `self_update` crate is a good reference for a production-grade solution.
-
     #[cfg(unix)]
     {
-        use std::os::unix::process::CommandExt;
-        // On Unix, we can replace the binary and then use exec to restart.
+        // On Unix-like systems, we replace the binary file first.
         fs::rename(new_binary_path, &current_exe)?;
-        info!("Binary replaced. Restarting agent via exec...");
-        // The error from exec is only returned if exec fails.
+        info!("Binary replaced successfully.");
+
+        if let Ok(service_name) = env::var("NEXUS_AGENT_SERVICE_NAME") {
+            if is_running_under_systemd() {
+                info!("Restarting via systemctl for service: {}", service_name);
+                let restart_status = Command::new("systemctl")
+                    .arg("restart")
+                    .arg(&service_name)
+                    .status()
+                    .await?;
+                
+                if !restart_status.success() {
+                    let msg = format!("'systemctl restart {}' failed with status: {}. The agent might need manual intervention.", service_name, restart_status);
+                    error!("{}", msg);
+                    return Err(msg.into());
+                }
+                
+                info!("systemd service '{}' restarted successfully. Exiting old process.", service_name);
+                std::process::exit(0);
+            } else if is_running_under_launchd() {
+                info!("Restarting via launchctl for service: {}", service_name);
+                
+                // Stop the service. Failure is not critical, it might already be stopped.
+                let stop_status = Command::new("launchctl").arg("stop").arg(&service_name).status().await?;
+                if !stop_status.success() {
+                    warn!("'launchctl stop {}' failed with status: {}. This might be okay if the service is already stopped.", service_name, stop_status);
+                }
+
+                // Start the service
+                let start_status = Command::new("launchctl").arg("start").arg(&service_name).status().await?;
+                if !start_status.success() {
+                    let msg = format!("'launchctl start {}' failed with status: {}. The agent might need manual intervention.", service_name, start_status);
+                    error!("{}", msg);
+                    return Err(msg.into());
+                }
+
+                info!("launchd service '{}' started successfully. Exiting old process.", service_name);
+                std::process::exit(0);
+            } else {
+                warn!("NEXUS_AGENT_SERVICE_NAME is set, but no known service manager (systemd, launchd) was detected. Falling back to exec.");
+            }
+        }
+
+        info!("Restarting as a standalone process via exec...");
         let err = std::process::Command::new(&current_exe).exec();
-        return Err(Box::new(err));
+        Err(Box::new(err)) // This is only reached if exec fails
     }
 
     #[cfg(windows)]
     {
-        // On Windows, we can't replace a running executable.
-        // A common strategy is to use a helper script.
-        // For simplicity here, we'll try a rename, which is likely to fail but demonstrates the idea.
-        // A production solution would use a detached process with a batch script.
         let old_exe_bak = current_exe.with_extension("bak");
         
-        // Try to move the current executable to a .bak file
-        if fs::rename(&current_exe, &old_exe_bak).is_err() {
-            // This is expected to fail on Windows if the process is running.
-            // We log it and proceed to try and write a helper script.
-            warn!("Could not rename running executable. This is expected on Windows. Will try helper script approach.");
+        if let Err(e) = fs::rename(&current_exe, &old_exe_bak) {
+            warn!(error = %e, "Failed to rename running executable. Update cannot proceed.");
+            return Err(e.into());
         }
 
-        // Move the new binary into place
-        fs::rename(new_binary_path, &current_exe)?;
+        if let Err(e) = fs::copy(new_binary_path, &current_exe) {
+            error!(error = %e, "Failed to copy new binary into place. Attempting to roll back.");
+            if let Err(rb_err) = fs::rename(&old_exe_bak, &current_exe) {
+                error!(error = %rb_err, "CRITICAL: Failed to restore original executable. The agent is in a broken state.");
+            }
+            return Err(e.into());
+        }
+        
+        if let Err(e) = fs::remove_file(new_binary_path) {
+            warn!(error = %e, "Failed to remove temporary update file.");
+        }
 
-        info!("Spawning command to restart agent and exiting current process...");
-        std::process::Command::new(&current_exe).spawn()?;
-        std::process::exit(0);
+        if let Ok(service_name) = env::var("NEXUS_AGENT_SERVICE_NAME") {
+            info!("Attempting to restart service '{}' via SCM...", service_name);
+
+            let stop_status = Command::new("sc.exe").arg("stop").arg(&service_name).status().await?;
+            if !stop_status.success() {
+                warn!("'sc.exe stop {}' failed with status: {}. The service might not have stopped cleanly.", service_name, stop_status);
+            } else {
+                info!("Service '{}' stopped successfully.", service_name);
+            }
+            
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+
+            let start_status = Command::new("sc.exe").arg("start").arg(&service_name).status().await?;
+            if !start_status.success() {
+                let msg = format!("'sc.exe start {}' failed with status: {}. The agent might need manual intervention.", service_name, start_status);
+                error!("{}", msg);
+                return Err(msg.into());
+            }
+            
+            info!("Service '{}' started successfully. Exiting old process.", service_name);
+            std::process::exit(0);
+        } else {
+            info!("Spawning command to restart agent and exiting current process...");
+            const DETACHED_PROCESS: u32 = 0x00000008;
+            std::process::Command::new(&current_exe)
+                .creation_flags(DETACHED_PROCESS)
+                .spawn()?;
+            std::process::exit(0);
+        }
     }
 
     #[cfg(not(any(unix, windows)))]
     {
-        return Err("Auto-update not supported on this platform.".into());
+        Err("Auto-update not supported on this platform.".into())
     }
 }
 
@@ -171,7 +252,7 @@ pub async fn handle_update_check(update_lock: Arc<Mutex<()>>) {
                             match Command::new(&temp_file_path).arg("--health-check").status().await {
                                 Ok(status) if status.success() => {
                                     info!("Health check passed. Proceeding with replacement.");
-                                    if let Err(e) = replace_and_restart(&temp_file_path) {
+                                    if let Err(e) = replace_and_restart(&temp_file_path).await {
                                         error!(error = %e, "Failed to replace and restart the agent.");
                                     }
                                     // If replace_and_restart succeeds (on unix), this code is not reached.
