@@ -14,15 +14,15 @@ AGENT_BINARY_NAME="" # This will be set dynamically
 
 # --- Helper Functions ---
 print_info() {
-    echo -e "\e[34m[INFO]\e[0m $1"
+    echo -e "\e[34m[INFO]\e[0m $1" >&2
 }
 
 print_success() {
-    echo -e "\e[32m[SUCCESS]\e[0m $1"
+    echo -e "\e[32m[SUCCESS]\e[0m $1" >&2
 }
 
 print_error() {
-    echo -e "\e[31m[ERROR]\e[0m $1"
+    echo -e "\e[31m[ERROR]\e[0m $1" >&2
     exit 1
 }
 
