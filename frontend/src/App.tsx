@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useServerListStore } from './store/serverListStore';
+import websocketService from './services/websocketService';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -20,13 +21,22 @@ import SettingsLayout from './components/SettingsLayout'; // Import the Settings
 import { useAuthStore } from './store/authStore';
 
 function App() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, token } = useAuthStore();
   
-  // Initialize the server list store to listen for auth changes.
+  // Initialize the server list store and establish WebSocket connection on app load.
   // This should only run once when the app component mounts.
   useEffect(() => {
+    // Initialize stores that need to react to events or auth state
     useServerListStore.getState().init();
-  }, []);
+
+    // Establish the initial WebSocket connection based on the current auth state
+    websocketService.connect(token);
+
+    // The cleanup function will run when the App component unmounts.
+    return () => {
+      websocketService.disconnect();
+    };
+  }, []); // The empty dependency array ensures this effect runs only once on mount.
 
   return (
     <Router>

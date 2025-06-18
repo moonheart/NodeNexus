@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { loginUser, registerUser } from '../services/authService';
 import type { LoginRequest, RegisterRequest, UserResponse, LoginResponse } from '../services/authService';
+import websocketService from '../services/websocketService';
 
 interface AuthState {
     isAuthenticated: boolean;
@@ -37,6 +38,9 @@ export const useAuthStore = create<AuthState>()(
                         isLoading: false,
                         error: null,
                     });
+                    // Disconnect any existing WS connection and reconnect with the new token
+                    websocketService.disconnect();
+                    websocketService.connect(response.token);
                     // console.log("Login successful, token:", response.token);
                 } catch (err: unknown) {
                     const errorMessage = err instanceof Error ? err.message : '登录时发生未知错误';
@@ -63,6 +67,9 @@ export const useAuthStore = create<AuthState>()(
 
             logout: () => {
                 set({ isAuthenticated: false, user: null, token: null, error: null });
+                // Disconnect the authenticated WS connection and reconnect to the public endpoint
+                websocketService.disconnect();
+                websocketService.connect(); // Reconnect without a token
                 // console.log("User logged out");
             },
 

@@ -81,6 +81,11 @@ const LoginPage: React.FC = () => {
                     </div>
                 </form>
                 <p className="text-sm text-center text-slate-600">
+                    <RouterLink to="/" className="font-medium text-indigo-600 hover:text-indigo-500">
+                        返回首页
+                    </RouterLink>
+                </p>
+                <p className="text-sm text-center text-slate-600">
                     还没有账户？{' '}
                     <RouterLink to="/register" className="font-medium text-indigo-600 hover:text-indigo-500">
                         立即注册
