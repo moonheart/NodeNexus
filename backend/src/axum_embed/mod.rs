@@ -384,8 +384,19 @@ impl<E: RustEmbed, T> Future for ServeFuture<E, T> {
                     .unwrap()));
             }
             // if the file is not found, return 404
-            _ => {
-                unreachable!();
+            // if the file is not found, return 404
+            GetFileResult {
+                path: _,
+                file: None,
+                should_redirect: None,
+                compression_method: _,
+                is_fallback: _,
+            } => {
+                return Poll::Ready(Ok(Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .header(http::header::CONTENT_TYPE, "text/plain")
+                    .body(Full::new(Bytes::from("Not found")))
+                    .unwrap()));
             }
         };
 
