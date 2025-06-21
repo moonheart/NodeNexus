@@ -1,6 +1,7 @@
 use crate::agent_modules::config::{self, AgentCliConfig};
 use crate::agent_modules::utils::collect_public_ip_addresses;
 use crate::agent_service::agent_communication_service_client::AgentCommunicationServiceClient;
+use tonic::transport::{ClientTlsConfig, Endpoint};
 use crate::agent_service::message_to_server::Payload as ServerPayload; // Renamed for clarity
 use crate::agent_service::message_to_agent::Payload as AgentPayload; // Renamed for clarity
 use crate::agent_service::{
@@ -219,11 +220,19 @@ impl ConnectionHandler {
     ) -> Result<Self, Box<dyn Error>> {
         info!("Attempting to connect to server");
         
-        let mut client = AgentCommunicationServiceClient::connect(agent_cli_config.server_address.clone()).await
+        let tls = ClientTlsConfig::new()
+            .with_native_roots();
+
+        let channel = Endpoint::from_shared(agent_cli_config.server_address.clone())?
+            .tls_config(tls)?
+            .connect()
+            .await
             .map_err(|e| {
-                error!(error = %e, "Failed to connect to gRPC endpoint.");
+                error!(error = %e, "Failed to connect to gRPC endpoint with TLS.");
                 e
             })?;
+
+        let mut client = AgentCommunicationServiceClient::new(channel);
         info!("Successfully connected to gRPC endpoint.");
 
         let (tx_to_server, rx_for_stream) = mpsc::channel(128);

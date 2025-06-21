@@ -373,6 +373,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
             let mut grpc_service = grpc_service.clone();
             let mut static_file_service = static_file_service.clone();
 
+            info!("Received request: {} {}", req.method(), req.uri());
+
             async move {
                 if req.headers().get("content-type").map(|v| v.as_bytes().starts_with(b"application/grpc")).unwrap_or(false) {
                     grpc_service.call(req).await

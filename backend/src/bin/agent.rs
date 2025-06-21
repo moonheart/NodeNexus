@@ -193,7 +193,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("Health check successful.");
         std::process::exit(0);
     }
-
+    rustls::crypto::ring::default_provider().install_default().expect("Failed to install default crypto provider");
     init_logging();
     info!(version = VERSION, "Starting agent...");
 

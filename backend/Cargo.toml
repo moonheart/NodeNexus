@@ -7,7 +7,9 @@ edition = "2024"
 bytes = "1.10"
 prost = "0.13"
 tokio = { version = "1.45", features = ["macros", "rt-multi-thread", "sync", "time", "process"] } # Added "sync", "time", and "process"
-tonic = { version = "0.13", features = ["transport", "codegen", "prost"] }
+tonic = { version = "0.13", features = ["transport", "codegen", "prost", "tls-native-roots"] }
+tokio-rustls = "0.26"
+rustls = "0.23"
 chrono = { version = "0.4", features = ["serde"] } # Added for timestamp generation
 futures-util = { version = "0.3" }
 tokio-stream = "0.1" # Added for stream utilities
@@ -20,6 +22,7 @@ sqlx = { version = "0.8", features = [ "runtime-tokio-rustls", "postgres", "macr
 axum = { version = "0.8", features = ["ws", "macros"] } # Added ws and macros features
 jsonwebtoken = "9"
 bcrypt = "0.17"
+rustls-native-certs = "0.8"
 thiserror = "2.0"
 dotenv = "0.15"
 toml = "0.8"
