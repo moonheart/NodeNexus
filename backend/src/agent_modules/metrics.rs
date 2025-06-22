@@ -5,7 +5,7 @@ use crate::agent_service::{
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sysinfo::{Disks, Networks, ProcessRefreshKind, System};
-use netdev;
+use netdev::interface::InterfaceType;
 use tokio::sync::mpsc;
 use tracing::{info, error, warn, debug};
 
@@ -90,39 +90,46 @@ fn collect_performance_snapshot(
     let mut delta_rx_bytes_for_rate: u64 = 0; // Delta used for BPS calculation
     let mut delta_tx_bytes_for_rate: u64 = 0; // Delta used for BPS calculation
 
-    // Try to find the default interface and get its stats
-    match netdev::get_default_interface() {
-        Ok(default_interface) => {
-            let default_if_name = default_interface.friendly_name.unwrap_or(default_interface.name);
-            let mut found_default = false;
-            // Find the default interface in the refreshed sysinfo networks list
+    // Try to find an active interface and get its stats
+    let interfaces = netdev::get_interfaces();
+    let active_interface = interfaces.into_iter().find(|iface| {
+        (!iface.ipv4.is_empty() || !iface.ipv6.is_empty())
+            && iface.gateway.is_some()
+            && iface.if_type == InterfaceType::Ethernet
+    });
+
+    match active_interface {
+        Some(interface) => {
+            let interface_name = interface.friendly_name.unwrap_or(interface.name);
+            let mut found_in_sysinfo = false;
+            // Find the interface in the refreshed sysinfo networks list
             for (if_name, data) in networks.iter() {
-                if if_name == default_if_name.as_str() {
-                    // Get cumulative totals from the default interface
+                if if_name == interface_name.as_str() {
+                    // Get cumulative totals from the interface
                     cumulative_rx_bytes = data.total_received();
                     cumulative_tx_bytes = data.total_transmitted();
-                    // Get delta values from the default interface for rate calculation
+                    // Get delta values from the interface for rate calculation
                     delta_rx_bytes_for_rate = data.received();
                     delta_tx_bytes_for_rate = data.transmitted();
-                    found_default = true;
+                    found_in_sysinfo = true;
                     debug!(
                         interface = %if_name,
                         cum_rx = cumulative_rx_bytes,
                         cum_tx = cumulative_tx_bytes,
                         delta_rx = delta_rx_bytes_for_rate,
                         delta_tx = delta_tx_bytes_for_rate,
-                        "Using default interface."
+                        "Using active interface."
                     );
                     break;
                 }
             }
-            if !found_default {
-                 warn!(interface_name = %default_if_name, "Default interface found by netdev, but not in sysinfo list. Network stats will be 0.");
-                 // Keep cumulative and delta values at 0
+            if !found_in_sysinfo {
+                warn!(interface_name = %interface_name, "Active interface found by netdev, but not in sysinfo list. Network stats will be 0.");
+                // Keep cumulative and delta values at 0
             }
         }
-        Err(e) => {
-            warn!(error = %e, "Failed to get default interface using netdev. Network stats will be 0.");
+        None => {
+            warn!("Failed to find an active network interface with a gateway. Network stats will be 0.");
             // Keep cumulative and delta values at 0
         }
     }
