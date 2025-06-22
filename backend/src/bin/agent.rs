@@ -18,6 +18,15 @@ use backend::agent_modules::service_monitor::ServiceMonitorManager;
 // Removed: use backend::agent_modules::agent_command_service_impl::create_agent_command_service;
 use backend::agent_service::AgentConfig;
 use backend::version::VERSION;
+use clap::{arg, command, Parser};
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Path to the configuration file
+    #[arg(short, long, default_value = "agent_config.toml")]
+    config: String,
+}
 
 
 const INITIAL_CLIENT_MESSAGE_ID: AtomicU64 = AtomicU64::new(1);
@@ -95,7 +104,7 @@ async fn spawn_and_monitor_core_tasks(
     let listener_agent_secret = agent_cli_config.agent_secret.clone();
     let listener_id_provider = backend::agent_modules::communication::ConnectionHandler::get_id_provider_closure(listener_id_provider_counter);
     let listener_agent_config = Arc::clone(&shared_agent_config);
-    let listener_config_path = "agent_config.toml".to_string();
+    let listener_config_path = agent_cli_config.config_path.clone();
     let listener_command_tracker = command_tracker.clone(); // Clone command_tracker for the listener task
     let listener_update_lock = update_lock.clone();
  
@@ -179,27 +188,24 @@ fn init_logging() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let args: Vec<String> = std::env::args().collect();
+    let cli_args = Args::parse();
 
-    if args.contains(&"--version".to_string()) {
-        println!("Agent version: {}", VERSION);
-        return Ok(());
-    }
     // --- Health Check Argument Handling ---
-    if args.contains(&"--health-check".to_string()) {
-        // This is a very basic health check. A real one might try to load config,
-        // or even briefly connect to the server. For now, just exiting successfully
-        // proves the binary is executable and not corrupt.
-        println!("Health check successful.");
-        std::process::exit(0);
-    }
+    // Note: Clap handles --version automatically.
+    // For a custom health check, you might add another argument to the Args struct.
+    // For this example, we'll keep it simple. If you need a dedicated health check,
+    // consider adding `#[arg(long, action = clap::ArgAction::SetTrue)] health_check: bool,`
+    // to the Args struct and then checking `if cli_args.health_check { ... }`
+
     rustls::crypto::ring::default_provider().install_default().expect("Failed to install default crypto provider");
     init_logging();
     info!(version = VERSION, "Starting agent...");
 
-    let config_path = "agent_config.toml"; // Relative to current working directory
-    let agent_cli_config = match load_cli_config(config_path) {
-        Ok(config) => config,
+    let agent_cli_config = match load_cli_config(&cli_args.config) {
+        Ok(mut config) => {
+            config.config_path = cli_args.config; // Store the config path
+            config
+        },
         Err(e) => {
             error!(error = %e, "Critical error loading configuration. Exiting.");
             return Err(e);

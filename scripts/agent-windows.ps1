@@ -32,7 +32,9 @@ param(
 
     [string]$ServerAddress,
 
-    [string]$ApiKey,
+    [string]$VpsId,
+
+    [string]$AgentSecret,
 
     [string]$DownloadUrl
 )
@@ -40,7 +42,7 @@ param(
 # --- Configuration ---
 $ErrorActionPreference = 'Stop'
 $serviceName = "NodeNexusAgent"
-$installDir = "C:\Program Files\NodeNexusAgent"
+$installDir = "C:\NodeNexusAgent"
 $githubRepo = "moonheart/NodeNexus"
 
 # --- Helper Functions ---

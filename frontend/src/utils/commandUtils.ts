@@ -5,7 +5,7 @@ const GITHUB_RAW_BASE_URL = 'https://github.com/moonheart/NodeNexus/raw/refs/hea
 const SCRIPT_URLS = {
   linux: `${GITHUB_RAW_BASE_URL}/scripts/agent.sh`,
   macos: `${GITHUB_RAW_BASE_URL}/scripts/agent-macos.sh`,
-  windows: `${GITHUB_RAW_BASE_URL}/scripts/agent.ps1`,
+  windows: `${GITHUB_RAW_BASE_URL}/scripts/agent-windows.ps1`,
 };
 
 type OsType = 'linux' | 'macos' | 'windows';
@@ -32,7 +32,7 @@ export const generateInstallCommand = (vps: Vps | VpsListItemResponse, osType: O
       return `curl -sSL ${scriptUrl} | bash -s -- --server-address ${serverAddress} --vps-id ${id} --agent-secret ${agent_secret}`;
     case 'windows':
       // Using PowerShell to download and execute the script
-      return `powershell -Command "Invoke-WebRequest -Uri ${scriptUrl} -OutFile .\\agent.ps1; .\\agent.ps1 --server-address ${serverAddress} --vps-id ${id} --agent-secret ${agent_secret}"`;
+      return `powershell -Command "Invoke-WebRequest -Uri ${scriptUrl} -OutFile .\\agent-windows.ps1; .\\agent-windows.ps1 -Command install -ServerAddress ${serverAddress} -VpsId ${id} -AgentSecret ${agent_secret}"`;
     default:
       // This case should not be reached with the given OsType union
       return 'Unsupported OS type specified.';
