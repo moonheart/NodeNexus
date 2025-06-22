@@ -55,6 +55,7 @@ tower = "0.5.2"
 winapi = { version = "0.3", features = ["winnt", "winuser", "errhandlingapi"] }
 windows-sys = { version = "0.60", features = ["Win32_Globalization"] } # Ensure this is the correct version
 codepage = "0.1"
+windows-service = "0.8"
 
 
 [build-dependencies]

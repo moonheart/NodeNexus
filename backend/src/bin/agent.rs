@@ -19,6 +19,25 @@ use backend::agent_modules::service_monitor::ServiceMonitorManager;
 use backend::agent_service::AgentConfig;
 use backend::version::VERSION;
 use clap::{arg, command, Parser};
+use tracing::{error, info, warn};
+use tracing_appender::rolling;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+#[cfg(windows)]
+use windows_service::{
+    define_windows_service,
+    service::{
+        ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus,
+        ServiceType,
+    },
+    service_control_handler::{self, ServiceControlHandlerResult},
+    service_dispatcher,
+};
+
+#[cfg(windows)]
+const SERVICE_NAME: &str = "NodeNexusAgent";
+#[cfg(windows)]
+define_windows_service!(ffi_service_main, service_main);
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -28,11 +47,9 @@ struct Args {
     config: String,
 }
 
-
 const INITIAL_CLIENT_MESSAGE_ID: AtomicU64 = AtomicU64::new(1);
 const MAX_RECONNECT_DELAY_SECONDS: u64 = 60 * 5;
 const DEFAULT_RECONNECT_DELAY_SECONDS: u64 = 5;
-
 
 async fn spawn_and_monitor_core_tasks(
     handler: ConnectionHandler,
@@ -60,7 +77,7 @@ async fn spawn_and_monitor_core_tasks(
     let metrics_agent_secret = agent_cli_config.agent_secret.clone();
     // Get the closure for ID generation
     let metrics_id_provider = backend::agent_modules::communication::ConnectionHandler::get_id_provider_closure(metrics_id_provider_counter);
-    
+
     tasks.push(tokio::spawn(async move {
         let agent_id_for_log = metrics_agent_id.clone(); // Clone for logging
         metrics_collection_loop(
@@ -70,7 +87,8 @@ async fn spawn_and_monitor_core_tasks(
             metrics_id_provider, // Pass the closure
             metrics_vps_id,
             metrics_agent_secret,
-        ).await;
+        )
+        .await;
         info!(agent_id = %agent_id_for_log, "Metrics collection loop ended.");
     }));
 
@@ -92,10 +110,11 @@ async fn spawn_and_monitor_core_tasks(
             heartbeat_id_provider, // Pass the closure
             heartbeat_vps_id,
             heartbeat_agent_secret,
-        ).await;
+        )
+        .await;
         info!(agent_id = %agent_id_for_log, "Heartbeat loop ended.");
     }));
-    
+
     // Server Listener Task
     let listener_tx = tx_to_server.clone();
     let listener_agent_id = assigned_agent_id.clone();
@@ -107,7 +126,7 @@ async fn spawn_and_monitor_core_tasks(
     let listener_config_path = agent_cli_config.config_path.clone();
     let listener_command_tracker = command_tracker.clone(); // Clone command_tracker for the listener task
     let listener_update_lock = update_lock.clone();
- 
+
     // Note: server_message_handler_loop takes ownership of in_stream
     tasks.push(tokio::spawn(async move {
         let agent_id_for_log = listener_agent_id.clone();
@@ -122,11 +141,12 @@ async fn spawn_and_monitor_core_tasks(
             listener_config_path,
             listener_command_tracker, // Pass command_tracker
             listener_update_lock,
-        ).await;
+        )
+        .await;
         info!(agent_id = %agent_id_for_log, "Server message handler loop ended.");
     }));
 
-// Service Monitor Task
+    // Service Monitor Task
     let monitor_tx = tx_to_server.clone();
     let monitor_agent_config = Arc::clone(&shared_agent_config);
     let monitor_agent_id = assigned_agent_id.clone();
@@ -153,51 +173,193 @@ async fn spawn_and_monitor_core_tasks(
     tasks
 }
 
-
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, fmt};
-use tracing_appender::rolling;
-use tracing::{info, error, warn};
-
 fn init_logging() {
+    // Get the directory of the executable
+    let exe_path = std::env::current_exe().expect("Failed to get current exe path");
+    let exe_dir = exe_path.parent().expect("Failed to get parent directory of exe");
+    let log_dir = exe_dir.join("logs");
+
     // Log to a file: JSON format, daily rotation
-    let file_appender = rolling::daily("logs", "agent.log");
+    let file_appender = rolling::daily(log_dir, "agent.log");
     let file_layer = fmt::layer()
         .with_writer(file_appender)
         .with_ansi(false) // No ANSI colors in file
         .json(); // Log as JSON
 
     // Log to stdout: human-readable format
-    let stdout_layer = fmt::layer()
-        .with_writer(std::io::stdout);
+    let stdout_layer = fmt::layer().with_writer(std::io::stdout);
 
     // Combine layers and filter based on RUST_LOG
     // Default to `info` level if RUST_LOG is not set.
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     tracing_subscriber::registry()
         .with(env_filter)
         .with(file_layer)
         .with(stdout_layer)
         .init();
-    
+
     // This allows libraries using the `log` crate to work with `tracing`
     // tracing_log::LogTracer::init().expect("Failed to set logger");
 }
 
+#[cfg(windows)]
+fn service_main(_arguments: Vec<std::ffi::OsString>) {
+    if let Err(e) = std::panic::catch_unwind(run_service) {
+        error!("Service panicked: {:?}", e);
+    }
+}
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+#[cfg(windows)]
+fn run_service() {
+    // Create a channel to be able to poll a stop event from the service worker loop.
+    let (shutdown_tx, shutdown_rx) = std::sync::mpsc::channel();
+
+    // Define a handler for service events, primarily to handle stop requests.
+    let event_handler = move |control_event| -> ServiceControlHandlerResult {
+        match control_event {
+            ServiceControl::Stop => {
+                info!("Received stop control event. Initiating shutdown...");
+                shutdown_tx.send(()).unwrap();
+                ServiceControlHandlerResult::NoError
+            }
+            // All other control events are ignored
+            _ => ServiceControlHandlerResult::NotImplemented,
+        }
+    };
+
+    // Register the handler with the service control manager.
+    let status_handle =
+        service_control_handler::register(SERVICE_NAME, event_handler).unwrap();
+
+    // Tell the SCM that the service is starting
+    status_handle
+        .set_service_status(ServiceStatus {
+            service_type: ServiceType::OWN_PROCESS,
+            current_state: ServiceState::StartPending,
+            controls_accepted: ServiceControlAccept::STOP,
+            exit_code: ServiceExitCode::Win32(0),
+            checkpoint: 0,
+            wait_hint: Duration::from_secs(5),
+            process_id: None,
+        })
+        .unwrap();
+
+    // IMPORTANT: Change the current working directory to the executable's directory
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            if let Err(e) = std::env::set_current_dir(exe_dir) {
+                error!(error = %e, "Failed to set current directory to executable's directory. Relative paths may fail.");
+            } else {
+                info!(path = %exe_dir.display(), "Successfully set working directory.");
+            }
+        }
+    }
+
+    // Spawn a new thread to run the actual agent logic.
+    let _agent_thread = std::thread::spawn(|| {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        if let Err(e) = runtime.block_on(run_agent_logic()) {
+            error!(error = %e, "Agent logic returned an error. The service will stop.");
+            // The service will stop naturally as this thread exits.
+            // For a more robust solution, we could signal the main service thread
+            // to report an error state to the SCM.
+        }
+    });
+
+    // Tell the SCM that the service is now running.
+    status_handle
+        .set_service_status(ServiceStatus {
+            service_type: ServiceType::OWN_PROCESS,
+            current_state: ServiceState::Running,
+            controls_accepted: ServiceControlAccept::STOP,
+            exit_code: ServiceExitCode::Win32(0),
+            checkpoint: 0,
+            wait_hint: Duration::from_secs(0),
+            process_id: None,
+        })
+        .unwrap();
+
+    // Wait for the shutdown signal.
+    shutdown_rx.recv().unwrap();
+    info!("Shutdown signal received. Service is stopping.");
+
+    // Tell the SCM that the service is stopping.
+    status_handle
+        .set_service_status(ServiceStatus {
+            service_type: ServiceType::OWN_PROCESS,
+            current_state: ServiceState::StopPending,
+            controls_accepted: ServiceControlAccept::empty(),
+            exit_code: ServiceExitCode::Win32(0),
+            checkpoint: 1,
+            wait_hint: Duration::from_secs(5),
+            process_id: None,
+        })
+        .unwrap();
+
+    // Here you would ideally signal the agent_thread to shut down gracefully.
+    // Since the main loop in run_agent_logic is infinite, we can't easily join it.
+    // For a robust implementation, run_agent_logic would need a shutdown channel.
+    // For now, we'll just let the service manager terminate the process.
+
+    // Tell the SCM that the service has stopped.
+    status_handle
+        .set_service_status(ServiceStatus {
+            service_type: ServiceType::OWN_PROCESS,
+            current_state: ServiceState::Stopped,
+            controls_accepted: ServiceControlAccept::empty(),
+            exit_code: ServiceExitCode::Win32(0),
+            checkpoint: 0,
+            wait_hint: Duration::from_secs(0),
+            process_id: None,
+        })
+        .unwrap();
+}
+
+fn main() {
+    #[cfg(windows)]
+    {
+        // Attempt to run as a Windows service.
+        // If `service_dispatcher::start` returns an error, it means we are not being run by the SCM.
+        // In that case, we fall back to running as a console application.
+        if service_dispatcher::start(SERVICE_NAME, ffi_service_main).is_err() {
+            info!("Not running as a service, starting in console mode.");
+            run_console_mode();
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        // On non-Windows platforms, always run in console mode.
+        run_console_mode();
+    }
+}
+
+/// Runs the agent logic as a standalone console application.
+fn run_console_mode() {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            if let Err(e) = run_agent_logic().await {
+                error!(error = %e, "An error occurred in console mode.");
+            }
+        });
+}
+
+
+async fn run_agent_logic() -> Result<(), Box<dyn Error + Send + Sync>> {
     let cli_args = Args::parse();
 
-    // --- Health Check Argument Handling ---
-    // Note: Clap handles --version automatically.
-    // For a custom health check, you might add another argument to the Args struct.
-    // For this example, we'll keep it simple. If you need a dedicated health check,
-    // consider adding `#[arg(long, action = clap::ArgAction::SetTrue)] health_check: bool,`
-    // to the Args struct and then checking `if cli_args.health_check { ... }`
-
-    rustls::crypto::ring::default_provider().install_default().expect("Failed to install default crypto provider");
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install default crypto provider");
     init_logging();
     info!(version = VERSION, "Starting agent...");
 
@@ -205,19 +367,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Ok(mut config) => {
             config.config_path = cli_args.config; // Store the config path
             config
-        },
+        }
         Err(e) => {
-            error!(error = %e, "Critical error loading configuration. Exiting.");
-            return Err(e);
+            let err_msg = format!("Critical error loading configuration: {}", e);
+            error!(error = %err_msg);
+            // Convert the error into a type that satisfies the Send + Sync bounds.
+            return Err(err_msg.into());
         }
     };
 
     // Create RunningCommandsTracker here, to be passed to tasks
     let command_tracker = Arc::new(RunningCommandsTracker::new());
     let update_lock = Arc::new(tokio::sync::Mutex::new(()));
- 
-     // --- Removed setup for Agent's own gRPC Command Service ---
-     // The agent will handle commands received over the main communication stream.
+
+    // --- Removed setup for Agent's own gRPC Command Service ---
+    // The agent will handle commands received over the main communication stream.
 
     let mut reconnect_delay_seconds = DEFAULT_RECONNECT_DELAY_SECONDS;
 
@@ -239,22 +403,33 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 reconnect_delay_seconds = DEFAULT_RECONNECT_DELAY_SECONDS; // Reset delay on successful connection
 
                 // Create the shared, mutable configuration state
-                let shared_agent_config = Arc::new(RwLock::new(handler.initial_agent_config.clone()));
+                let shared_agent_config =
+                    Arc::new(RwLock::new(handler.initial_agent_config.clone()));
                 // Pass command_tracker to spawn_and_monitor_core_tasks
-                let task_handles = spawn_and_monitor_core_tasks(handler, &agent_cli_config, shared_agent_config, command_tracker.clone(), update_lock.clone()).await;
- 
-                 // Monitor tasks. If any of them exit, it signifies a problem, and we should attempt to reconnect.
-                 if !task_handles.is_empty() {
+                let task_handles = spawn_and_monitor_core_tasks(
+                    handler,
+                    &agent_cli_config,
+                    shared_agent_config,
+                    command_tracker.clone(),
+                    update_lock.clone(),
+                )
+                .await;
+
+                // Monitor tasks. If any of them exit, it signifies a problem, and we should attempt to reconnect.
+                if !task_handles.is_empty() {
                     // futures::future::select_all waits for the first task to complete.
                     // The result includes the completed task's output, its index, and the remaining futures.
-                    let (first_task_result, _index, remaining_handles) = futures::future::select_all(task_handles).await;
-                    
+                    let (first_task_result, _index, remaining_handles) =
+                        futures::future::select_all(task_handles).await;
+
                     match first_task_result {
-                        Ok(_) => { // Task completed without panic
+                        Ok(_) => {
+                            // Task completed without panic
                             // This is expected if a task like heartbeat_loop or server_message_handler_loop exits due to error (e.g., send fail, stream break)
                             warn!(agent_id = %assigned_agent_id_log, "A core task finished. This usually indicates a connection issue or an internal task error.");
                         }
-                        Err(join_error) => { // Task panicked
+                        Err(join_error) => {
+                            // Task panicked
                             error!(agent_id = %assigned_agent_id_log, error = ?join_error, "A core task panicked. This is a critical issue.");
                             // Depending on the error, might want a longer backoff or specific error handling.
                         }
@@ -266,21 +441,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         handle.abort();
                     }
                 } else {
-                     error!(agent_id = %assigned_agent_id_log, "No tasks were spawned, which is unexpected after successful handshake. This should not happen.");
-                     // This case implies an issue in spawn_and_monitor_core_tasks or ConnectionHandler::split_for_tasks
+                    error!(agent_id = %assigned_agent_id_log, "No tasks were spawned, which is unexpected after successful handshake. This should not happen.");
+                    // This case implies an issue in spawn_and_monitor_core_tasks or ConnectionHandler::split_for_tasks
                 }
-                
-                warn!(agent_id = %assigned_agent_id_log, "A task ended or an issue occurred. Preparing to reconnect...");
 
+                warn!(agent_id = %assigned_agent_id_log, "A task ended or an issue occurred. Preparing to reconnect...");
             }
             Err(e) => {
                 error!(error = %e, "Failed to connect or handshake. Will retry.");
                 // Error already logged by connect_and_handshake or load_cli_config
             }
         }
-        
+
         // Exponential backoff for retrying connection
-        info!(delay_seconds = reconnect_delay_seconds, "Sleeping before next connection attempt.");
+        info!(
+            delay_seconds = reconnect_delay_seconds,
+            "Sleeping before next connection attempt."
+        );
         tokio::time::sleep(Duration::from_secs(reconnect_delay_seconds)).await;
         reconnect_delay_seconds = (reconnect_delay_seconds * 2).min(MAX_RECONNECT_DELAY_SECONDS);
     }
