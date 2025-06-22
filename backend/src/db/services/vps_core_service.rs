@@ -10,7 +10,7 @@ use tracing::warn;
 
 use crate::db::entities::{vps, vps_tag};
 use crate::db::services::vps_renewal_service::{
-    // create_or_update_vps_renewal_info, // Removed unused import
+    create_or_update_vps_renewal_info,
     VpsRenewalDataInput,
 };
 
@@ -181,16 +181,9 @@ pub async fn update_vps(
             }
 
             // 3. If renewal_info_input is provided, update renewal info
-            // TODO: Refactor create_or_update_vps_renewal_info to accept &DatabaseTransaction
-            if let Some(_renewal_input) = renewal_info_input { // Renamed renewal_input
-                 // Placeholder: This function needs to be adapted for SeaORM and transactions
-                 // For now, assume it works with a transaction if adapted.
-                 // create_or_update_vps_renewal_info_sea_orm(txn, vps_id, &_renewal_input).await?;
-                renewal_info_changed = true; // Assume change if input provided
-                // This part requires vps_renewal_service to be refactored.
-                // For now, we'll skip the actual call to avoid breaking compilation here.
-                 warn!("TODO: Call refactored create_or_update_vps_renewal_info with SeaORM transaction");
-
+            if let Some(renewal_input) = renewal_info_input {
+                create_or_update_vps_renewal_info(txn, vps_id, &renewal_input).await?;
+                renewal_info_changed = true;
             }
 
             Ok(vps_table_changed || tags_changed || renewal_info_changed)

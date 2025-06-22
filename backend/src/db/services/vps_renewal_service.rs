@@ -47,13 +47,14 @@ fn calculate_next_renewal_date_internal(
 /// Creates or updates the renewal information for a VPS.
 /// This function is expected to be called within an existing database transaction.
 pub async fn create_or_update_vps_renewal_info(
-    txn: &sea_orm::DatabaseTransaction, // Changed
+    txn: &sea_orm::DatabaseTransaction,
     vps_id: i32,
     input: &VpsRenewalDataInput,
-) -> Result<(), DbErr> { // Changed
+) -> Result<(), DbErr> {
     let now = Utc::now();
     let mut calculated_next_renewal_date = input.next_renewal_date;
 
+    // Calculate next renewal date if not provided
     if calculated_next_renewal_date.is_none() {
         if let Some(cycle) = &input.renewal_cycle {
             let reference_date_opt = input.last_renewal_date.or(input.service_start_date);
@@ -67,47 +68,56 @@ pub async fn create_or_update_vps_renewal_info(
         }
     }
 
-    let existing_info_model = vps_renewal_info::Entity::find_by_id(vps_id)
-        .one(txn)
-        .await?;
+    let existing_info_model = vps_renewal_info::Entity::find_by_id(vps_id).one(txn).await?;
 
-    let mut reminder_active = existing_info_model.as_ref().and_then(|ei| ei.reminder_active).unwrap_or(false);
-    let mut last_reminder_generated_at = existing_info_model.as_ref().and_then(|ei| ei.last_reminder_generated_at);
+    if let Some(existing) = existing_info_model {
+        // --- UPDATE PATH ---
+        let mut reminder_active = existing.reminder_active.unwrap_or(false);
+        let mut last_reminder_generated_at = existing.last_reminder_generated_at;
 
-    if let Some(existing) = &existing_info_model {
+        // If next renewal date changes, reset reminder status
         if existing.next_renewal_date != calculated_next_renewal_date {
             reminder_active = false;
             last_reminder_generated_at = None;
         }
-    } else if calculated_next_renewal_date.is_some() {
-        // New entry and next_renewal_date is calculated, so reset reminder state
-        reminder_active = false;
-        last_reminder_generated_at = None;
-    }
-    
-    let active_model = vps_renewal_info::ActiveModel {
-        vps_id: Set(vps_id), // PK, always set
-        renewal_cycle: Set(input.renewal_cycle.clone()),
-        renewal_cycle_custom_days: Set(input.renewal_cycle_custom_days),
-        renewal_price: Set(input.renewal_price),
-        renewal_currency: Set(input.renewal_currency.clone()),
-        next_renewal_date: Set(calculated_next_renewal_date),
-        last_renewal_date: Set(input.last_renewal_date),
-        service_start_date: Set(input.service_start_date),
-        payment_method: Set(input.payment_method.clone()),
-        auto_renew_enabled: Set(input.auto_renew_enabled),
-        renewal_notes: Set(input.renewal_notes.clone()),
-        reminder_active: Set(Some(reminder_active)),
-        last_reminder_generated_at: Set(last_reminder_generated_at),
-        created_at: if existing_info_model.is_some() { NotSet } else { Set(now) },
-        updated_at: Set(now),
-    };
 
-    // Upsert behavior: insert or update on conflict
-    // SeaORM's save() method handles this:
-    // If the primary key is set and exists, it updates. Otherwise, it inserts.
-    // Since vps_id is the PK and we are setting it, this will effectively be an upsert.
-    active_model.save(txn).await?;
+        let mut active_model = existing.into_active_model();
+        active_model.renewal_cycle = Set(input.renewal_cycle.clone());
+        active_model.renewal_cycle_custom_days = Set(input.renewal_cycle_custom_days);
+        active_model.renewal_price = Set(input.renewal_price);
+        active_model.renewal_currency = Set(input.renewal_currency.clone());
+        active_model.next_renewal_date = Set(calculated_next_renewal_date);
+        active_model.last_renewal_date = Set(input.last_renewal_date);
+        active_model.service_start_date = Set(input.service_start_date);
+        active_model.payment_method = Set(input.payment_method.clone());
+        active_model.auto_renew_enabled = Set(input.auto_renew_enabled);
+        active_model.renewal_notes = Set(input.renewal_notes.clone());
+        active_model.reminder_active = Set(Some(reminder_active));
+        active_model.last_reminder_generated_at = Set(last_reminder_generated_at);
+        active_model.updated_at = Set(now);
+        
+        active_model.update(txn).await?;
+    } else {
+        // --- INSERT PATH ---
+        let active_model = vps_renewal_info::ActiveModel {
+            vps_id: Set(vps_id),
+            renewal_cycle: Set(input.renewal_cycle.clone()),
+            renewal_cycle_custom_days: Set(input.renewal_cycle_custom_days),
+            renewal_price: Set(input.renewal_price),
+            renewal_currency: Set(input.renewal_currency.clone()),
+            next_renewal_date: Set(calculated_next_renewal_date),
+            last_renewal_date: Set(input.last_renewal_date),
+            service_start_date: Set(input.service_start_date),
+            payment_method: Set(input.payment_method.clone()),
+            auto_renew_enabled: Set(input.auto_renew_enabled),
+            renewal_notes: Set(input.renewal_notes.clone()),
+            reminder_active: Set(Some(false)), // Default for new entries
+            last_reminder_generated_at: Set(None), // Default for new entries
+            created_at: Set(now),
+            updated_at: Set(now),
+        };
+        active_model.insert(txn).await?;
+    }
 
     Ok(())
 }
