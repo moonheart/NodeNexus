@@ -2,26 +2,25 @@ import React, { useState, useEffect } from 'react';
 import { createVps } from '../services/vpsService';
 import type { Vps } from '../types';
 import axios from 'axios';
+import CommandCopyUI from './CommandCopyUI';
+
 interface CreateVpsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onVpsCreated?: (newVps: Vps) => void; // Optional callback after successful creation
+  onVpsCreated?: () => void;
 }
 
 const CreateVpsModal: React.FC<CreateVpsModalProps> = ({ isOpen, onClose, onVpsCreated }) => {
   const [vpsName, setVpsName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [agentConfigToCopy, setAgentConfigToCopy] = useState<string | null>(null);
+  const [createdVps, setCreatedVps] = useState<Vps | null>(null);
 
-  // Reset form when modal is opened or closed
   useEffect(() => {
     if (!isOpen) {
       setVpsName('');
       setError(null);
-      setSuccessMessage(null);
-      setAgentConfigToCopy(null);
+      setCreatedVps(null);
       setIsLoading(false);
     }
   }, [isOpen]);
@@ -30,8 +29,6 @@ const CreateVpsModal: React.FC<CreateVpsModalProps> = ({ isOpen, onClose, onVpsC
     event.preventDefault();
     setIsLoading(true);
     setError(null);
-    setSuccessMessage(null);
-    setAgentConfigToCopy(null);
 
     if (!vpsName.trim()) {
       setError('VPS名称不能为空。');
@@ -43,35 +40,18 @@ const CreateVpsModal: React.FC<CreateVpsModalProps> = ({ isOpen, onClose, onVpsC
       const payload: import('../services/vpsService').CreateVpsPayload = {
         name: vpsName.trim(),
       };
-
-      const newVps: Vps = await createVps(payload);
-      setSuccessMessage(`VPS "${newVps.name}" 创建成功！ID: ${newVps.id}`);
-      
-      const configContent = `# Agent Configuration for VPS: ${newVps.name} (ID: ${newVps.id})
-# 请将此内容保存到 Agent 的 config.toml 文件中
-# 并确保将 YOUR_SERVER_IP_OR_DOMAIN:50051 替换为实际的服务器gRPC地址和端口
-
-server_address = "http://YOUR_SERVER_IP_OR_DOMAIN:50051"
-vps_id = ${newVps.id}
-agent_secret = "${newVps.agent_secret}"
-`;
-      setAgentConfigToCopy(configContent);
+      const newVps = await createVps(payload);
+      setCreatedVps(newVps);
       setVpsName(''); // Clear input
 
       if (onVpsCreated) {
-        onVpsCreated(newVps);
+        onVpsCreated();
       }
-      // Optionally close modal on success after a delay, or let user close it.
-      // setTimeout(onClose, 3000); // Example: close after 3 seconds
     } catch (err: unknown) {
       console.error('Failed to create VPS:', err);
       let errorMessage = '创建VPS失败，请稍后再试。';
-      if (axios.isAxiosError(err)) {
-        if (err.response?.data?.error) {
-          errorMessage = err.response.data.error;
-        } else if (err.message) {
-          errorMessage = err.message;
-        }
+      if (axios.isAxiosError(err) && err.response?.data?.error) {
+        errorMessage = err.response.data.error;
       } else if (err instanceof Error) {
         errorMessage = err.message;
       }
@@ -81,16 +61,19 @@ agent_secret = "${newVps.agent_secret}"
     }
   };
 
-  const handleCopyToClipboard = async () => {
-    if (agentConfigToCopy) {
-      try {
-        await navigator.clipboard.writeText(agentConfigToCopy);
-        setSuccessMessage( (prev) => prev ? prev + ' Agent配置已复制到剪贴板！' : 'Agent配置已复制到剪贴板！');
-      } catch (err) {
-        console.error('Failed to copy agent config:', err);
-        setError('无法复制Agent配置，请手动复制。');
-      }
-    }
+  const renderSuccessView = () => {
+    if (!createdVps) return null;
+
+    return (
+      <div>
+        <h3 style={{ marginTop: '0', color: 'green' }}>VPS "{createdVps.name}" 创建成功!</h3>
+        <p>请为您的服务器选择对应的操作系统，并复制安装命令来安装 Agent：</p>
+        <CommandCopyUI vps={createdVps} />
+        <button onClick={onClose} style={{ marginTop: '20px', padding: '8px 12px', cursor: 'pointer', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '4px' }}>
+          关闭
+        </button>
+      </div>
+    );
   };
 
   if (!isOpen) {
@@ -112,7 +95,7 @@ agent_secret = "${newVps.agent_secret}"
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
         </div>
 
-        {!agentConfigToCopy ? (
+        {!createdVps ? (
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: '15px' }}>
               <label htmlFor="vpsNameModal" style={{ display: 'block', marginBottom: '5px' }}>VPS 名称:</label>
@@ -133,21 +116,7 @@ agent_secret = "${newVps.agent_secret}"
             </button>
           </form>
         ) : (
-          <div>
-            <h3 style={{ marginTop: '0', color: 'green' }}>VPS 创建成功!</h3>
-            {successMessage && !successMessage.includes('Agent配置已复制到剪贴板！') && <p style={{ color: 'green'}}>{successMessage}</p>}
-            <p>请将以下配置保存到您的 Agent 的 `agent_config.toml` 文件中，并根据实际情况修改 `server_address`：</p>
-            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', backgroundColor: '#f0f0f0', padding: '10px', borderRadius: '4px', border: '1px solid #ddd', maxHeight: '150px', overflowY: 'auto' }}>
-              <code>{agentConfigToCopy}</code>
-            </pre>
-            <button onClick={handleCopyToClipboard} style={{ marginTop: '10px', padding: '8px 12px', cursor: 'pointer', marginRight: '10px' }}>
-              复制Agent配置
-            </button>
-            {successMessage && successMessage.includes('Agent配置已复制到剪贴板！') && <span style={{ color: 'green' }}>已复制!</span>}
-            <button onClick={onClose} style={{ marginTop: '10px', padding: '8px 12px', cursor: 'pointer' }}>
-              关闭
-            </button>
-          </div>
+          renderSuccessView()
         )}
       </div>
     </div>

@@ -4,6 +4,7 @@ import type { VpsListItemResponse } from '../types';
 import {
   PencilIcon,
   RefreshCwIcon,
+  ClipboardIcon,
 } from './Icons';
 import {
   calculateRenewalInfo,
@@ -13,12 +14,13 @@ import {
 interface ServerManagementTableRowProps {
   server: VpsListItemResponse;
   onEdit: (server: VpsListItemResponse) => void;
+  onCopyCommand: (server: VpsListItemResponse) => void;
   onTriggerUpdate: (vpsId: number) => void;
   onSelectionChange: (vpsId: number, isSelected: boolean) => void;
   isSelected: boolean;
 }
 
-const ServerManagementTableRow: React.FC<ServerManagementTableRowProps> = ({ server, onEdit, onTriggerUpdate, onSelectionChange, isSelected }) => {
+const ServerManagementTableRow: React.FC<ServerManagementTableRowProps> = ({ server, onEdit, onCopyCommand, onTriggerUpdate, onSelectionChange, isSelected }) => {
   const { tableRowBadgeClass, tableRowTextClass, icon } = getVpsStatusAppearance(server.status);
 
 
@@ -32,7 +34,7 @@ const ServerManagementTableRow: React.FC<ServerManagementTableRowProps> = ({ ser
   
   return (
     <tr className="bg-white hover:bg-slate-50 transition-colors duration-150 border-b border-slate-200 last:border-b-0">
-      <td className="px-4 py-3">
+      <td className="px-4 py-3 w-8">
         <input
           type="checkbox"
           className="h-4 w-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"
@@ -96,6 +98,15 @@ const ServerManagementTableRow: React.FC<ServerManagementTableRowProps> = ({ ser
          >
            <RefreshCwIcon className={`w-3.5 h-3.5 mr-1 ${server.status === 'online' ? '' : 'text-slate-400'}`} />
            更新
+         </button>
+         <button
+           onClick={() => onCopyCommand(server)}
+           className="text-slate-600 hover:text-slate-800 font-medium text-xs py-1 px-3 rounded-md hover:bg-slate-100 transition-colors flex items-center"
+           aria-label={`Copy install command for ${server.name}`}
+           title="Copy install command"
+         >
+           <ClipboardIcon className="w-3.5 h-3.5 mr-1" />
+           复制命令
          </button>
        </div>
       </td>

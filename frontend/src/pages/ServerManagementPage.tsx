@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import EditVpsModal from '../components/EditVpsModal';
 import CreateVpsModal from '../components/CreateVpsModal';
-import type { Vps, VpsListItemResponse, Tag } from '../types';
+import CopyCommandModal from '../components/CopyCommandModal';
+import type { VpsListItemResponse, Tag } from '../types';
 import { useServerListStore, type ServerListState, type ConnectionStatus } from '../store/serverListStore';
 import { useShallow } from 'zustand/react/shallow';
 import {
@@ -48,6 +49,8 @@ const ServerManagementPage: React.FC = () => {
   const [isCreateVpsModalOpen, setIsCreateVpsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingVps, setEditingVps] = useState<VpsListItemResponse | null>(null);
+  const [vpsForCommand, setVpsForCommand] = useState<VpsListItemResponse | null>(null);
+  const [isCopyCommandModalOpen, setIsCopyCommandModalOpen] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<string>('ALL');
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<Set<number>>(new Set());
@@ -75,6 +78,7 @@ const ServerManagementPage: React.FC = () => {
     };
     fetchTags();
   }, []);
+
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -109,14 +113,19 @@ const ServerManagementPage: React.FC = () => {
   // --- Modal Handlers ---
   const handleOpenCreateVpsModal = () => setIsCreateVpsModalOpen(true);
   const handleCloseCreateVpsModal = () => setIsCreateVpsModalOpen(false);
-  const handleVpsCreated = (newVps: Vps) => {
-    console.log('VPS Created:', newVps);
+  const handleVpsCreated = () => {
+    console.log('VPS creation successful, closing modal.');
     handleCloseCreateVpsModal();
   };
 
   const handleOpenEditModal = (server: VpsListItemResponse) => {
     setEditingVps(server);
     setIsEditModalOpen(true);
+  };
+
+  const handleOpenCopyCommandModal = (server: VpsListItemResponse) => {
+    setVpsForCommand(server);
+    setIsCopyCommandModalOpen(true);
   };
 
   const handleCloseEditModal = () => {
@@ -127,6 +136,11 @@ const ServerManagementPage: React.FC = () => {
   const handleVpsUpdated = () => {
     console.log('VPS updated, store should refresh via WebSocket.');
     handleCloseEditModal();
+  };
+
+  const handleCloseCopyCommandModal = () => {
+    setIsCopyCommandModalOpen(false);
+    setVpsForCommand(null);
   };
 
   const handleTriggerUpdate = async (vpsIds: number[]) => {
@@ -175,6 +189,7 @@ const ServerManagementPage: React.FC = () => {
       </div>
       <CreateVpsModal isOpen={isCreateVpsModalOpen} onClose={handleCloseCreateVpsModal} onVpsCreated={handleVpsCreated} />
       <EditVpsModal isOpen={isEditModalOpen} onClose={handleCloseEditModal} vps={editingVps} allVps={vpsList} onVpsUpdated={handleVpsUpdated} />
+      <CopyCommandModal isOpen={isCopyCommandModalOpen} onClose={handleCloseCopyCommandModal} vps={vpsForCommand} />
 
       {/* Connection Status */}
       {statusMessage && <div className={`p-3 rounded-md text-sm text-center ${connectionStatus === 'error' || connectionStatus === 'permanently_failed' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{statusMessage}</div>}
@@ -296,7 +311,7 @@ const ServerManagementPage: React.FC = () => {
             <table className="w-full min-w-[1000px]">
               <thead className="bg-slate-100">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-1/12">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-8">
                     <input
                       type="checkbox"
                       className="h-4 w-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"
@@ -328,6 +343,7 @@ const ServerManagementPage: React.FC = () => {
                     key={server.id}
                     server={server}
                     onEdit={handleOpenEditModal}
+                    onCopyCommand={handleOpenCopyCommandModal}
                     onTriggerUpdate={(vpsId) => handleTriggerUpdate([vpsId])}
                     isSelected={selectedVpsIds.has(server.id)}
                     onSelectionChange={(vpsId, isSelected) => {
