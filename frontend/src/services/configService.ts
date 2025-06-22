@@ -14,4 +14,11 @@ export const retryConfigPush = async (vpsId: number): Promise<void> => {
     await apiClient.post(`/vps/${vpsId}/retry-config`);
 };
 
-// We can add functions for VPS-specific overrides here later
+export const pushConfig = async (vpsId: number): Promise<void> => {
+    await apiClient.post(`/vps/${vpsId}/push-config`);
+};
+
+export const previewConfig = async (vpsId: number): Promise<AgentConfig> => {
+    const response = await apiClient.get<AgentConfig>(`/vps/${vpsId}/config-preview`);
+    return response.data;
+};

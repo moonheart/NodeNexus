@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getGlobalConfig, updateGlobalConfig, retryConfigPush } from '../services/configService';
+import { getGlobalConfig, updateGlobalConfig, retryConfigPush, pushConfig, previewConfig } from '../services/configService';
 import { getAllAlertRules, createAlertRule, updateAlertRule, deleteAlertRule, updateAlertRuleStatus } from '../services/alertService';
 import { getAllVpsListItems } from '../services/vpsService';
 import type { AgentConfig, VpsListItemResponse, AlertRule, CreateAlertRulePayload, UpdateAlertRulePayload } from '../types';
@@ -31,6 +31,11 @@ const SettingsPage: React.FC = () => {
     const [isSaving, setIsSaving] = useState(false); // For global config
     const { servers } = useServerListStore(); // For VPS config status list
     const [retrying, setRetrying] = useState<number | null>(null); // For VPS config retry
+    const [pushing, setPushing] = useState<number | null>(null);
+    const [previewing, setPreviewing] = useState<number | null>(null);
+    const [previewContent, setPreviewContent] = useState<string>('');
+    const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+
 
     // States for Alert Rules
     const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
@@ -107,6 +112,33 @@ const SettingsPage: React.FC = () => {
             alert(`Error: Failed to retry config push for VPS ID: ${vpsId}`);
         } finally {
             setRetrying(null);
+        }
+    };
+
+    const handlePushConfig = async (vpsId: number) => {
+        setPushing(vpsId);
+        try {
+            await pushConfig(vpsId);
+            toast.success(`Configuration push triggered for VPS ID: ${vpsId}`);
+        } catch (err) {
+            console.error(`Failed to trigger config push for VPS ID: ${vpsId}`, err);
+            toast.error(`Error: Failed to trigger config push for VPS ID: ${vpsId}`);
+        } finally {
+            setPushing(null);
+        }
+    };
+
+    const handlePreviewConfig = async (vpsId: number) => {
+        setPreviewing(vpsId);
+        try {
+            const config = await previewConfig(vpsId);
+            setPreviewContent(JSON.stringify(config, null, 2));
+            setIsPreviewModalOpen(true);
+        } catch (err) {
+            console.error(`Failed to preview config for VPS ID: ${vpsId}`, err);
+            toast.error(`Error: Failed to preview config for VPS ID: ${vpsId}`);
+        } finally {
+            setPreviewing(null);
         }
     };
 
@@ -307,7 +339,21 @@ const SettingsPage: React.FC = () => {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><ConfigStatusBadge status={vps.configStatus} /></td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vps.lastConfigUpdateAt ? new Date(vps.lastConfigUpdateAt).toLocaleString() : 'N/A'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">{vps.lastConfigError || 'None'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                                        <button
+                                            onClick={() => handlePreviewConfig(vps.id)}
+                                            disabled={previewing === vps.id}
+                                            className="text-blue-600 hover:text-blue-900 disabled:text-gray-400"
+                                        >
+                                            {previewing === vps.id ? 'Loading...' : 'Preview'}
+                                        </button>
+                                        <button
+                                            onClick={() => handlePushConfig(vps.id)}
+                                            disabled={pushing === vps.id}
+                                            className="text-green-600 hover:text-green-900 disabled:text-gray-400"
+                                        >
+                                            {pushing === vps.id ? 'Pushing...' : 'Push Config'}
+                                        </button>
                                         {vps.configStatus === 'failed' && (
                                             <button
                                                 onClick={() => handleRetry(vps.id)}
@@ -324,6 +370,30 @@ const SettingsPage: React.FC = () => {
                     </table>
                 </div>
             </section>
+
+            {isPreviewModalOpen && (
+                <div className="fixed inset-0 bg-gray-600/50 overflow-y-auto h-full w-full z-50">
+                    <div className="relative top-20 mx-auto p-5 border w-1/2 shadow-lg rounded-md bg-white">
+                        <div className="mt-3 text-center">
+                            <h3 className="text-lg leading-6 font-medium text-gray-900">Configuration Preview</h3>
+                            <div className="mt-2 px-7 py-3">
+                                <pre className="bg-gray-100 p-4 rounded-md text-left text-sm overflow-auto max-h-96">
+                                    <code>{previewContent}</code>
+                                </pre>
+                            </div>
+                            <div className="items-center px-4 py-3">
+                                <button
+                                    id="ok-btn"
+                                    onClick={() => setIsPreviewModalOpen(false)}
+                                    className="px-4 py-2 bg-gray-800 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

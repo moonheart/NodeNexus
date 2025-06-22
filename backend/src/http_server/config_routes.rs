@@ -23,6 +23,8 @@ pub fn create_vps_config_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/{id}/config-override", put(update_vps_config_override))
         .route("/{id}/retry-config", post(retry_config_push))
+        .route("/{id}/push-config", post(retry_config_push)) // Re-use retry logic for explicit push
+        .route("/{id}/config-preview", get(preview_vps_config))
 }
 
 #[axum::debug_handler]
@@ -101,52 +103,23 @@ async fn retry_config_push(
     Ok(StatusCode::OK)
 }
 
+#[axum::debug_handler]
+async fn preview_vps_config(
+    State(app_state): State<Arc<AppState>>,
+    Path(vps_id): Path<i32>,
+) -> Result<Json<AgentConfig>, AppError> {
+    let effective_config = get_effective_vps_config(app_state, vps_id).await?;
+    Ok(Json(effective_config))
+}
+
 /// Gets the effective config for a VPS and pushes it to the agent if connected.
 pub async fn push_config_to_vps(
     app_state: Arc<AppState>,
     vps_id: i32,
-) -> Result<(), AppError> { // Changed return type
-    // 1. Get global config
-    let global_config_setting_model: setting::Model = db_services::get_setting(&app_state.db_pool, "global_agent_config")
-        .await
-        .map_err(|db_err| AppError::DatabaseError(db_err.to_string()))?
-        .ok_or_else(|| AppError::NotFound("Global agent config not found.".to_string()))?;
-    
-    let mut effective_config: AgentConfig = serde_json::from_value(global_config_setting_model.value)
-        .map_err(|e| AppError::ServerError(format!("Failed to parse global config: {}", e)))?;
+) -> Result<(), AppError> {
+    let effective_config = get_effective_vps_config(app_state.clone(), vps_id).await?;
 
-    // 2. Get VPS and merge override if it exists
-    // Assuming get_vps_by_id now returns Result<Option<vps::Model>, DbErr>
-    let vps_model: vps::Model = db_services::get_vps_by_id(&app_state.db_pool, vps_id)
-        .await
-        .map_err(|db_err| AppError::DatabaseError(db_err.to_string()))?
-        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
-
-    if let Some(override_json) = vps_model.agent_config_override { // Use vps_model
-        let override_config: AgentConfig = serde_json::from_value(override_json)
-            .map_err(|e| AppError::ServerError(format!("Failed to parse override config: {}", e)))?;
-        
-        // This is a simple merge. A more sophisticated merge might be needed.
-        if override_config.metrics_collect_interval_seconds > 0 { effective_config.metrics_collect_interval_seconds = override_config.metrics_collect_interval_seconds; }
-        if override_config.metrics_upload_batch_max_size > 0 { effective_config.metrics_upload_batch_max_size = override_config.metrics_upload_batch_max_size; }
-        if override_config.metrics_upload_interval_seconds > 0 { effective_config.metrics_upload_interval_seconds = override_config.metrics_upload_interval_seconds; }
-        if override_config.docker_info_collect_interval_seconds > 0 { effective_config.docker_info_collect_interval_seconds = override_config.docker_info_collect_interval_seconds; }
-        if override_config.docker_info_upload_interval_seconds > 0 { effective_config.docker_info_upload_interval_seconds = override_config.docker_info_upload_interval_seconds; }
-        if override_config.generic_metrics_upload_batch_max_size > 0 { effective_config.generic_metrics_upload_batch_max_size = override_config.generic_metrics_upload_batch_max_size; }
-        if override_config.generic_metrics_upload_interval_seconds > 0 { effective_config.generic_metrics_upload_interval_seconds = override_config.generic_metrics_upload_interval_seconds; }
-        if !override_config.log_level.is_empty() { effective_config.log_level = override_config.log_level; }
-        if override_config.heartbeat_interval_seconds > 0 { effective_config.heartbeat_interval_seconds = override_config.heartbeat_interval_seconds; }
-        effective_config.feature_flags.extend(override_config.feature_flags);
-    }
-
-    // 3. Get service monitor tasks for this agent
-    let tasks = db_services::service_monitor_service::get_tasks_for_agent(&app_state.db_pool, vps_id)
-        .await
-        .map_err(|e| AppError::DatabaseError(format!("Failed to get monitor tasks for agent {}: {}", vps_id, e)))?;
-    effective_config.service_monitor_tasks = tasks;
-
-
-    // 4. Find agent and send message
+    // Find agent and send message
     let agent_state = {
         let agents_guard = app_state.connected_agents.lock().await;
         agents_guard.find_by_vps_id(vps_id)
@@ -184,4 +157,50 @@ pub async fn push_config_to_vps(
     }
 
     Ok(())
+}
+
+/// Calculates the effective configuration for a given VPS.
+pub async fn get_effective_vps_config(
+    app_state: Arc<AppState>,
+    vps_id: i32,
+) -> Result<AgentConfig, AppError> {
+    // 1. Get global config
+    let global_config_setting_model: setting::Model = db_services::get_setting(&app_state.db_pool, "global_agent_config")
+        .await
+        .map_err(|db_err| AppError::DatabaseError(db_err.to_string()))?
+        .ok_or_else(|| AppError::NotFound("Global agent config not found.".to_string()))?;
+    
+    let mut effective_config: AgentConfig = serde_json::from_value(global_config_setting_model.value)
+        .map_err(|e| AppError::ServerError(format!("Failed to parse global config: {}", e)))?;
+
+    // 2. Get VPS and merge override if it exists
+    let vps_model: vps::Model = db_services::get_vps_by_id(&app_state.db_pool, vps_id)
+        .await
+        .map_err(|db_err| AppError::DatabaseError(db_err.to_string()))?
+        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
+
+    if let Some(override_json) = vps_model.agent_config_override {
+        let override_config: AgentConfig = serde_json::from_value(override_json)
+            .map_err(|e| AppError::ServerError(format!("Failed to parse override config: {}", e)))?;
+        
+        // This is a simple merge. A more sophisticated merge might be needed.
+        if override_config.metrics_collect_interval_seconds > 0 { effective_config.metrics_collect_interval_seconds = override_config.metrics_collect_interval_seconds; }
+        if override_config.metrics_upload_batch_max_size > 0 { effective_config.metrics_upload_batch_max_size = override_config.metrics_upload_batch_max_size; }
+        if override_config.metrics_upload_interval_seconds > 0 { effective_config.metrics_upload_interval_seconds = override_config.metrics_upload_interval_seconds; }
+        if override_config.docker_info_collect_interval_seconds > 0 { effective_config.docker_info_collect_interval_seconds = override_config.docker_info_collect_interval_seconds; }
+        if override_config.docker_info_upload_interval_seconds > 0 { effective_config.docker_info_upload_interval_seconds = override_config.docker_info_upload_interval_seconds; }
+        if override_config.generic_metrics_upload_batch_max_size > 0 { effective_config.generic_metrics_upload_batch_max_size = override_config.generic_metrics_upload_batch_max_size; }
+        if override_config.generic_metrics_upload_interval_seconds > 0 { effective_config.generic_metrics_upload_interval_seconds = override_config.generic_metrics_upload_interval_seconds; }
+        if !override_config.log_level.is_empty() { effective_config.log_level = override_config.log_level; }
+        if override_config.heartbeat_interval_seconds > 0 { effective_config.heartbeat_interval_seconds = override_config.heartbeat_interval_seconds; }
+        effective_config.feature_flags.extend(override_config.feature_flags);
+    }
+
+    // 3. Get service monitor tasks for this agent
+    let tasks = db_services::service_monitor_service::get_tasks_for_agent(&app_state.db_pool, vps_id)
+        .await
+        .map_err(|e| AppError::DatabaseError(format!("Failed to get monitor tasks for agent {}: {}", vps_id, e)))?;
+    effective_config.service_monitor_tasks = tasks;
+
+    Ok(effective_config)
 }
