@@ -21,10 +21,14 @@ use crate::db::services::{AlertService, BatchCommandManager}; // Added BatchComm
 use crate::server::command_dispatcher::CommandDispatcher; // Added CommandDispatcher
 use crate::server::result_broadcaster::{ResultBroadcaster, BatchCommandUpdateMsg}; // Added ResultBroadcaster
 use rust_embed::RustEmbed;
-use crate::axum_embed::ServeEmbed;
+use crate::axum_embed::{ServeEmbed, FallbackBehavior};
 
 pub fn create_static_file_service() -> ServeEmbed<Assets> {
-    ServeEmbed::<Assets>::new()
+    ServeEmbed::<Assets>::with_parameters(
+        Some("index.html".to_string()),
+        FallbackBehavior::Ok,
+        Some("index.html".to_string()),
+    )
 }
 
 pub mod auth_logic;
