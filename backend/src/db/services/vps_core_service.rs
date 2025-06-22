@@ -306,3 +306,13 @@ pub async fn get_owned_vps_from_ids(
         .all(db)
         .await
 }
+
+/// Deletes a VPS by its ID.
+/// Note: This performs a hard delete. Associated data should be handled via database constraints (e.g., CASCADE) or manually.
+pub async fn delete_vps(
+    db: &DatabaseConnection,
+    vps_id: i32,
+) -> Result<u64, DbErr> {
+    let result = vps::Entity::delete_by_id(vps_id).exec(db).await?;
+    Ok(result.rows_affected)
+}

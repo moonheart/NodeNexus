@@ -145,43 +145,10 @@ export const useServerListStore = create<ServerListState>()(
     },
 
     _handleWebSocketMessage: (data) => {
-        const isAuthenticated = useAuthStore.getState().isAuthenticated;
-        if (isAuthenticated) {
-            set(state => {
-                // Create a map of the new servers for efficient lookup
-                const newServersMap = new Map(data.servers.map(server => [server.id, server]));
-                
-                // Create a new array for the updated server list
-                const updatedServers = state.servers.map(oldServer => {
-                    const newServer = newServersMap.get(oldServer.id);
-                    if (newServer) {
-                        // If the server exists in the new data, update it
-                        newServersMap.delete(oldServer.id); // Remove from map to track new servers
-                        if (JSON.stringify(oldServer) !== JSON.stringify(newServer)) {
-                            return newServer;
-                        }
-                        return oldServer; // Return the old instance if no change
-                    }
-                    return oldServer;
-                });
-
-                // Add any new servers that were not in the old list
-                newServersMap.forEach(newServer => {
-                    updatedServers.push(newServer);
-                });
-
-                // Only update state if the server list has actually changed
-                if (JSON.stringify(state.servers) !== JSON.stringify(updatedServers)) {
-                     return { servers: updatedServers, isLoading: false, error: null, connectionStatus: 'connected' };
-                }
-
-                // If no changes, return an empty object to prevent re-render
-                return {};
-            });
-        } else {
-            // For public view, a simple replacement is sufficient and more performant
-            set({ servers: data.servers, isLoading: false, connectionStatus: 'connected', error: null });
-        }
+        // For both authenticated and public views, a simple replacement is the most
+        // reliable way to handle additions, updates, and deletions from the server.
+        // The server is the source of truth.
+        set({ servers: data.servers, isLoading: false, connectionStatus: 'connected', error: null });
     },
 
     _handleServiceMonitorResult: (data) => {

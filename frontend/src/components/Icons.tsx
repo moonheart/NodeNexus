@@ -25,6 +25,7 @@ import {
   Plus,
   RefreshCw,
   Clipboard,
+  Trash2,
   type LucideProps,
 } from 'lucide-react';
 
@@ -54,6 +55,7 @@ export const EyeOffIcon = EyeOff;
 export const PlusIcon = Plus;
 export const RefreshCwIcon = RefreshCw;
 export const ClipboardIcon = Clipboard;
+export const Trash2Icon = Trash2;
 
 export type { LucideProps as SVGProps };
 export const ChartBarIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (

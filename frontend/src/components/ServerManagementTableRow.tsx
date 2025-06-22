@@ -5,6 +5,7 @@ import {
   PencilIcon,
   RefreshCwIcon,
   ClipboardIcon,
+  Trash2Icon,
 } from './Icons';
 import {
   calculateRenewalInfo,
@@ -16,11 +17,12 @@ interface ServerManagementTableRowProps {
   onEdit: (server: VpsListItemResponse) => void;
   onCopyCommand: (server: VpsListItemResponse) => void;
   onTriggerUpdate: (vpsId: number) => void;
+  onDelete: (vpsId: number) => void;
   onSelectionChange: (vpsId: number, isSelected: boolean) => void;
   isSelected: boolean;
 }
 
-const ServerManagementTableRow: React.FC<ServerManagementTableRowProps> = ({ server, onEdit, onCopyCommand, onTriggerUpdate, onSelectionChange, isSelected }) => {
+const ServerManagementTableRow: React.FC<ServerManagementTableRowProps> = ({ server, onEdit, onCopyCommand, onTriggerUpdate, onDelete, onSelectionChange, isSelected }) => {
   const { tableRowBadgeClass, tableRowTextClass, icon } = getVpsStatusAppearance(server.status);
 
 
@@ -107,6 +109,15 @@ const ServerManagementTableRow: React.FC<ServerManagementTableRowProps> = ({ ser
          >
            <ClipboardIcon className="w-3.5 h-3.5 mr-1" />
            复制命令
+         </button>
+         <button
+           onClick={() => onDelete(server.id)}
+           className="text-red-600 hover:text-red-800 font-medium text-xs py-1 px-3 rounded-md hover:bg-red-100 transition-colors flex items-center"
+           aria-label={`Delete ${server.name}`}
+           title="Delete VPS"
+         >
+           <Trash2Icon className="w-3.5 h-3.5 mr-1" />
+           删除
          </button>
        </div>
       </td>

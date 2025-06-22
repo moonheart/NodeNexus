@@ -116,6 +116,10 @@ pub struct VpsListItemResponse {
     pub renewal_notes: Option<String>,
     pub reminder_active: Option<bool>,
     // last_reminder_generated_at is likely not needed by list view, but can be added if detail view needs it
+    
+    // Agent secret is only included in the detail view, not the list view.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_secret: Option<String>,
 }
 
 // This converts the unified `ServerWithDetails` model (used by websockets)
@@ -162,6 +166,7 @@ impl From<crate::websocket_models::ServerWithDetails> for VpsListItemResponse {
             auto_renew_enabled: details.auto_renew_enabled,
             renewal_notes: details.renewal_notes.clone(),
             reminder_active: details.reminder_active,
+            agent_secret: None, // Secret is never sent in the list view or via WebSocket
         }
     }
 }
@@ -206,8 +211,16 @@ async fn create_vps_handler(
 ) -> Result<(StatusCode, Json<vps::Model>), AppError> { // Changed Vps to vps::Model
     let user_id = authenticated_user.id;
     match services::create_vps(&app_state.db_pool, user_id, &payload.name).await {
-        Ok(vps_model) => Ok((StatusCode::CREATED, Json(vps_model))), // Changed vps to vps_model
-        Err(db_err) => { // Changed sqlx_error to db_err
+        Ok(vps_model) => {
+            // After successful creation, broadcast the new state
+            update_service::broadcast_full_state_update(
+                &app_state.db_pool,
+                &app_state.live_server_data_cache,
+                &app_state.ws_data_broadcaster_tx,
+            ).await;
+            Ok((StatusCode::CREATED, Json(vps_model)))
+        },
+        Err(db_err) => {
             error!(error = ?db_err, "Failed to create VPS.");
             Err(AppError::DatabaseError(db_err.to_string()))
         }
@@ -240,19 +253,32 @@ async fn get_vps_detail_handler(
     State(app_state): State<Arc<AppState>>,
     Path(vps_id): Path<i32>,
 ) -> Result<Json<VpsListItemResponse>, AppError> {
-    let _user_id = authenticated_user.id; // Renamed user_id as it's not used unless auth is uncommented
-    // Use the unified query that fetches everything, including tags.
-    let vps_details = services::get_vps_with_details_for_cache_by_id(&app_state.db_pool, vps_id)
+    let user_id = authenticated_user.id;
+
+    // Fetch the detailed view model, which has almost everything
+    let vps_details_for_view = services::get_vps_with_details_for_cache_by_id(&app_state.db_pool, vps_id)
         .await
         .map_err(|e| AppError::DatabaseError(e.to_string()))?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
 
-    // TODO: Authorize user
-    // if vps_details.basic_info.user_id != user_id {
-    //     return Err(AppError::Unauthorized("Access denied".to_string()));
-    // }
+    // Authorize user based on the fetched details
+    if vps_details_for_view.basic_info.user_id != user_id {
+        return Err(AppError::Unauthorized("Access denied".to_string()));
+    }
+
+    // Fetch the raw vps::Model to get the agent_secret
+    let vps_model = services::get_vps_by_id(&app_state.db_pool, vps_id)
+        .await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
+
+    // Convert the detailed view model to our response type
+    let mut response: VpsListItemResponse = vps_details_for_view.into();
+
+    // Securely add the agent secret to the response
+    response.agent_secret = Some(vps_model.agent_secret);
     
-    Ok(Json(vps_details.into()))
+    Ok(Json(response))
 }
 
 #[derive(Deserialize)]
@@ -628,6 +654,7 @@ pub fn vps_router() -> Router<Arc<AppState>> {
         .route("/bulk-actions/trigger-update-check", post(bulk_trigger_update_check_handler))
         .route("/{vps_id}", get(get_vps_detail_handler))
         .route("/{vps_id}", put(update_vps_handler))
+        .route("/{vps_id}", delete(delete_vps_handler))
         .route("/{vps_id}/renewal/dismiss-reminder", post(dismiss_renewal_reminder_handler)) // New route
         .route("/{vps_id}/monitor-results", get(get_vps_monitor_results_handler)) // New route
         .route("/{vps_id}/trigger-update-check", post(trigger_update_check_handler)) // New route for agent update
@@ -658,4 +685,31 @@ async fn trigger_update_check_handler(
     } else {
         Err(AppError::NotFound("Agent not connected or command could not be sent".to_string()))
     }
+}
+
+async fn delete_vps_handler(
+    Extension(authenticated_user): Extension<AuthenticatedUser>,
+    State(app_state): State<Arc<AppState>>,
+    Path(vps_id): Path<i32>,
+) -> Result<StatusCode, AppError> {
+    let user_id = authenticated_user.id;
+
+    // Authorize: Check if user owns the VPS
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await?
+        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
+    if vps.user_id != user_id {
+        return Err(AppError::Unauthorized("Access denied".to_string()));
+    }
+
+    // Proceed with deletion
+    services::delete_vps(&app_state.db_pool, vps_id).await?;
+
+    // Broadcast the change
+    update_service::broadcast_full_state_update(
+        &app_state.db_pool,
+        &app_state.live_server_data_cache,
+        &app_state.ws_data_broadcaster_tx,
+    ).await;
+
+    Ok(StatusCode::NO_CONTENT)
 }

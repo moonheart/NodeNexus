@@ -118,7 +118,7 @@ export interface VpsListItemResponse {
   ipAddress: string | null; // camelCase
   osType: string | null;    // camelCase
   agentVersion?: string | null;
-  agentSecret: string; // camelCase
+  agentSecret?: string; // camelCase, optional as it's only in detail view
   status: ServerStatus;
   metadata: VpsMetadata | null; // Refined metadata type
   createdAt: string; // camelCase

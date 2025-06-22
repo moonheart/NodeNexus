@@ -2,25 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { createVps } from '../services/vpsService';
 import type { Vps } from '../types';
 import axios from 'axios';
-import CommandCopyUI from './CommandCopyUI';
 
 interface CreateVpsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onVpsCreated?: () => void;
+  onVpsCreated?: (newVps: Vps) => void;
 }
 
 const CreateVpsModal: React.FC<CreateVpsModalProps> = ({ isOpen, onClose, onVpsCreated }) => {
   const [vpsName, setVpsName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [createdVps, setCreatedVps] = useState<Vps | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
       setVpsName('');
       setError(null);
-      setCreatedVps(null);
       setIsLoading(false);
     }
   }, [isOpen]);
@@ -41,11 +38,10 @@ const CreateVpsModal: React.FC<CreateVpsModalProps> = ({ isOpen, onClose, onVpsC
         name: vpsName.trim(),
       };
       const newVps = await createVps(payload);
-      setCreatedVps(newVps);
       setVpsName(''); // Clear input
 
       if (onVpsCreated) {
-        onVpsCreated();
+        onVpsCreated(newVps);
       }
     } catch (err: unknown) {
       console.error('Failed to create VPS:', err);
@@ -59,21 +55,6 @@ const CreateVpsModal: React.FC<CreateVpsModalProps> = ({ isOpen, onClose, onVpsC
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const renderSuccessView = () => {
-    if (!createdVps) return null;
-
-    return (
-      <div>
-        <h3 style={{ marginTop: '0', color: 'green' }}>VPS "{createdVps.name}" 创建成功!</h3>
-        <p>请为您的服务器选择对应的操作系统，并复制安装命令来安装 Agent：</p>
-        <CommandCopyUI vps={createdVps} />
-        <button onClick={onClose} style={{ marginTop: '20px', padding: '8px 12px', cursor: 'pointer', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '4px' }}>
-          关闭
-        </button>
-      </div>
-    );
   };
 
   if (!isOpen) {
@@ -95,29 +76,25 @@ const CreateVpsModal: React.FC<CreateVpsModalProps> = ({ isOpen, onClose, onVpsC
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
         </div>
 
-        {!createdVps ? (
-          <form onSubmit={handleSubmit}>
-            <div style={{ marginBottom: '15px' }}>
-              <label htmlFor="vpsNameModal" style={{ display: 'block', marginBottom: '5px' }}>VPS 名称:</label>
-              <input
-                type="text"
-                id="vpsNameModal"
-                value={vpsName}
-                onChange={(e) => setVpsName(e.target.value)}
-                placeholder="例如：我的Web服务器"
-                required
-                style={{ width: '100%', padding: '10px', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ccc' }}
-              />
-            </div>
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: '15px' }}>
+            <label htmlFor="vpsNameModal" style={{ display: 'block', marginBottom: '5px' }}>VPS 名称:</label>
+            <input
+              type="text"
+              id="vpsNameModal"
+              value={vpsName}
+              onChange={(e) => setVpsName(e.target.value)}
+              placeholder="例如：我的Web服务器"
+              required
+              style={{ width: '100%', padding: '10px', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ccc' }}
+            />
+          </div>
 
-            {error && <p style={{ color: 'red', marginTop: '0', marginBottom: '10px' }}>错误: {error}</p>}
-            <button type="submit" disabled={isLoading} style={{ padding: '10px 15px', cursor: 'pointer', width: '100%', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px' }}>
-              {isLoading ? '创建中...' : '创建VPS'}
-            </button>
-          </form>
-        ) : (
-          renderSuccessView()
-        )}
+          {error && <p style={{ color: 'red', marginTop: '0', marginBottom: '10px' }}>错误: {error}</p>}
+          <button type="submit" disabled={isLoading} style={{ padding: '10px 15px', cursor: 'pointer', width: '100%', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px' }}>
+            {isLoading ? '创建中...' : '创建VPS'}
+          </button>
+        </form>
       </div>
     </div>
   );

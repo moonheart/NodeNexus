@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import EditVpsModal from '../components/EditVpsModal';
 import CreateVpsModal from '../components/CreateVpsModal';
 import CopyCommandModal from '../components/CopyCommandModal';
-import type { VpsListItemResponse, Tag } from '../types';
+import type { Vps, VpsListItemResponse, Tag } from '../types';
 import { useServerListStore, type ServerListState, type ConnectionStatus } from '../store/serverListStore';
 import { useShallow } from 'zustand/react/shallow';
 import {
@@ -113,9 +113,39 @@ const ServerManagementPage: React.FC = () => {
   // --- Modal Handlers ---
   const handleOpenCreateVpsModal = () => setIsCreateVpsModalOpen(true);
   const handleCloseCreateVpsModal = () => setIsCreateVpsModalOpen(false);
-  const handleVpsCreated = () => {
-    console.log('VPS creation successful, closing modal.');
+  const handleVpsCreated = (newVps: Vps) => {
+    console.log('VPS creation successful, closing create modal and opening command modal.');
     handleCloseCreateVpsModal();
+    // The backend returns a Vps model, but the copy command modal expects a VpsListItemResponse.
+    // We can create a temporary VpsListItemResponse-like object for the modal.
+    // The full, correct data will arrive shortly via WebSocket.
+    const vpsForCommand: VpsListItemResponse = {
+      ...newVps,
+      userId: newVps.user_id,
+      agentSecret: newVps.agent_secret,
+      ipAddress: newVps.ip_address,
+      osType: newVps.os_type,
+      createdAt: newVps.created_at,
+      updatedAt: newVps.updated_at,
+      agentVersion: null,
+      latestMetrics: null,
+      configStatus: 'unknown',
+      lastConfigUpdateAt: null,
+      lastConfigError: null,
+      // Renewal info fields
+      renewalCycle: null,
+      renewalCycleCustomDays: null,
+      renewalPrice: null,
+      renewalCurrency: null,
+      nextRenewalDate: null,
+      lastRenewalDate: null,
+      serviceStartDate: null,
+      paymentMethod: null,
+      autoRenewEnabled: null,
+      renewalNotes: null,
+      reminderActive: null,
+    };
+    handleOpenCopyCommandModal(vpsForCommand);
   };
 
   const handleOpenEditModal = (server: VpsListItemResponse) => {
@@ -123,9 +153,19 @@ const ServerManagementPage: React.FC = () => {
     setIsEditModalOpen(true);
   };
 
-  const handleOpenCopyCommandModal = (server: VpsListItemResponse) => {
-    setVpsForCommand(server);
-    setIsCopyCommandModalOpen(true);
+  const handleOpenCopyCommandModal = async (server: VpsListItemResponse) => {
+    // The server object from the list might not have the agent_secret for security reasons.
+    // Fetch the full details to ensure we have it before opening the modal.
+    try {
+      // Consider showing a loading indicator here
+      const fullVpsDetails = await vpsService.getVpsDetail(server.id.toString());
+      setVpsForCommand(fullVpsDetails);
+      setIsCopyCommandModalOpen(true);
+    } catch (error) {
+      console.error("Failed to fetch VPS details for command copy:", error);
+      // TODO: Replace with a proper toast notification
+      alert("无法获取安装命令。请稍后再试。");
+    }
   };
 
   const handleCloseEditModal = () => {
@@ -152,6 +192,20 @@ const ServerManagementPage: React.FC = () => {
     } catch (error) {
       console.error("Failed to trigger agent update:", error);
       alert("An error occurred while sending the update command.");
+    }
+  };
+
+  const handleVpsDelete = async (vpsId: number) => {
+    // eslint-disable-next-line no-restricted-globals
+    if (confirm('Are you sure you want to delete this VPS? This action cannot be undone.')) {
+      try {
+        await vpsService.deleteVps(vpsId);
+        // The store will be updated via WebSocket, so no need to manually refetch
+        alert('VPS deleted successfully.');
+      } catch (error) {
+        console.error("Failed to delete VPS:", error);
+        alert("An error occurred while deleting the VPS.");
+      }
     }
   };
 
@@ -345,6 +399,7 @@ const ServerManagementPage: React.FC = () => {
                     onEdit={handleOpenEditModal}
                     onCopyCommand={handleOpenCopyCommandModal}
                     onTriggerUpdate={(vpsId) => handleTriggerUpdate([vpsId])}
+                    onDelete={handleVpsDelete}
                     isSelected={selectedVpsIds.has(server.id)}
                     onSelectionChange={(vpsId, isSelected) => {
                       const newSet = new Set(selectedVpsIds);

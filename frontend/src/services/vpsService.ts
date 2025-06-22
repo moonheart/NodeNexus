@@ -107,6 +107,18 @@ export const dismissVpsRenewalReminder = async (vpsId: number): Promise<void> =>
 // e.g., deleteVps, etc.
 
 /**
+* Deletes a VPS.
+*/
+export const deleteVps = async (vpsId: number): Promise<void> => {
+ try {
+   await apiClient.delete(`/vps/${vpsId}`);
+ } catch (error) {
+   console.error(`Error deleting VPS with ID ${vpsId}:`, error);
+   throw error;
+ }
+};
+
+/**
  * Triggers an update check for one or more agents.
  */
 export const triggerAgentUpdate = async (vpsIds: number[]): Promise<BulkActionResponse> => {

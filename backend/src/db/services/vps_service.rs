@@ -3,7 +3,7 @@
 // Re-export structs and functions from the core VPS operations module
 pub use super::vps_core_service::{
     create_vps, get_all_vps_for_user, get_vps_by_id, get_vps_by_user_id, update_vps,
-    update_vps_info_on_handshake, update_vps_status,
+    update_vps_info_on_handshake, update_vps_status, delete_vps,
 };
 
 // Re-export structs and functions from the VPS renewal operations module
