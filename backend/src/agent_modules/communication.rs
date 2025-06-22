@@ -16,6 +16,7 @@ use std::time::Duration;
 use sysinfo::System;
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
+use tower_service::Service;
 use uuid::Uuid;
  // For timestamps
 use tracing::{info, error, warn, debug};
@@ -225,6 +226,9 @@ impl ConnectionHandler {
 
         let channel = Endpoint::from_shared(agent_cli_config.server_address.clone())?
             .tls_config(tls)?
+            .http2_keep_alive_interval(Duration::from_secs(10))
+            .keep_alive_timeout(Duration::from_secs(30))
+            .keep_alive_while_idle(true)
             .connect()
             .await
             .map_err(|e| {
@@ -234,7 +238,6 @@ impl ConnectionHandler {
 
         let mut client = AgentCommunicationServiceClient::new(channel);
         info!("Successfully connected to gRPC endpoint.");
-
         let (tx_to_server, rx_for_stream) = mpsc::channel(128);
         let stream_response = client.establish_communication_stream(ReceiverStream::new(rx_for_stream)).await
             .map_err(|e| {

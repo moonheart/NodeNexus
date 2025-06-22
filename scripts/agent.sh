@@ -7,7 +7,7 @@ set -e
 INSTALL_DIR="/opt/node-nexus"
 SERVICE_NAME="node-nexus-agent"
 SERVICE_USER="root" # Default user, can be changed with --secure-user
-CONFIG_FILE_PATH="$INSTALL_DIR/config.toml"
+CONFIG_FILE_PATH="$INSTALL_DIR/agent_config.toml"
 SERVICE_FILE_PATH="/etc/systemd/system/$SERVICE_NAME.service"
 GITHUB_REPO="moonheart/NodeNexus"
 AGENT_BINARY_NAME="" # This will be set dynamically
@@ -210,6 +210,7 @@ After=network.target
 [Service]
 Type=simple
 User=$SERVICE_USER
+WorkingDirectory=$INSTALL_DIR
 ExecStart=$INSTALL_DIR/agent --config $CONFIG_FILE_PATH
 Restart=always
 RestartSec=5
