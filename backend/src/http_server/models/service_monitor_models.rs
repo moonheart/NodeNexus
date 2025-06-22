@@ -17,6 +17,7 @@ pub struct ServiceMonitorDetails {
     pub updated_at: String,
     pub agent_ids: Vec<i32>,
     pub tag_ids: Vec<i32>,
+    pub assignment_type: String,
 }
 
 // Model for representing monitor assignments in API requests
@@ -25,6 +26,7 @@ pub struct ServiceMonitorDetails {
 pub struct MonitorAssignments {
     pub agent_ids: Option<Vec<i32>>,
     pub tag_ids: Option<Vec<i32>>,
+    pub assignment_type: Option<String>,
 }
 
 // Model for creating a new service monitor

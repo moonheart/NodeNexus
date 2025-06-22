@@ -13,6 +13,7 @@ pub struct Model {
     pub frequency_seconds: i32,
     pub timeout_seconds: i32,
     pub is_active: bool,
+    pub assignment_type: String,
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub monitor_config: Option<Json>,
     pub created_at: ChronoDateTimeUtc,

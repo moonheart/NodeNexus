@@ -386,6 +386,7 @@ export interface ServiceMonitor {
   updatedAt: string;
   agentIds: number[];
   tagIds: number[];
+  assignmentType: 'INCLUSIVE' | 'EXCLUSIVE';
 }
 
 /**
@@ -403,6 +404,7 @@ export interface ServiceMonitorInput {
   assignments?: {
     agentIds?: number[];
     tagIds?: number[];
+    assignmentType?: 'INCLUSIVE' | 'EXCLUSIVE';
   };
 }
 

@@ -27,6 +27,7 @@ pub async fn create_monitor(
             timeout_seconds: Set(monitor_data.timeout_seconds.unwrap_or(10)),
             is_active: Set(monitor_data.is_active.unwrap_or(true)),
             monitor_config: Set(monitor_data.monitor_config),
+            assignment_type: Set(monitor_data.assignments.assignment_type.unwrap_or_else(|| "INCLUSIVE".to_string())),
             ..Default::default()
         };
 
@@ -122,6 +123,7 @@ pub async fn get_monitors_with_details_by_user_id(
                 updated_at: monitor.updated_at.to_rfc3339(),
                 agent_ids: agent_map.get(&monitor_id).cloned().unwrap_or_default(),
                 tag_ids: tag_map.get(&monitor_id).cloned().unwrap_or_default(),
+                assignment_type: monitor.assignment_type,
             }
         })
         .collect();
@@ -169,6 +171,7 @@ pub async fn get_monitor_details_by_id(
         updated_at: monitor.updated_at.to_rfc3339(),
         agent_ids,
         tag_ids,
+        assignment_type: monitor.assignment_type,
     };
 
     Ok(Some(details))
@@ -222,6 +225,12 @@ pub async fn update_monitor(
 
     // 4. Handle assignments if present
     if let Some(assignments) = payload.assignments {
+        if let Some(assignment_type) = assignments.assignment_type {
+            let mut monitor_for_update = ServiceMonitor::find_by_id(monitor_id).one(&txn).await?.unwrap();
+            let mut active_monitor_for_update: service_monitor::ActiveModel = monitor_for_update.into();
+            active_monitor_for_update.assignment_type = Set(assignment_type);
+            active_monitor_for_update.update(&txn).await?;
+        }
         // Clear existing assignments
         ServiceMonitorAgent::delete_many()
             .filter(service_monitor_agent::Column::MonitorId.eq(monitor_id))
@@ -429,44 +438,61 @@ pub async fn get_vps_ids_for_monitor(
     db: &DatabaseConnection,
     monitor_id: i32,
 ) -> Result<Vec<i32>, DbErr> {
-    // 1. Get VPS IDs from direct assignments
-    let direct_vps_ids_future = ServiceMonitorAgent::find()
-        .select_only()
-        .column(service_monitor_agent::Column::VpsId)
+    let monitor = ServiceMonitor::find_by_id(monitor_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| DbErr::RecordNotFound(format!("Monitor with ID {} not found", monitor_id)))?;
+
+    // Get explicitly assigned/excluded agents and tags
+    let assigned_agents_future = ServiceMonitorAgent::find()
         .filter(service_monitor_agent::Column::MonitorId.eq(monitor_id))
-        .into_tuple::<i32>()
         .all(db);
-
-    // 2. Get VPS IDs from tag-based assignments
-    // First, find all tags for the given monitor
-    let monitor_tags_future = ServiceMonitorTag::find()
-        .select_only()
-        .column(service_monitor_tag::Column::TagId)
+    let assigned_tags_future = ServiceMonitorTag::find()
         .filter(service_monitor_tag::Column::MonitorId.eq(monitor_id))
-        .into_tuple::<i32>()
         .all(db);
+    
+    let (assigned_agents, assigned_tags) = try_join!(assigned_agents_future, assigned_tags_future)?;
 
-    let (direct_vps_ids, monitor_tags) = try_join!(direct_vps_ids_future, monitor_tags_future)?;
+    let assigned_agent_ids: Vec<i32> = assigned_agents.into_iter().map(|a| a.vps_id).collect();
+    let assigned_tag_ids: Vec<i32> = assigned_tags.into_iter().map(|t| t.tag_id).collect();
 
-    let mut tagged_vps_ids: Vec<i32> = Vec::new();
-    if !monitor_tags.is_empty() {
-        // Then, find all VPSs that have those tags
-        tagged_vps_ids = VpsTag::find()
+    let agents_from_tags = if !assigned_tag_ids.is_empty() {
+        VpsTag::find()
+            .filter(vps_tag::Column::TagId.is_in(assigned_tag_ids))
+            .all(db)
+            .await?
+            .into_iter()
+            .map(|vt| vt.vps_id)
+            .collect::<Vec<i32>>()
+    } else {
+        Vec::new()
+    };
+
+    let mut combined_assigned_ids = assigned_agent_ids;
+    combined_assigned_ids.extend(agents_from_tags);
+    combined_assigned_ids.sort_unstable();
+    combined_assigned_ids.dedup();
+
+    if monitor.assignment_type == "EXCLUSIVE" {
+        let all_agent_ids = Vps::find()
             .select_only()
-            .column(vps_tag::Column::VpsId)
-            .filter(vps_tag::Column::TagId.is_in(monitor_tags))
+            .column(vps::Column::Id)
             .into_tuple::<i32>()
             .all(db)
             .await?;
+        
+        let excluded_ids_set: std::collections::HashSet<i32> = combined_assigned_ids.into_iter().collect();
+        
+        let final_agent_ids = all_agent_ids
+            .into_iter()
+            .filter(|id| !excluded_ids_set.contains(id))
+            .collect();
+        
+        Ok(final_agent_ids)
+    } else {
+        // INCLUSIVE mode (default)
+        Ok(combined_assigned_ids)
     }
-
-    // 3. Combine and deduplicate VPS IDs
-    let mut all_vps_ids = direct_vps_ids;
-    all_vps_ids.extend(tagged_vps_ids);
-    all_vps_ids.sort_unstable();
-    all_vps_ids.dedup();
-
-    Ok(all_vps_ids)
 }
 
 pub async fn record_monitor_result(

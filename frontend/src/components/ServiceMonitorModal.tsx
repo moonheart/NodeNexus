@@ -23,6 +23,7 @@ const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClo
     assignments: {
       agentIds: [],
       tagIds: [],
+      assignmentType: 'INCLUSIVE',
     },
   });
   const [allAgents, setAllAgents] = useState<VpsListItemResponse[]>([]);
@@ -58,6 +59,7 @@ const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClo
         assignments: {
           agentIds: monitorToEdit.agentIds || [],
           tagIds: monitorToEdit.tagIds || [],
+          assignmentType: monitorToEdit.assignmentType || 'INCLUSIVE',
         }
       });
     } else {
@@ -73,6 +75,7 @@ const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClo
         assignments: {
           agentIds: [],
           tagIds: [],
+          assignmentType: 'INCLUSIVE',
         },
       });
     }
@@ -83,6 +86,17 @@ const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClo
     const { name, value, type } = e.target;
     const isNumber = type === 'number';
     setFormData(prev => ({ ...prev, [name]: isNumber ? parseInt(value, 10) : value }));
+  };
+
+  const handleAssignmentChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+        ...prev,
+        assignments: {
+            ...prev.assignments,
+            [name]: value
+        }
+    }));
   };
   
   const handleHttpConfigChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -180,23 +194,43 @@ const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClo
             )}
 
             {/* Assignments */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="agentIds" className="block text-sm font-medium text-gray-700">Assign to Agents</label>
-                <select id="agentIds" name="agentIds" multiple value={formData.assignments?.agentIds?.map(String)} onChange={(e) => handleMultiSelectChange(e, 'agentIds')} className="mt-1 block w-full h-32 border-gray-300 rounded-md shadow-sm">
-                  {allAgents.map(agent => (
-                    <option key={agent.id} value={agent.id}>{agent.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="tagIds" className="block text-sm font-medium text-gray-700">Assign to Tags</label>
-                <select id="tagIds" name="tagIds" multiple value={formData.assignments?.tagIds?.map(String)} onChange={(e) => handleMultiSelectChange(e, 'tagIds')} className="mt-1 block w-full h-32 border-gray-300 rounded-md shadow-sm">
-                  {allTags.map(tag => (
-                    <option key={tag.id} value={tag.id} style={{ color: tag.color }}>{tag.name}</option>
-                  ))}
-                </select>
-              </div>
+            <div className="p-4 border rounded-md bg-gray-50">
+                <h3 className="text-lg font-medium mb-2">Assignments</h3>
+                <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700">Assignment Mode</label>
+                    <div className="flex items-center space-x-4 mt-1">
+                        <label className="flex items-center">
+                            <input type="radio" name="assignmentType" value="INCLUSIVE" checked={formData.assignments?.assignmentType === 'INCLUSIVE'} onChange={handleAssignmentChange} className="form-radio"/>
+                            <span className="ml-2">Inclusive (Apply to selected)</span>
+                        </label>
+                        <label className="flex items-center">
+                            <input type="radio" name="assignmentType" value="EXCLUSIVE" checked={formData.assignments?.assignmentType === 'EXCLUSIVE'} onChange={handleAssignmentChange} className="form-radio"/>
+                            <span className="ml-2">Exclusive (Apply to all except selected)</span>
+                        </label>
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="agentIds" className="block text-sm font-medium text-gray-700">
+                      {formData.assignments?.assignmentType === 'EXCLUSIVE' ? 'Exclude Agents' : 'Assign to Agents'}
+                    </label>
+                    <select id="agentIds" name="agentIds" multiple value={formData.assignments?.agentIds?.map(String)} onChange={(e) => handleMultiSelectChange(e, 'agentIds')} className="mt-1 block w-full h-32 border-gray-300 rounded-md shadow-sm">
+                      {allAgents.map(agent => (
+                        <option key={agent.id} value={agent.id}>{agent.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="tagIds" className="block text-sm font-medium text-gray-700">
+                      {formData.assignments?.assignmentType === 'EXCLUSIVE' ? 'Exclude Tags' : 'Assign to Tags'}
+                    </label>
+                    <select id="tagIds" name="tagIds" multiple value={formData.assignments?.tagIds?.map(String)} onChange={(e) => handleMultiSelectChange(e, 'tagIds')} className="mt-1 block w-full h-32 border-gray-300 rounded-md shadow-sm">
+                      {allTags.map(tag => (
+                        <option key={tag.id} value={tag.id} style={{ color: tag.color }}>{tag.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
             </div>
           </div>
 
