@@ -8,7 +8,8 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import NotFoundPage from './pages/NotFoundPage';
 import VpsDetailPage from './pages/VpsDetailPage';
-import SettingsPage from './pages/SettingsPage';
+import GlobalSettingsPage from './pages/GlobalSettingsPage';
+import AlertsSettingsPage from './pages/AlertsSettingsPage';
 import TagManagementPage from './pages/TagManagementPage';
 import BatchCommandPage from './pages/BatchCommandPage'; // Import the new page
 import NotificationsPage from './pages/NotificationsPage'; // Import the new page
@@ -17,7 +18,7 @@ import ServiceMonitorDetailPage from './pages/ServiceMonitorDetailPage'; // Impo
 import ServerManagementPage from './pages/ServerManagementPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout'; // Import the new Layout component
-import SettingsLayout from './components/SettingsLayout'; // Import the SettingsLayout component
+import SettingsLayout from './components/SettingsLayout';
 import { useAuthStore } from './store/authStore';
 
 function App() {
@@ -60,11 +61,12 @@ function App() {
             <Route path="/servers" element={<ServerManagementPage />} />
             
             {/* Settings Section with Nested Routes */}
+            {/* Settings Section with Nested Routes */}
             <Route path="/settings" element={<SettingsLayout />}>
               <Route index element={<Navigate to="/settings/global" replace />} />
-              <Route path="global" element={<SettingsPage />} />
+              <Route path="global" element={<GlobalSettingsPage />} />
+              <Route path="alerts" element={<AlertsSettingsPage />} />
               <Route path="notifications" element={<NotificationsPage />} />
-              <Route path="alerts" element={<SettingsPage />} /> {/* Placeholder, assuming alerts are on settings page for now */}
               <Route path="tags"element={<TagManagementPage />} />
               <Route path="scripts" element={<div>Script Management Page (TODO)</div>} />
               <Route path="account" element={<div>Account Settings Page (TODO)</div>} />
