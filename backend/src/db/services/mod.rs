@@ -22,6 +22,7 @@ pub mod alert_service; // Added alert_service module
 pub mod batch_command_service;
 pub mod command_script_service;
 pub mod service_monitor_service;
+pub mod oauth_service;
 
 // Re-export all public functions and structs from the sub-modules
 // to make them accessible directly under `crate::db::services::*`.
@@ -38,3 +39,4 @@ pub use alert_service::*; // Re-export alert_service
 pub use batch_command_service::*;
 pub use command_script_service::*;
 pub use service_monitor_service::*;
+pub use oauth_service::*;

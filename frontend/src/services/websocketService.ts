@@ -46,6 +46,7 @@ class WebSocketService extends EventEmitter<WebSocketEvents> {
     }
 
     public connect(token?: string | null): void {
+        console.log('WebSocketService: Attempting to connect with token:', token);
         if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
             console.log('WebSocket is already connected or connecting.');
             return;

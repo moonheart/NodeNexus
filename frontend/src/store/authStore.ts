@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { loginUser, registerUser } from '../services/authService';
+import { loginUser, registerUser, getMe } from '../services/authService';
 import type { LoginRequest, RegisterRequest, UserResponse, LoginResponse } from '../services/authService';
 import websocketService from '../services/websocketService';
 
@@ -15,6 +15,7 @@ interface AuthState {
     logout: () => void;
     setToken: (token: string | null) => void;
     setUser: (user: UserResponse | null) => void;
+    fetchUser: () => Promise<void>;
     clearAuthError: () => void;
 }
 
@@ -33,7 +34,7 @@ export const useAuthStore = create<AuthState>()(
                     const response: LoginResponse = await loginUser(credentials);
                     set({
                         isAuthenticated: true,
-                        user: { id: response.user_id, username: response.username, email: response.email },
+                        user: { id: response.user_id, username: response.username },
                         token: response.token,
                         isLoading: false,
                         error: null,
@@ -74,16 +75,42 @@ export const useAuthStore = create<AuthState>()(
             },
 
             setToken: (token: string | null) => {
-                set({ token });
+                set({
+                    token: token,
+                });
             },
 
             setUser: (user: UserResponse | null) => {
                 set({ user });
             },
-            
+
             clearAuthError: () => {
                 set({ error: null });
-            }
+            },
+
+            fetchUser: async () => {
+                set({ isLoading: true, error: null });
+                try {
+                    const user = await getMe();
+                    set({
+                        isAuthenticated: true,
+                        user,
+                        isLoading: false,
+                        error: null,
+                    });
+                } catch (err: unknown) {
+                    const errorMessage = err instanceof Error ? err.message : 'Session expired or invalid. Please log in again.';
+                    set({
+                        isAuthenticated: false,
+                        user: null,
+                        token: null, // Also clear token if fetch fails
+                        isLoading: false,
+                        error: errorMessage,
+                    });
+                    // Disconnect WebSocket if user fetch fails
+                    websocketService.disconnect();
+                }
+            },
         }),
         {
             name: 'auth-storage', // name of the item in the storage (must be unique)

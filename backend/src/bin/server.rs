@@ -1,5 +1,6 @@
 // 主入口文件
 use backend::server::agent_state::{ConnectedAgents, LiveServerDataCache}; // Added LiveServerDataCache
+use backend::server::config::ServerConfig;
 use backend::server::service::MyAgentCommService;
 use backend::websocket_models::{ServerWithDetails, WsMessage};
 use backend::db::services as db_services;
@@ -70,6 +71,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     // --- Debounce Update Trigger Channel ---
     let (update_trigger_tx, mut update_trigger_rx) = mpsc::channel::<()>(100);
 
+    // --- Server Config Setup ---
+    let server_config = match ServerConfig::from_env() {
+        Ok(config) => Arc::new(config),
+        Err(e) => {
+            error!("Failed to load server configuration: {}", e);
+            // Exit if critical configuration is missing
+            return Err(e.into());
+        }
+    };
 
     // --- Database Pool Setup ---
     let database_url = env::var("DATABASE_URL")
@@ -195,6 +205,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         batch_command_manager.clone(),
         batch_command_updates_tx.clone(),
         result_broadcaster.clone(),
+        server_config.clone(),
     );
 
     // --- Debounced Broadcast Task ---
@@ -389,7 +400,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         })
     );
 
-    axum::serve(listener, app.into_make_service()).await?;
+    axum::serve(listener, app.into_make_service()).await.map_err(|e| Box::new(e))?;
 
     // The debouncer_task will be aborted when main exits. For a graceful shutdown,
     // a cancellation token would be needed, but this is sufficient for now.

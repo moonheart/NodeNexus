@@ -8,9 +8,9 @@ pub struct Model {
     pub id: i32,
     #[sea_orm(unique)] // Assuming username is unique
     pub username: String,
-    pub password_hash: String,
-    // #[sea_orm(unique)] // Assuming email might also be unique, can be added if needed
-    pub email: String,
+    pub password_hash: Option<String>,
+    pub role: String,
+    pub password_login_disabled: bool,
     pub created_at: ChronoDateTimeUtc,
     pub updated_at: ChronoDateTimeUtc,
 }
@@ -22,6 +22,9 @@ pub enum Relation {
 
     #[sea_orm(has_many = "super::tag::Entity")]
     Tags,
+
+    #[sea_orm(has_many = "super::user_identity_provider::Entity")]
+    UserIdentityProviders,
 }
 
 impl Related<super::vps::Entity> for Entity {
@@ -33,6 +36,12 @@ impl Related<super::vps::Entity> for Entity {
 impl Related<super::tag::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Tags.def()
+    }
+}
+
+impl Related<super::user_identity_provider::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::UserIdentityProviders.def()
     }
 }
 

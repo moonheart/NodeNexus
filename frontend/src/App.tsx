@@ -16,9 +16,11 @@ import NotificationsPage from './pages/NotificationsPage'; // Import the new pag
 import ServiceMonitoringPage from './pages/ServiceMonitoringPage'; // Import the new page
 import ServiceMonitorDetailPage from './pages/ServiceMonitorDetailPage'; // Import the new page
 import ServerManagementPage from './pages/ServerManagementPage';
+import AdminOAuthProvidersPage from './pages/AdminOAuthProvidersPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout'; // Import the new Layout component
 import SettingsLayout from './components/SettingsLayout';
+import AuthCallbackPage from './pages/AuthCallbackPage'; // Import the new callback page
 import { useAuthStore } from './store/authStore';
 
 function App() {
@@ -46,6 +48,7 @@ function App() {
         {/* Routes that should not have the main layout but use a different layout or none */}
         <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />} />
         <Route path="/register" element={isAuthenticated ? <Navigate to="/" replace /> : <RegisterPage />} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
         {/* Routes within the main layout */}
         <Route element={<Layout />}>
@@ -69,6 +72,7 @@ function App() {
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="tags"element={<TagManagementPage />} />
               <Route path="scripts" element={<div>Script Management Page (TODO)</div>} />
+              <Route path="oauth" element={<AdminOAuthProvidersPage />} />
               <Route path="account" element={<div>Account Settings Page (TODO)</div>} />
             </Route>
           </Route>

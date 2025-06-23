@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { SlidersHorizontal, Bell, AlertTriangle, Tags, ScrollText, User } from 'lucide-react';
+import { SlidersHorizontal, Bell, AlertTriangle, Tags, ScrollText, User, KeyRound } from 'lucide-react';
 
 const settingsGroups = [
   {
@@ -8,6 +8,7 @@ const settingsGroups = [
     links: [
       { name: '全局配置', to: '/settings/global', icon: SlidersHorizontal },
       { name: '通知渠道', to: '/settings/notifications', icon: Bell },
+      { name: 'OAuth 配置', to: '/settings/oauth', icon: KeyRound },
       // { name: '用户管理', to: '/settings/users', icon: Users }, // Planned
     ],
   },

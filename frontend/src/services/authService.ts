@@ -6,18 +6,16 @@ import apiClient from "./apiClient";
 
 export interface RegisterRequest {
     username: string;
-    email: string;
     password: string;
 }
 
 export interface UserResponse {
     id: number;
     username: string;
-    email: string;
 }
 
 export interface LoginRequest {
-    email: string; // 在后端，这可以是 username 或 email
+    username: string;
     password: string;
 }
 
@@ -25,7 +23,6 @@ export interface LoginResponse {
     token: string;
     user_id: number;
     username: string;
-    email: string;
 }
 
 // 不再需要手动构建 URL，apiClient 会处理 baseURL
@@ -91,5 +88,24 @@ export const loginUser = async (data: LoginRequest): Promise<LoginResponse> => {
             errorMsg = error.message; // 其他类型的错误
         }
         throw new Error(errorMsg);
+    }
+};
+
+export interface AuthProvider {
+    provider_name: string;
+}
+
+export const getAuthProviders = async (): Promise<AuthProvider[]> => {
+    const response = await apiClient.get<AuthProvider[]>('/auth/providers');
+    return response.data;
+};
+
+export const getMe = async (): Promise<UserResponse> => {
+    try {
+        const response = await apiClient.get<UserResponse>('/auth/me');
+        return response.data;
+    } catch (error) {
+        console.error('Failed to fetch user data:', error);
+        throw error;
     }
 };

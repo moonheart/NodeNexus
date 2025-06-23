@@ -12,13 +12,13 @@ pub async fn create_user(
     db: &DatabaseConnection, // Changed from pool: &PgPool
     username: &str,
     password_hash: &str,
-    email: &str,
 ) -> Result<user::Model, DbErr> { // Changed return type
     let now = Utc::now();
     let new_user = user::ActiveModel {
         username: Set(username.to_owned()),
-        password_hash: Set(password_hash.to_owned()),
-        email: Set(email.to_owned()),
+        password_hash: Set(Some(password_hash.to_owned())),
+        role: Set("user".to_string()), // Default role
+        password_login_disabled: Set(false), // Default value
         created_at: Set(now),
         updated_at: Set(now),
         ..Default::default() // id will be set by the database

@@ -3,13 +3,14 @@ use axum::{
         ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade}, Query, State
     }, response::IntoResponse
 };
+use axum_extra::extract::cookie::CookieJar;
 use futures_util::stream::StreamExt;
 use std::sync::Arc;
 use serde::Deserialize;
 use jsonwebtoken::{decode, DecodingKey, Validation}; // Added for JWT decoding
 use tracing::{info, error, warn, debug};
 
-use crate::http_server::auth_logic::{AuthenticatedUser, Claims, get_jwt_secret}; // Import Claims and get_jwt_secret
+use crate::http_server::auth_logic::{AuthenticatedUser, Claims}; // Import Claims
 use crate::http_server::AppState;
 use crate::websocket_models::{FullServerListPush, WsMessage};
 use crate::http_server::AppError; // For error handling
@@ -21,7 +22,7 @@ pub struct WebSocketAuthQuery {
 
 // Authenticate WebSocket connection using JWT from query parameter
 async fn authenticate_ws_connection(
-    _app_state: Arc<AppState>, // app_state might not be needed if not hitting DB here
+    app_state: Arc<AppState>,
     token_option: Option<String>,
 ) -> Result<AuthenticatedUser, AppError> {
     let token_str = token_option.ok_or_else(|| {
@@ -29,7 +30,7 @@ async fn authenticate_ws_connection(
         AppError::Unauthorized("Missing authentication token".to_string())
     })?;
 
-    let jwt_secret = get_jwt_secret();
+    let jwt_secret = &app_state.config.jwt_secret;
     let decoding_key = DecodingKey::from_secret(jwt_secret.as_ref());
     
     // Use default validation for now. Consider adding audience/issuer checks if needed.
@@ -44,7 +45,6 @@ async fn authenticate_ws_connection(
             Ok(AuthenticatedUser {
                 id: claims.user_id,
                 username: claims.sub, // Assuming 'sub' is username
-                email: claims.email,
             })
         }
         Err(e) => {
@@ -66,9 +66,13 @@ pub async fn websocket_handler(
     ws: WebSocketUpgrade,
     State(app_state): State<Arc<AppState>>,
     Query(query): Query<WebSocketAuthQuery>, // Get token from query params
+    jar: CookieJar, // Get cookies
 ) -> impl IntoResponse {
+    // Try to get token from cookie first, fallback to query param
+    let token = jar.get("token").map(|c| c.value().to_string()).or(query.token);
+    
     // Authenticate the connection
-    let user = match authenticate_ws_connection(app_state.clone(), query.token).await {
+    let user = match authenticate_ws_connection(app_state.clone(), token).await {
         Ok(usr) => usr,
         Err(e) => return e.into_response(), // Return error if authentication fails
     };

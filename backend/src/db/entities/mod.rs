@@ -29,6 +29,8 @@ pub mod service_monitor;
 pub mod service_monitor_agent;
 pub mod service_monitor_tag;
 pub mod service_monitor_result;
+pub mod oauth2_provider;
+pub mod user_identity_provider;
 // ... add other entity modules as they are created
 
 // Prelude module for easy importing of all entities and their related types
@@ -157,6 +159,16 @@ pub mod prelude {
     pub use super::service_monitor_result::Model as ServiceMonitorResultModel;
     pub use super::service_monitor_result::ActiveModel as ServiceMonitorResultActiveModel;
     pub use super::service_monitor_result::Column as ServiceMonitorResultColumn;
+
+    pub use super::oauth2_provider::Entity as Oauth2Provider;
+    pub use super::oauth2_provider::Model as Oauth2ProviderModel;
+    pub use super::oauth2_provider::ActiveModel as Oauth2ProviderActiveModel;
+    pub use super::oauth2_provider::Column as Oauth2ProviderColumn;
+
+    pub use super::user_identity_provider::Entity as UserIdentityProvider;
+    pub use super::user_identity_provider::Model as UserIdentityProviderModel;
+    pub use super::user_identity_provider::ActiveModel as UserIdentityProviderActiveModel;
+    pub use super::user_identity_provider::Column as UserIdentityProviderColumn;
 }
 
 // Optional: Keep direct re-exports if some parts of the code already use them,

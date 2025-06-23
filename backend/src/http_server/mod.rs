@@ -13,6 +13,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, Mutex}; // Added Mutex and mpsc
 use thiserror::Error;
 use crate::server::agent_state::{ConnectedAgents, LiveServerDataCache};
+use crate::server::config::ServerConfig;
 use crate::websocket_models::WsMessage;
 use tower_http::cors::{CorsLayer, Any}; // Added CorsLayer and Any
 use self::auth_logic::{LoginRequest, RegisterRequest};
@@ -44,6 +45,9 @@ pub mod batch_command_routes;
 pub mod ws_batch_command_handler; // Added WebSocket handler for batch commands
 pub mod service_monitor_routes;
 pub mod command_script_routes;
+pub mod oauth_routes;
+pub mod admin_oauth_routes;
+pub mod encryption_service;
  
 #[derive(RustEmbed, Clone)]
 #[folder = "../frontend/dist"]
@@ -64,6 +68,7 @@ pub struct AppState {
     pub command_dispatcher: Arc<CommandDispatcher>, // Added CommandDispatcher
     pub batch_command_updates_tx: broadcast::Sender<BatchCommandUpdateMsg>, // For batch command WS updates
     pub result_broadcaster: Arc<ResultBroadcaster>, // For broadcasting batch command events
+    pub config: Arc<ServerConfig>,
 }
 
 async fn register_handler(
@@ -80,7 +85,7 @@ async fn login_handler(
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<self::auth_logic::LoginResponse>, AppError> {
-    match auth_logic::login_user(&app_state.db_pool, payload).await {
+    match auth_logic::login_user(&app_state.db_pool, payload, &app_state.config.jwt_secret).await {
         Ok(login_response) => Ok(Json(login_response)),
         Err(e) => Err(e.into()),
     }
@@ -162,6 +167,7 @@ pub fn create_axum_router(
     batch_command_manager: Arc<BatchCommandManager>,
     batch_command_updates_tx: broadcast::Sender<BatchCommandUpdateMsg>,
     result_broadcaster: Arc<ResultBroadcaster>,
+    config: Arc<ServerConfig>,
 ) -> Router {
     // batch_command_manager is now passed in
     let command_dispatcher = Arc::new(CommandDispatcher::new(
@@ -183,6 +189,7 @@ pub fn create_axum_router(
         command_dispatcher, // Add CommandDispatcher to AppState
         batch_command_updates_tx, // Add batch_command_updates_tx to AppState
         result_broadcaster, // Add result_broadcaster to AppState
+        config,
     });
 
     // Configure CORS
@@ -198,41 +205,47 @@ pub fn create_axum_router(
         .route("/api/auth/login_test", post(login_test_handler))
         .route("/api/auth/register", post(register_handler))
         .route("/api/auth/login", post(login_handler))
+        .route("/api/auth/me", get(auth_logic::me).route_layer(middleware::from_fn_with_state(app_state.clone(), auth_logic::auth)))
+        .merge(oauth_routes::create_router()) // Add OAuth routes
         .route("/ws/metrics", get(websocket_handler::websocket_handler)) // Added WebSocket route
         .route("/ws/public", get(websocket_handler::public_websocket_handler)) // Added Public WebSocket route
         .merge(metrics_routes::metrics_router()) // 合并指标路由
         .nest(
             "/api/vps",
-            vps_routes::vps_router().route_layer(middleware::from_fn(auth_logic::auth)),
+            vps_routes::vps_router().route_layer(middleware::from_fn_with_state(app_state.clone(), auth_logic::auth)),
         ) // Added VPS routes with auth middleware
         .nest(
             "/api/settings",
-            config_routes::create_settings_router().route_layer(middleware::from_fn(auth_logic::auth)),
+            config_routes::create_settings_router().route_layer(middleware::from_fn_with_state(app_state.clone(), auth_logic::auth)),
         )
        .nest(
            "/api/tags",
-           tag_routes::create_tags_router().route_layer(middleware::from_fn(auth_logic::auth)),
+           tag_routes::create_tags_router().route_layer(middleware::from_fn_with_state(app_state.clone(), auth_logic::auth)),
+       )
+       .nest(
+            "/api/admin/oauth",
+            admin_oauth_routes::create_router().route_layer(middleware::from_fn_with_state(app_state.clone(), auth_logic::auth)),
        )
        .nest(
             "/api/notifications",
-            notification_routes::create_notification_router().route_layer(middleware::from_fn(auth_logic::auth)),
+            notification_routes::create_notification_router().route_layer(middleware::from_fn_with_state(app_state.clone(), auth_logic::auth)),
         )
         .nest(
             "/api/alerts",
-            alert_routes::create_alert_router().route_layer(middleware::from_fn(auth_logic::auth)),
+            alert_routes::create_alert_router().route_layer(middleware::from_fn_with_state(app_state.clone(), auth_logic::auth)),
         )
         .nest(
             "/api/batch_commands",
             batch_command_routes::batch_command_routes() // Removed argument
-                .route_layer(middleware::from_fn(auth_logic::auth)),
+                .route_layer(middleware::from_fn_with_state(app_state.clone(), auth_logic::auth)),
         )
         .nest(
             "/api/monitors",
-            service_monitor_routes::create_service_monitor_router().route_layer(middleware::from_fn(auth_logic::auth)),
+            service_monitor_routes::create_service_monitor_router().route_layer(middleware::from_fn_with_state(app_state.clone(), auth_logic::auth)),
         )
         .nest(
             "/api/command-scripts",
-            command_script_routes::command_script_routes().route_layer(middleware::from_fn(auth_logic::auth)),
+            command_script_routes::command_script_routes().route_layer(middleware::from_fn_with_state(app_state.clone(), auth_logic::auth)),
         )
         .route("/ws/batch-command/{batch_command_id}", get(ws_batch_command_handler::batch_command_ws_handler)) // Corrected WebSocket route for batch command updates
         .with_state(app_state.clone())
