@@ -17,7 +17,6 @@ export interface OAuthProvider {
     icon_url: string | null;
     user_info_mapping: {
         id_field: string;
-        email_field: string;
         username_field: string;
     } | null;
     enabled: boolean;

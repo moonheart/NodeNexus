@@ -5,7 +5,6 @@ import type { RegisterRequest } from '../services/authService';
 
 const RegisterPage: React.FC = () => {
     const [username, setUsername] = useState('');
-    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const { register, isLoading, error, clearAuthError } = useAuthStore();
     const navigate = useNavigate();
@@ -13,7 +12,7 @@ const RegisterPage: React.FC = () => {
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
         clearAuthError();
-        const userData: RegisterRequest = { username, email, password };
+        const userData: RegisterRequest = { username, password };
         try {
             await register(userData);
             navigate('/login');
@@ -42,21 +41,6 @@ const RegisterPage: React.FC = () => {
                             className="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
-                        />
-                    </div>
-                    <div>
-                        <label htmlFor="email" className="block text-sm font-medium text-slate-700">
-                            邮箱地址
-                        </label>
-                        <input
-                            id="email"
-                            name="email"
-                            type="email"
-                            autoComplete="email"
-                            required
-                            className="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
                         />
                     </div>
                     <div>
