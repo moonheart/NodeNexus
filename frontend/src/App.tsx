@@ -20,6 +20,7 @@ import AdminOAuthProvidersPage from './pages/AdminOAuthProvidersPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout'; // Import the new Layout component
 import SettingsLayout from './components/SettingsLayout';
+import AccountSettingsPage from './pages/AccountSettingsPage'; // Import the new page
 import AuthCallbackPage from './pages/AuthCallbackPage'; // Import the new callback page
 import { useAuthStore } from './store/authStore';
 
@@ -73,7 +74,7 @@ function App() {
               <Route path="tags"element={<TagManagementPage />} />
               <Route path="scripts" element={<div>Script Management Page (TODO)</div>} />
               <Route path="oauth" element={<AdminOAuthProvidersPage />} />
-              <Route path="account" element={<div>Account Settings Page (TODO)</div>} />
+              <Route path="account" element={<AccountSettingsPage />} />
             </Route>
           </Route>
         </Route>

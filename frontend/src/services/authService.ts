@@ -92,7 +92,8 @@ export const loginUser = async (data: LoginRequest): Promise<LoginResponse> => {
 };
 
 export interface AuthProvider {
-    provider_name: string;
+    name: string;
+    iconUrl: string | undefined;
 }
 
 export const getAuthProviders = async (): Promise<AuthProvider[]> => {

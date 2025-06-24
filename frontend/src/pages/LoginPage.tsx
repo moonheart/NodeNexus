@@ -10,6 +10,7 @@ const LoginPage: React.FC = () => {
     const [providers, setProviders] = useState<AuthProvider[]>([]);
     const { login, isLoading, error, isAuthenticated, clearAuthError } = useAuthStore();
     const navigate = useNavigate();
+    const [oauthError, setOauthError] = useState<string | null>(null);
 
     useEffect(() => {
         if (isAuthenticated) {
@@ -18,6 +19,14 @@ const LoginPage: React.FC = () => {
     }, [isAuthenticated, navigate]);
 
     useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const errorParam = params.get('error');
+        if (errorParam) {
+            setOauthError(decodeURIComponent(errorParam));
+            // Clean the URL
+            window.history.replaceState({}, document.title, "/login");
+        }
+
         const fetchProviders = async () => {
             try {
                 const availableProviders = await getAuthProviders();
@@ -84,6 +93,12 @@ const LoginPage: React.FC = () => {
                         </div>
                     )}
 
+                    {oauthError && (
+                        <div className="p-3 text-sm text-amber-700 bg-amber-100 rounded-md">
+                            {oauthError}
+                        </div>
+                    )}
+
                     <div>
                         <button
                             type="submit"
@@ -107,18 +122,21 @@ const LoginPage: React.FC = () => {
                </div>
 
               <div>
-                  {providers.map((provider) => (
+                  {providers
+                    .filter(provider => provider && provider.name)
+                    .map((provider) => (
                       <button
-                          key={provider.provider_name}
+                          key={provider.name}
                           type="button"
-                          onClick={() => window.location.href = `/api/auth/${provider.provider_name}/login`}
-                          className="w-full flex justify-center items-center py-2 px-4 border border-slate-300 rounded-md shadow-sm text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                          onClick={() => window.location.href = `/api/auth/${provider.name}/login`}
+                          className="w-full flex justify-center items-center py-2 px-4 border border-slate-300 rounded-md shadow-sm text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 mb-2"
                       >
                           {/* You can add specific icons based on provider_name */}
-                          <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                              <path fillRule="evenodd" d="M10 0C4.477 0 0 4.477 0 10c0 4.418 2.865 8.166 6.839 9.49.5.092.682-.217.682-.482 0-.237-.009-.868-.014-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.031-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0110 4.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.378.203 2.398.1 2.651.64.7 1.03 1.595 1.03 2.688 0 3.848-2.338 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.001 10.001 0 0020 10c0-5.523-4.477-10-10-10z" clipRule="evenodd" />
-                          </svg>
-                          使用 {provider.provider_name.charAt(0).toUpperCase() + provider.provider_name.slice(1)} 登录
+                            <img
+                                src={provider.iconUrl} // Assuming you have icons in a public/icons folder
+                                alt={`${provider.name} icon`}
+                                className="w-5 h-5 mr-2"/>
+                          使用 {provider.name.charAt(0).toUpperCase() + provider.name.slice(1)} 登录
                       </button>
                   ))}
               </div>

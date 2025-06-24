@@ -17,6 +17,7 @@ use crate::server::config::ServerConfig;
 use crate::websocket_models::WsMessage;
 use tower_http::cors::{CorsLayer, Any}; // Added CorsLayer and Any
 use self::auth_logic::{LoginRequest, RegisterRequest};
+use axum_extra::extract::cookie::{Cookie, SameSite};
 use crate::notifications::service::NotificationService;
 use crate::db::services::{AlertService, BatchCommandManager}; // Added BatchCommandManager
 use crate::server::command_dispatcher::CommandDispatcher; // Added CommandDispatcher
@@ -47,6 +48,7 @@ pub mod service_monitor_routes;
 pub mod command_script_routes;
 pub mod oauth_routes;
 pub mod admin_oauth_routes;
+pub mod user_routes; // Add user routes module
 pub mod encryption_service;
  
 #[derive(RustEmbed, Clone)]
@@ -84,11 +86,23 @@ async fn register_handler(
 async fn login_handler(
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<LoginRequest>,
-) -> Result<Json<self::auth_logic::LoginResponse>, AppError> {
-    match auth_logic::login_user(&app_state.db_pool, payload, &app_state.config.jwt_secret).await {
-        Ok(login_response) => Ok(Json(login_response)),
-        Err(e) => Err(e.into()),
-    }
+) -> Result<impl IntoResponse, AppError> {
+    let login_response = auth_logic::login_user(&app_state.db_pool, payload, &app_state.config.jwt_secret).await?;
+
+    let auth_cookie = Cookie::build(("token", login_response.token.clone()))
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Lax)
+        .secure(true) // Make sure your frontend is served over HTTPS in production
+        .finish();
+
+    let mut response = Json(login_response).into_response();
+    response.headers_mut().insert(
+        axum::http::header::SET_COOKIE,
+        auth_cookie.to_string().parse().unwrap(),
+    );
+
+    Ok(response)
 }
 
 
@@ -142,6 +156,12 @@ impl IntoResponse for AppError {
 impl From<sea_orm::DbErr> for AppError {
     fn from(err: sea_orm::DbErr) -> Self {
         AppError::DatabaseError(err.to_string())
+    }
+}
+
+impl From<serde_json::Error> for AppError {
+    fn from(err: serde_json::Error) -> Self {
+        AppError::InternalServerError(format!("JSON serialization/deserialization error: {}", err))
     }
 }
 
@@ -206,7 +226,13 @@ pub fn create_axum_router(
         .route("/api/auth/register", post(register_handler))
         .route("/api/auth/login", post(login_handler))
         .route("/api/auth/me", get(auth_logic::me).route_layer(middleware::from_fn_with_state(app_state.clone(), auth_logic::auth)))
-        .merge(oauth_routes::create_router()) // Add OAuth routes
+        .nest(
+            "/api/auth",
+            oauth_routes::create_public_router().merge(
+                oauth_routes::create_protected_router()
+                    .route_layer(middleware::from_fn_with_state(app_state.clone(), auth_logic::auth)),
+            ),
+        )
         .route("/ws/metrics", get(websocket_handler::websocket_handler)) // Added WebSocket route
         .route("/ws/public", get(websocket_handler::public_websocket_handler)) // Added Public WebSocket route
         .merge(metrics_routes::metrics_router()) // 合并指标路由
@@ -247,6 +273,10 @@ pub fn create_axum_router(
             "/api/command-scripts",
             command_script_routes::command_script_routes().route_layer(middleware::from_fn_with_state(app_state.clone(), auth_logic::auth)),
         )
+       .nest(
+           "/api/user",
+           user_routes::create_user_router().route_layer(middleware::from_fn_with_state(app_state.clone(), auth_logic::auth)),
+       )
         .route("/ws/batch-command/{batch_command_id}", get(ws_batch_command_handler::batch_command_ws_handler)) // Corrected WebSocket route for batch command updates
         .with_state(app_state.clone())
         .layer(cors);

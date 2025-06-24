@@ -1,11 +1,12 @@
 // backend/src/db/services/oauth_service.rs
 
-use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait};
-use crate::db::entities::{oauth2_provider, prelude::Oauth2Provider};
+use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, ActiveModelTrait, Set, DbErr};
+use crate::db::entities::{oauth2_provider, prelude::Oauth2Provider, user, user_identity_provider};
 use crate::http_server::AppError;
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
-use sea_orm::{ActiveModelTrait, Set};
+use crate::http_server::auth_logic;
+use crate::server::config::ServerConfig;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ProviderUpsertPayload {
@@ -94,9 +95,93 @@ pub async fn get_user_info(
         .map_err(|e| AppError::InternalServerError(format!("Failed to parse user info response: {}", e)))
 }
 
+// This struct will be used in the route handler
+#[derive(Serialize, Deserialize, Debug)]
+pub struct OAuthState {
+    pub nonce: String,
+    pub action: String,
+    pub user_id: Option<i32>, // Only present for 'link' action
+}
+
+// The result of a successful callback, to be handled by the route
+pub enum OAuthCallbackResult {
+    Login { token: String },
+    LinkSuccess,
+}
+
+pub async fn handle_oauth_callback(
+    db: &DatabaseConnection,
+    config: &ServerConfig,
+    provider_name: &str,
+    code: &str,
+    state: &OAuthState,
+) -> Result<OAuthCallbackResult, AppError> {
+    let provider_config = get_provider_config(db, provider_name, &config.notification_encryption_key).await?;
+    
+    let redirect_uri = format!("{}/api/auth/{}/callback", &config.frontend_url, provider_name);
+
+    let token_response = exchange_code_for_token(&provider_config, code, &redirect_uri).await?;
+
+    let user_info = get_user_info(&provider_config, &token_response.access_token).await?;
+
+    let mapping = provider_config.user_info_mapping.as_ref()
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| AppError::InternalServerError("User info mapping is missing or invalid.".to_string()))?;
+
+    let provider_user_id = user_info.get(mapping.get("id_field").and_then(|v| v.as_str()).unwrap_or("id"))
+        .and_then(|v| v.as_str().map(ToString::to_string).or_else(|| v.as_i64().map(|n| n.to_string())))
+        .ok_or_else(|| AppError::InternalServerError("Could not extract provider user ID.".to_string()))?;
+
+    let username = user_info.get(mapping.get("username_field").and_then(|v| v.as_str()).unwrap_or("login"))
+        .and_then(|v| v.as_str().map(ToString::to_string))
+        .ok_or_else(|| AppError::InternalServerError("Could not extract username.".to_string()))?;
+
+    if state.action == "link" {
+        let user_id = state.user_id.ok_or(AppError::InvalidInput("User ID missing for link action".to_string()))?;
+
+        let existing_link = user_identity_provider::Entity::find()
+            .filter(user_identity_provider::Column::ProviderName.eq(provider_name))
+            .filter(user_identity_provider::Column::ProviderUserId.eq(&provider_user_id))
+            .one(db).await?;
+
+        if let Some(link) = existing_link {
+            if link.user_id != user_id {
+                return Err(AppError::Conflict("This external account is already linked to another user.".to_string()));
+            }
+        } else {
+            let new_identity = user_identity_provider::ActiveModel {
+                user_id: Set(user_id),
+                provider_name: Set(provider_name.to_string()),
+                provider_user_id: Set(provider_user_id),
+                ..Default::default()
+            };
+            new_identity.insert(db).await?;
+        }
+        Ok(OAuthCallbackResult::LinkSuccess)
+    } else { // "login" action
+        let identity = user_identity_provider::Entity::find()
+            .filter(user_identity_provider::Column::ProviderName.eq(provider_name))
+            .filter(user_identity_provider::Column::ProviderUserId.eq(&provider_user_id))
+            .one(db).await?;
+
+        let user_model = if let Some(identity) = identity {
+            user::Entity::find_by_id(identity.user_id).one(db).await?
+                .ok_or(AppError::UserNotFound)?
+        } else {
+            // Don't create a new user on login. The account must be linked first.
+            return Err(AppError::Unauthorized("该外部帐户未关联。请先使用您的用户名和密码登录以关联您的帐户。".to_string()));
+        };
+
+        let login_response = auth_logic::create_jwt_for_user(&user_model, &config.jwt_secret)?;
+        Ok(OAuthCallbackResult::Login { token: login_response.token })
+    }
+}
+
+
 #[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct PublicProviderInfo {
-    pub provider_name: String,
+    pub name: String,
     pub client_id: String,
     pub auth_url: String,
     pub scopes: Option<String>,
@@ -114,7 +199,7 @@ pub async fn get_all_providers(
             providers
                 .into_iter()
                 .map(|p| PublicProviderInfo {
-                    provider_name: p.provider_name,
+                    name: p.provider_name,
                     client_id: p.client_id,
                     auth_url: p.auth_url,
                     scopes: p.scopes,

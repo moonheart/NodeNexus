@@ -106,3 +106,4 @@ $RECYCLE.BIN/
 
 agent_config.toml
 .cargo/config.toml
+logs/
