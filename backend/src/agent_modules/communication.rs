@@ -239,13 +239,16 @@ impl ConnectionHandler {
         let mut client = AgentCommunicationServiceClient::new(channel);
         info!("Successfully connected to gRPC endpoint.");
         let (tx_to_server, rx_for_stream) = mpsc::channel(128);
-        let stream_response = client.establish_communication_stream(ReceiverStream::new(rx_for_stream)).await
-            .map_err(|e| {
-                error!(error = %e, "Failed to establish communication stream.");
-                e
-            })?;
-        let mut in_stream = stream_response.into_inner();
-        info!("Communication stream established.");
+
+        let stream_response_future = client.establish_communication_stream(ReceiverStream::new(rx_for_stream));
+
+        // let stream_response = client.establish_communication_stream(ReceiverStream::new(rx_for_stream)).await
+        //     .map_err(|e| {
+        //         error!(error = %e, "Failed to establish communication stream.");
+        //         e
+        //     })?;
+        // let mut in_stream = stream_response.into_inner();
+        info!("Continue without wait for establish_communication_stream result.");
 
         let os_type_proto = if cfg!(target_os = "linux") { OsType::Linux }
                           else if cfg!(target_os = "macos") { OsType::Macos }
@@ -298,6 +301,11 @@ impl ConnectionHandler {
             error!(error = %e, "Failed to send handshake message.");
             Box::new(e) as Box<dyn Error>
         })?;
+
+        info!("Handshake message sent to server. Waiting for response...");
+
+        let mut in_stream = stream_response_future.await?.into_inner();
+
         
         match in_stream.next().await {
             Some(Ok(response_msg)) => {
