@@ -26,8 +26,18 @@ use tokio::sync::mpsc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, fmt};
 use tracing_appender::rolling;
 use tracing::{info, error, warn, debug};
+use clap::Parser;
 
 use tower::Service;
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Path to the configuration file
+    #[arg(short, long)]
+    config: Option<String>,
+}
+
 
 fn init_logging() {
     // Log to a file: JSON format, daily rotation
@@ -58,11 +68,13 @@ fn init_logging() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Added Send + Sync for tokio::spawn
-    let args: Vec<String> = std::env::args().collect();
-    if args.contains(&"--version".to_string()) {
+    // Manually check for --version before full parsing to keep the original simple output.
+    if std::env::args().any(|arg| arg == "--version") {
         println!("Server version: {}", VERSION);
         return Ok(());
     }
+
+    let args = Args::parse();
 
     init_logging(); // Initialize logging first
     info!("Starting server, version: {}", VERSION);
@@ -72,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     let (update_trigger_tx, mut update_trigger_rx) = mpsc::channel::<()>(100);
 
     // --- Server Config Setup ---
-    let server_config = match ServerConfig::from_env() {
+    let server_config = match ServerConfig::load(args.config.as_deref()) {
         Ok(config) => Arc::new(config),
         Err(e) => {
             error!("Failed to load server configuration: {}", e);
@@ -80,6 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
             return Err(e.into());
         }
     };
+
 
     // --- Database Pool Setup ---
     let database_url = env::var("DATABASE_URL")
