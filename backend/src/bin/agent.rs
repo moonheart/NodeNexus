@@ -355,6 +355,21 @@ fn run_console_mode() {
 
 
 async fn run_agent_logic() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.contains(&"--version".to_string()) {
+        println!("Agent version: {}", VERSION);
+        return Ok(());
+    }
+    // --- Health Check Argument Handling ---
+    if args.contains(&"--health-check".to_string()) {
+        // This is a very basic health check. A real one might try to load config,
+        // or even briefly connect to the server. For now, just exiting successfully
+        // proves the binary is executable and not corrupt.
+        println!("Health check successful.");
+        std::process::exit(0);
+    }
+
     let cli_args = Args::parse();
 
     rustls::crypto::ring::default_provider()
