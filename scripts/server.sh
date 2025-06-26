@@ -4,13 +4,13 @@
 set -e
 
 # --- Configuration ---
-INSTALL_DIR="/opt/node-nexus"
-SERVICE_NAME="node-nexus-agent"
+INSTALL_DIR="/opt/node-nexus-server"
+SERVICE_NAME="node-nexus-server"
 SERVICE_USER="root" # Default user, can be changed with --secure-user
-CONFIG_FILE_PATH="$INSTALL_DIR/agent_config.toml"
+CONFIG_FILE_PATH="$INSTALL_DIR/config.toml"
 SERVICE_FILE_PATH="/etc/systemd/system/$SERVICE_NAME.service"
 GITHUB_REPO="moonheart/NodeNexus"
-AGENT_BINARY_NAME="" # This will be set dynamically
+SERVER_BINARY_NAME="" # This will be set dynamically
 
 # --- Helper Functions ---
 print_info() {
@@ -63,16 +63,16 @@ detect_arch() {
     arch=$(uname -m)
     case $arch in
         x86_64)
-            AGENT_BINARY_NAME="agent-linux-amd64"
+            SERVER_BINARY_NAME="server-linux-amd64"
             ;;
         aarch64)
-            AGENT_BINARY_NAME="agent-linux-arm64"
+            SERVER_BINARY_NAME="server-linux-arm64"
             ;;
         *)
             print_error "Unsupported architecture: $arch. Only x86_64 and aarch64 are supported."
             ;;
     esac
-    print_info "Detected architecture: $arch. Using binary: $AGENT_BINARY_NAME"
+    print_info "Detected architecture: $arch. Using binary: $SERVER_BINARY_NAME"
 }
 
 get_latest_release_url() {
@@ -84,10 +84,10 @@ get_latest_release_url() {
     
     if echo "$response" | jq -e '.assets' &> /dev/null; then
         local download_url
-        download_url=$(echo "$response" | jq -r ".assets[] | select(.name == \"$AGENT_BINARY_NAME\") | .browser_download_url")
+        download_url=$(echo "$response" | jq -r ".assets[] | select(.name == \"$SERVER_BINARY_NAME\") | .browser_download_url")
         
         if [ -z "$download_url" ]; then
-            print_error "Could not find an asset named '$AGENT_BINARY_NAME' in the latest release."
+            print_error "Could not find an asset named '$SERVER_BINARY_NAME' in the latest release."
         else
             echo "$download_url"
         fi
@@ -100,29 +100,26 @@ show_usage() {
     echo "Usage: $0 <command> [options]"
     echo
     echo "Commands:"
-    echo "  install                   Install or update the agent. This is the default command."
-    echo "  uninstall                 Uninstall the agent."
+    echo "  install                   Install or update the server. This is the default command."
+    echo "  uninstall                 Uninstall the server."
     echo
     echo "Options for 'install' command:"
-    echo "  -s, --server-address <url>  The address of the server (e.g., http://your-server.com:8080)."
-    echo "  -i, --vps-id <id>           The ID of the VPS."
-    echo "  -k, --agent-secret <secret> The secret key for the agent."
-    echo "  -d, --download-url <url>    Optional. Direct URL to the agent binary. Overrides GitHub release check."
-    echo "      --secure-user           Create a dedicated user 'node-nexus' to run the service for enhanced security."
+    echo "  -d, --download-url <url>    Optional. Direct URL to the server binary. Overrides GitHub release check."
+    echo "      --secure-user           Create a dedicated user 'node-nexus-server' to run the service for enhanced security."
     echo "  -h, --help                  Show this help message."
 }
 
 # --- Main Installation Steps ---
 setup_secure_user() {
-    if id "node-nexus" &>/dev/null; then
-        print_info "User 'node-nexus' already exists."
+    if id "node-nexus-server" &>/dev/null; then
+        print_info "User 'node-nexus-server' already exists."
     else
-        print_info "Creating dedicated user 'node-nexus'..."
-        useradd --system --no-create-home --shell /bin/false node-nexus
+        print_info "Creating dedicated user 'node-nexus-server'..."
+        useradd --system --no-create-home --shell /bin/false node-nexus-server
     fi
-    print_info "Setting ownership of $INSTALL_DIR to 'node-nexus' user..."
-    chown -R node-nexus:node-nexus "$INSTALL_DIR"
-    SERVICE_USER="node-nexus"
+    print_info "Setting ownership of $INSTALL_DIR to 'node-nexus-server' user..."
+    chown -R node-nexus-server:node-nexus-server "$INSTALL_DIR"
+    SERVICE_USER="node-nexus-server"
 }
 
 setup_environment() {
@@ -131,72 +128,52 @@ setup_environment() {
 }
 
 create_config_file() {
-    local server_address=$1
-    local vps_id=$2
-    local agent_secret=$3
-
     if [ -f "$CONFIG_FILE_PATH" ]; then
         print_info "Configuration file already exists. Skipping creation."
         return
     fi
     
-    print_info "Creating configuration file..."
-
-    if [ -z "$server_address" ]; then
-        read -p "Enter the server address (e.g., http://your-server.com:8080): " server_address
-    fi
-    if [ -z "$vps_id" ]; then
-        read -p "Enter the VPS ID: " vps_id
-    fi
-    if [ -z "$agent_secret" ]; then
-        read -p "Enter the Agent Secret: " agent_secret
-    fi
-
-    if [ -z "$server_address" ] || [ -z "$vps_id" ] || [ -z "$agent_secret" ]; then
-        print_error "Server Address, VPS ID, and Agent Secret are required for the first installation."
-        show_usage
-        exit 1
-    fi
+    print_info "Creating a default configuration file..."
 
     cat > "$CONFIG_FILE_PATH" <<EOF
-# Node-Nexus Agent Configuration
-server_address = "$server_address"
-vps_id = $vps_id
-agent_secret = "$agent_secret"
+# Node-Nexus Server Configuration
+# Please edit this file with your actual database and other configurations.
 
-# Default values, can be adjusted later
+# Example for PostgreSQL
+# database_url = "postgres://user:password@localhost/node_nexus"
+
+# Example for SQLite
+database_url = "sqlite:$INSTALL_DIR/node_nexus.db"
+
+# JWT secret for signing tokens
+# PLEASE CHANGE THIS to a long, random string for security
+jwt_secret = "your-super-secret-and-long-jwt-secret"
+
+# Server listen address
+listen_address = "0.0.0.0:8080"
+
+# Log level (e.g., "info", "debug", "warn", "error")
 log_level = "info"
-heartbeat_interval_seconds = 30
-metrics_collect_interval_seconds = 5
-metrics_upload_interval_seconds = 7
-metrics_upload_batch_max_size = 10
-data_collection_interval_seconds = 15
-generic_metrics_upload_interval_seconds = 300
-generic_metrics_upload_batch_max_size = 100
-
-[docker_monitoring]
-enabled = true
-docker_info_collect_interval_seconds = 600
-docker_info_upload_interval_seconds = 900
 EOF
-    print_success "Configuration file created at $CONFIG_FILE_PATH"
+    print_success "Default configuration file created at $CONFIG_FILE_PATH"
+    print_info "IMPORTANT: Please review and edit the configuration file before starting the server for the first time."
 }
 
-download_and_install_agent() {
+download_and_install_server() {
     local download_url=$1
-    local agent_path="$INSTALL_DIR/agent"
+    local server_path="$INSTALL_DIR/server"
 
-    print_info "Downloading agent from: $download_url"
-    curl -L --progress-bar "$download_url" -o "$agent_path"
+    print_info "Downloading server from: $download_url"
+    curl -L --progress-bar "$download_url" -o "$server_path"
     
     if [ $? -ne 0 ]; then
-        print_error "Failed to download the agent."
+        print_error "Failed to download the server."
     fi
 
-    print_info "Setting permissions for the agent binary..."
-    chmod +x "$agent_path"
+    print_info "Setting permissions for the server binary..."
+    chmod +x "$server_path"
     
-    print_success "Agent binary installed at $agent_path"
+    print_success "Server binary installed at $server_path"
 }
 
 setup_systemd_service() {
@@ -204,19 +181,19 @@ setup_systemd_service() {
     
     cat > "$SERVICE_FILE_PATH" <<EOF
 [Unit]
-Description=Node-Nexus Agent
+Description=Node-Nexus Server
 After=network.target
 
 [Service]
 Type=simple
 User=$SERVICE_USER
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/agent --config $CONFIG_FILE_PATH
-Environment="NEXUS_AGENT_SERVICE_NAME=$SERVICE_NAME"
+ExecStart=$INSTALL_DIR/server --config $CONFIG_FILE_PATH
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
+Environment="NEXUS_SERVER_SERVICE_NAME=$SERVICE_NAME"
 
 [Install]
 WantedBy=multi-user.target
@@ -246,7 +223,7 @@ stop_service_for_update() {
     fi
 }
 
-uninstall_agent() {
+uninstall_server() {
     print_info "Starting uninstallation process..."
     check_root
 
@@ -268,15 +245,18 @@ uninstall_agent() {
     fi
 
     if [ -d "$INSTALL_DIR" ]; then
-        print_info "Removing installation directory: $INSTALL_DIR"
-        rm -rf "$INSTALL_DIR"
+        read -p "Do you want to remove the installation directory ($INSTALL_DIR)? This will delete the server binary, config, and SQLite database. [y/N] " -r
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            print_info "Removing installation directory: $INSTALL_DIR"
+            rm -rf "$INSTALL_DIR"
+        fi
     fi
 
-    if id "node-nexus" &>/dev/null; then
-        read -p "Do you want to remove the 'node-nexus' user? [y/N] " -r
+    if id "node-nexus-server" &>/dev/null; then
+        read -p "Do you want to remove the 'node-nexus-server' user? [y/N] " -r
         if [[ $REPLY =~ ^[Yy]$ ]]; then
-            print_info "Removing 'node-nexus' user..."
-            userdel node-nexus
+            print_info "Removing 'node-nexus-server' user..."
+            userdel node-nexus-server
         fi
     fi
 
@@ -295,24 +275,18 @@ main() {
     fi
 
     if [ "$command" == "uninstall" ]; then
-        uninstall_agent
+        uninstall_server
         exit 0
     fi
 
     # --- Install/Update Logic ---
     local download_url=""
-    local server_address=""
-    local vps_id=""
-    local agent_secret=""
     local use_secure_user=false
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         key="$1"
         case $key in
-            -s|--server-address) server_address="$2"; shift 2 ;;
-            -i|--vps-id) vps_id="$2"; shift 2 ;;
-            -k|--agent-secret) agent_secret="$2"; shift 2 ;;
             -d|--download-url) download_url="$2"; shift 2 ;;
             --secure-user) use_secure_user=true; shift ;;
             -h|--help) show_usage; exit 0 ;;
@@ -327,15 +301,9 @@ main() {
     check_dependencies
     detect_arch
 
-    # Check if it's an update or a new installation
     if [ -f "$CONFIG_FILE_PATH" ]; then
         print_info "Existing installation detected. Proceeding with update..."
         
-        if [ -n "$server_address" ] || [ -n "$vps_id" ] || [ -n "$agent_secret" ]; then
-            print_info "Configuration parameters (-s, -i, -k) are ignored during an update."
-        fi
-
-        # Stop the service before updating the binary
         stop_service_for_update
 
         if [ -z "$download_url" ]; then
@@ -344,14 +312,13 @@ main() {
             print_info "Using provided download URL: $download_url"
         fi
 
-        # Ensure environment exists, especially after a partial uninstall
         setup_environment
         
         if [ "$use_secure_user" = true ]; then
             setup_secure_user
         fi
-
-        download_and_install_agent "$download_url"
+        
+        download_and_install_server "$download_url"
         setup_systemd_service
 
         print_success "Update complete!"
@@ -366,13 +333,13 @@ main() {
         fi
 
         setup_environment
-        create_config_file "$server_address" "$vps_id" "$agent_secret"
+        create_config_file
         
         if [ "$use_secure_user" = true ]; then
             setup_secure_user
         fi
         
-        download_and_install_agent "$download_url"
+        download_and_install_server "$download_url"
         setup_systemd_service
 
         print_success "Installation complete!"

@@ -15,7 +15,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # ---- Stage 2: Build Backend ----
-FROM rust:1.87-slim AS backend-builder
+FROM rust:1.87-slim-bookworm AS backend-builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -53,7 +53,9 @@ COPY backend/ ./backend/
 RUN cd backend && cargo build --release --bin server
 
 # ---- Stage 3: Final Image ----
-FROM debian:bullseye-slim AS runner
+FROM debian:bookworm-slim AS runner
+
+RUN apt-get update && apt-get install -y libssl3 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

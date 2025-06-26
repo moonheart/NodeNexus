@@ -78,52 +78,62 @@ fn is_running_under_launchd() -> bool {
 
 async fn replace_and_restart(new_binary_path: &Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let current_exe = env::current_exe()?;
-    info!(current = ?current_exe, new = ?new_binary_path, "Replacing current executable");
+    info!(current = ?current_exe, new = ?new_binary_path, "Starting self-update process");
 
+    // 1. Rename the current running executable. This is allowed on both Windows and Unix.
+    // The OS keeps the file handle open for the running process, but the name is now free.
+    let backup_path = current_exe.with_extension("bak");
+    info!(backup = ?backup_path, "Renaming current executable");
+    if let Err(e) = fs::rename(&current_exe, &backup_path) {
+        error!(error = %e, "Failed to rename running executable. Update cannot proceed.");
+        return Err(e.into());
+    }
+
+    // 2. Copy the new executable into the original path.
+    info!(from = ?new_binary_path, to = ?current_exe, "Copying new binary into place");
+    if let Err(e) = fs::copy(new_binary_path, &current_exe) {
+        error!(error = %e, "Failed to copy new binary. Attempting to roll back.");
+        // Attempt to restore the original executable if copy fails.
+        if let Err(rb_err) = fs::rename(&backup_path, &current_exe) {
+            error!(error = %rb_err, "CRITICAL: Failed to restore original executable. The agent is in a broken state.");
+        }
+        return Err(e.into());
+    }
+
+    // Clean up the downloaded temporary file
+    if let Err(e) = fs::remove_file(new_binary_path) {
+        warn!(error = %e, "Failed to remove temporary update file.");
+    }
+    info!("Binary replaced successfully.");
+
+    // 3. Trigger the restart. The service manager or exec will start the new binary.
     #[cfg(unix)]
     {
-        // On Unix-like systems, we replace the binary file first.
-        fs::rename(new_binary_path, &current_exe)?;
-        info!("Binary replaced successfully.");
-
         if let Ok(service_name) = env::var("NEXUS_AGENT_SERVICE_NAME") {
             if is_running_under_systemd() {
                 info!("Restarting via systemctl for service: {}", service_name);
-                let restart_status = Command::new("systemctl")
-                    .arg("restart")
-                    .arg(&service_name)
-                    .status()
-                    .await?;
-                
+                let restart_status = Command::new("systemctl").arg("restart").arg(&service_name).status().await?;
                 if !restart_status.success() {
-                    let msg = format!("'systemctl restart {}' failed with status: {}. The agent might need manual intervention.", service_name, restart_status);
+                    let msg = format!("'systemctl restart {}' failed. Manual intervention may be required.", service_name);
                     error!("{}", msg);
                     return Err(msg.into());
                 }
-                
                 info!("systemd service '{}' restarted successfully. Exiting old process.", service_name);
                 std::process::exit(0);
             } else if is_running_under_launchd() {
                 info!("Restarting via launchctl for service: {}", service_name);
-                
-                // Stop the service. Failure is not critical, it might already be stopped.
-                let stop_status = Command::new("launchctl").arg("stop").arg(&service_name).status().await?;
-                if !stop_status.success() {
-                    warn!("'launchctl stop {}' failed with status: {}. This might be okay if the service is already stopped.", service_name, stop_status);
-                }
-
-                // Start the service
+                // Stop is best-effort, start is critical.
+                let _ = Command::new("launchctl").arg("stop").arg(&service_name).status().await;
                 let start_status = Command::new("launchctl").arg("start").arg(&service_name).status().await?;
                 if !start_status.success() {
-                    let msg = format!("'launchctl start {}' failed with status: {}. The agent might need manual intervention.", service_name, start_status);
+                    let msg = format!("'launchctl start {}' failed. Manual intervention may be required.", service_name);
                     error!("{}", msg);
                     return Err(msg.into());
                 }
-
-                info!("launchd service '{}' started successfully. Exiting old process.", service_name);
+                info!("launchd service '{}' restarted successfully. Exiting old process.", service_name);
                 std::process::exit(0);
             } else {
-                warn!("NEXUS_AGENT_SERVICE_NAME is set, but no known service manager (systemd, launchd) was detected. Falling back to exec.");
+                warn!("NEXUS_AGENT_SERVICE_NAME is set, but no known service manager was detected. Falling back to exec.");
             }
         }
 
@@ -134,46 +144,36 @@ async fn replace_and_restart(new_binary_path: &Path) -> Result<(), Box<dyn std::
 
     #[cfg(windows)]
     {
-        let old_exe_bak = current_exe.with_extension("bak");
-        
-        if let Err(e) = fs::rename(&current_exe, &old_exe_bak) {
-            warn!(error = %e, "Failed to rename running executable. Update cannot proceed.");
-            return Err(e.into());
-        }
-
-        if let Err(e) = fs::copy(new_binary_path, &current_exe) {
-            error!(error = %e, "Failed to copy new binary into place. Attempting to roll back.");
-            if let Err(rb_err) = fs::rename(&old_exe_bak, &current_exe) {
-                error!(error = %rb_err, "CRITICAL: Failed to restore original executable. The agent is in a broken state.");
-            }
-            return Err(e.into());
-        }
-        
-        if let Err(e) = fs::remove_file(new_binary_path) {
-            warn!(error = %e, "Failed to remove temporary update file.");
-        }
-
         if let Ok(service_name) = env::var("NEXUS_AGENT_SERVICE_NAME") {
             info!("Attempting to restart service '{}' via SCM...", service_name);
-
-            let stop_status = Command::new("sc.exe").arg("stop").arg(&service_name).status().await?;
-            if !stop_status.success() {
-                warn!("'sc.exe stop {}' failed with status: {}. The service might not have stopped cleanly.", service_name, stop_status);
-            } else {
-                info!("Service '{}' stopped successfully.", service_name);
+            // A simple restart command should be sufficient as the binary is already replaced.
+            let restart_status = Command::new("sc.exe").arg("start").arg(&service_name).status().await;
+            match restart_status {
+                Ok(status) if status.success() => {
+                    info!("Service '{}' started successfully. Exiting old process.", service_name);
+                    std::process::exit(0);
+                },
+                Ok(status) => {
+                     // If start fails, it might be because the service is already running (or stopping).
+                     // Try to stop it first, then start again.
+                    warn!("'sc.exe start' failed with status: {}. Trying to stop and start.", status);
+                    let _ = Command::new("sc.exe").arg("stop").arg(&service_name).status().await;
+                    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                    let final_start_status = Command::new("sc.exe").arg("start").arg(&service_name).status().await?;
+                     if !final_start_status.success() {
+                        let msg = format!("'sc.exe start' failed again. Manual intervention required.");
+                        error!("{}", msg);
+                        return Err(msg.into());
+                    }
+                    info!("Service '{}' restarted successfully. Exiting old process.", service_name);
+                    std::process::exit(0);
+                },
+                Err(e) => {
+                    let msg = format!("Failed to execute 'sc.exe start': {}. Manual intervention required.", e);
+                    error!("{}", msg);
+                    return Err(msg.into());
+                }
             }
-            
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-
-            let start_status = Command::new("sc.exe").arg("start").arg(&service_name).status().await?;
-            if !start_status.success() {
-                let msg = format!("'sc.exe start {}' failed with status: {}. The agent might need manual intervention.", service_name, start_status);
-                error!("{}", msg);
-                return Err(msg.into());
-            }
-            
-            info!("Service '{}' started successfully. Exiting old process.", service_name);
-            std::process::exit(0);
         } else {
             info!("Spawning command to restart agent and exiting current process...");
             const DETACHED_PROCESS: u32 = 0x00000008;
