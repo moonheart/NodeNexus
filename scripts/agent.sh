@@ -238,6 +238,13 @@ EOF
     print_info "You can view logs with: journalctl -u $SERVICE_NAME -f"
 }
 
+stop_service_for_update() {
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        print_info "Stopping $SERVICE_NAME service for update..."
+        systemctl stop "$SERVICE_NAME"
+    fi
+}
+
 uninstall_agent() {
     print_info "Starting uninstallation process..."
     check_root
@@ -326,6 +333,9 @@ main() {
         if [ -n "$server_address" ] || [ -n "$vps_id" ] || [ -n "$agent_secret" ]; then
             print_info "Configuration parameters (-s, -i, -k) are ignored during an update."
         fi
+
+        # Stop the service before updating the binary
+        stop_service_for_update
 
         if [ -z "$download_url" ]; then
             download_url=$(get_latest_release_url)
