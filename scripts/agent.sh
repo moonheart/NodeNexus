@@ -319,23 +319,53 @@ main() {
     check_dependencies
     detect_arch
 
-    if [ -z "$download_url" ]; then
-        download_url=$(get_latest_release_url)
+    # Check if it's an update or a new installation
+    if [ -f "$CONFIG_FILE_PATH" ]; then
+        print_info "Existing installation detected. Proceeding with update..."
+        
+        if [ -n "$server_address" ] || [ -n "$vps_id" ] || [ -n "$agent_secret" ]; then
+            print_info "Configuration parameters (-s, -i, -k) are ignored during an update."
+        fi
+
+        if [ -z "$download_url" ]; then
+            download_url=$(get_latest_release_url)
+        else
+            print_info "Using provided download URL: $download_url"
+        fi
+
+        # Ensure environment exists, especially after a partial uninstall
+        setup_environment
+        
+        if [ "$use_secure_user" = true ]; then
+            setup_secure_user
+        fi
+
+        download_and_install_agent "$download_url"
+        setup_systemd_service
+
+        print_success "Update complete!"
     else
-        print_info "Using provided download URL: $download_url"
-    fi
+        # New Installation
+        print_info "No existing installation found. Proceeding with new installation."
+        
+        if [ -z "$download_url" ]; then
+            download_url=$(get_latest_release_url)
+        else
+            print_info "Using provided download URL: $download_url"
+        fi
 
-    setup_environment
-    create_config_file "$server_address" "$vps_id" "$agent_secret"
-    
-    if [ "$use_secure_user" = true ]; then
-        setup_secure_user
-    fi
-    
-    download_and_install_agent "$download_url"
-    setup_systemd_service
+        setup_environment
+        create_config_file "$server_address" "$vps_id" "$agent_secret"
+        
+        if [ "$use_secure_user" = true ]; then
+            setup_secure_user
+        fi
+        
+        download_and_install_agent "$download_url"
+        setup_systemd_service
 
-    print_success "Installation/Update complete!"
+        print_success "Installation complete!"
+    fi
 }
 
 main "$@"
