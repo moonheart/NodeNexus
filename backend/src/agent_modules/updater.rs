@@ -55,9 +55,12 @@ async fn download_asset(asset_url: &str, temp_path: &Path) -> Result<(), Box<dyn
     
     let bytes = response.bytes().await?;
     
-    let mut file = File::create(temp_path).await?;
-    file.write_all(&bytes).await?;
-    
+    {
+        let mut file = File::create(temp_path).await?;
+        file.write_all(&bytes).await?;
+        file.sync_all().await?;
+    }
+
     info!("Asset downloaded successfully.");
     Ok(())
 }
