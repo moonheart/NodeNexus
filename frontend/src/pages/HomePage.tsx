@@ -73,6 +73,9 @@ const HomePage: React.FC = () => {
   const [isTagDropdownOpen, setIsTagDropdownOpen] = useState(false);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
 
+  const [sortKey, setSortKey] = useState('id'); // 'id', 'name', 'status', etc.
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
   const {
     servers: vpsList,
     isLoading: isLoadingServers,
@@ -138,7 +141,56 @@ const HomePage: React.FC = () => {
     );
   }, [statusFilteredServers, selectedTagIds]);
 
-  const displayedServers = tagFilteredServers;
+  const sortedServers = useMemo(() => {
+    const sorted = [...tagFilteredServers];
+    sorted.sort((a, b) => {
+      const getVal = (server: VpsListItemResponse, key: string) => {
+        switch (key) {
+          case 'id': return server.id;
+          case 'name': return server.name.toLowerCase();
+          case 'status': return server.status;
+          case 'ipAddress': return server.ipAddress?.toLowerCase() || null;
+          case 'osType': return server.osType?.toLowerCase() || null;
+          case 'cpu': return server.latestMetrics?.cpuUsagePercent ?? null;
+          case 'memory': {
+            const memUsage = server.latestMetrics?.memoryUsageBytes;
+            const memTotal = server.latestMetrics?.memoryTotalBytes;
+            if (memUsage === undefined || memUsage === null || memTotal === undefined || memTotal === null || memTotal === 0) return null;
+            return memUsage / memTotal;
+          }
+          case 'traffic': {
+            const rx = server.trafficCurrentCycleRxBytes;
+            const tx = server.trafficCurrentCycleTxBytes;
+            if (rx === undefined || rx === null || tx === undefined || tx === null) return null;
+            return rx + tx;
+          }
+          case 'networkUp': return server.latestMetrics?.networkTxInstantBps ?? null;
+          case 'networkDown': return server.latestMetrics?.networkRxInstantBps ?? null;
+          default: return null;
+        }
+      };
+
+      const valA = getVal(a, sortKey);
+      const valB = getVal(b, sortKey);
+      const direction = sortDirection === 'asc' ? 1 : -1;
+
+      // Push nulls to the end
+      if (valA === null) return 1;
+      if (valB === null) return -1;
+
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        return valA.localeCompare(valB) * direction;
+      }
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        return (valA - valB) * direction;
+      }
+      
+      return 0;
+    });
+    return sorted;
+  }, [tagFilteredServers, sortKey, sortDirection]);
+
+  const displayedServers = sortedServers;
 
 
   // --- Bulk Edit Logic ---
@@ -175,6 +227,19 @@ const HomePage: React.FC = () => {
     if (bps < 1024 * 1024 * 1024) return `${(bps / (1024 * 1024)).toFixed(1)} MBps`;
     return `${(bps / (1024 * 1024 * 1024)).toFixed(1)} GBps`;
   };
+
+  const sortOptions = [
+    { key: 'id', label: '默认' },
+    { key: 'name', label: '名称' },
+    { key: 'status', label: '状态' },
+    { key: 'ipAddress', label: 'IP 地址' },
+    { key: 'osType', label: '操作系统' },
+    { key: 'cpu', label: 'CPU' },
+    { key: 'memory', label: '内存' },
+    { key: 'traffic', label: '流量使用' },
+    { key: 'networkUp', label: '上传' },
+    { key: 'networkDown', label: '下载' },
+  ];
 
   if (isLoadingServers && vpsList.length === 0) {
     return <div className="flex flex-col items-center justify-center h-64"><p className="mt-4 text-slate-600">正在加载服务器...</p></div>;
@@ -300,6 +365,41 @@ const HomePage: React.FC = () => {
                             </div>
                         </div>
                     )}
+                </div>
+                {/* Sorting Controls */}
+                <div className="flex items-center gap-4 border-t border-slate-200 md:border-t-0 md:border-l md:pl-4 mt-4 md:mt-0 pt-4 md:pt-0">
+                    <div className="relative">
+                         <label htmlFor="sort-key" className="text-sm font-medium text-slate-600 mr-2">排序:</label>
+                        <select
+                            id="sort-key"
+                            value={sortKey}
+                            onChange={(e) => setSortKey(e.target.value)}
+                            className="w-full sm:w-auto bg-white border border-slate-300 rounded-md py-2 pl-3 pr-8 text-sm leading-5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        >
+                            {sortOptions.map(option => (
+                                <option key={option.key} value={option.key}>{option.label}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="flex items-center p-0.5 bg-slate-200 rounded-lg">
+                        <button
+                            onClick={() => setSortDirection('asc')}
+                            aria-pressed={sortDirection === 'asc'}
+                            className={`p-1.5 rounded-md transition-colors ${sortDirection === 'asc' ? 'bg-white text-indigo-600 shadow' : 'text-slate-500 hover:bg-slate-300'}`}
+                            title="升序"
+                        >
+                            <ArrowUpIcon className="w-5 h-5" />
+                        </button>
+                        <button
+                            onClick={() => setSortDirection('desc')}
+                            aria-pressed={sortDirection === 'desc'}
+                            className={`p-1.5 rounded-md transition-colors ${sortDirection === 'desc' ? 'bg-white text-indigo-600 shadow' : 'text-slate-500 hover:bg-slate-300'}`}
+                            title="降序"
+                        >
+                            <ArrowDownIcon className="w-5 h-5" />
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
