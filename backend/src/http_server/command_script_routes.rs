@@ -1,28 +1,21 @@
 use axum::{
-    extract::{Extension, Path, State},
+    extract::{Extension, Path, Query, State},
     routing::{get, post},
     Json, Router,
 };
 use std::sync::Arc;
 use serde::Deserialize;
 
+use crate::db::entities::command_script::{self, ScriptLanguage};
 use crate::db::services::command_script_service::{CommandScriptService, CommandScriptError};
 use crate::http_server::{AppState, AppError};
 use crate::http_server::auth_logic::AuthenticatedUser;
-use crate::db::entities::command_script;
 
 #[derive(Deserialize)]
-pub struct CreateScriptPayload {
+pub struct ScriptPayload {
     pub name: String,
     pub description: Option<String>,
-    pub script_content: String,
-    pub working_directory: String,
-}
-
-#[derive(Deserialize)]
-pub struct UpdateScriptPayload {
-    pub name: String,
-    pub description: Option<String>,
+    pub language: ScriptLanguage,
     pub script_content: String,
     pub working_directory: String,
 }
@@ -36,13 +29,14 @@ pub fn command_script_routes() -> Router<Arc<AppState>> {
 async fn create_script(
     State(app_state): State<Arc<AppState>>,
     Extension(user): Extension<AuthenticatedUser>,
-    Json(payload): Json<CreateScriptPayload>,
+    Json(payload): Json<ScriptPayload>,
 ) -> Result<Json<command_script::Model>, AppError> {
     let script = CommandScriptService::create_script(
         &app_state.db_pool,
         user.id,
         payload.name,
         payload.description,
+        payload.language,
         payload.script_content,
         payload.working_directory,
     )
@@ -71,7 +65,7 @@ async fn update_script(
     State(app_state): State<Arc<AppState>>,
     Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<i32>,
-    Json(payload): Json<UpdateScriptPayload>,
+    Json(payload): Json<ScriptPayload>,
 ) -> Result<Json<command_script::Model>, AppError> {
     let script = CommandScriptService::update_script(
         &app_state.db_pool,
@@ -79,6 +73,7 @@ async fn update_script(
         user.id,
         payload.name,
         payload.description,
+        payload.language,
         payload.script_content,
         payload.working_directory,
     )

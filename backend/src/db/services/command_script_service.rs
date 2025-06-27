@@ -3,6 +3,7 @@ use sea_orm::{
     ColumnTrait, QueryFilter,
 };
 use crate::db::entities::{command_script, prelude::CommandScript};
+use crate::db::entities::command_script::ScriptLanguage;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CommandScriptError {
@@ -24,6 +25,7 @@ impl CommandScriptService {
         user_id: i32,
         name: String,
         description: Option<String>,
+        language: ScriptLanguage,
         script_content: String,
         working_directory: String,
     ) -> Result<command_script::Model, CommandScriptError> {
@@ -42,6 +44,7 @@ impl CommandScriptService {
             user_id: Set(user_id),
             name: Set(name),
             description: Set(description),
+            language: Set(language),
             script_content: Set(script_content),
             working_directory: Set(working_directory),
             ..Default::default()
@@ -54,10 +57,9 @@ impl CommandScriptService {
         db: &DbConn,
         user_id: i32,
     ) -> Result<Vec<command_script::Model>, CommandScriptError> {
-        Ok(CommandScript::find()
-            .filter(command_script::Column::UserId.eq(user_id))
-            .all(db)
-            .await?)
+        let query = CommandScript::find().filter(command_script::Column::UserId.eq(user_id));
+
+        Ok(query.all(db).await?)
     }
 
     pub async fn get_script_by_id(
@@ -79,6 +81,7 @@ impl CommandScriptService {
         user_id: i32,
         name: String,
         description: Option<String>,
+        language: ScriptLanguage,
         script_content: String,
         working_directory: String,
     ) -> Result<command_script::Model, CommandScriptError> {
@@ -91,6 +94,7 @@ impl CommandScriptService {
         let mut active_script: command_script::ActiveModel = script.into();
         active_script.name = Set(name);
         active_script.description = Set(description);
+        active_script.language = Set(language);
         active_script.script_content = Set(script_content);
         active_script.working_directory = Set(working_directory);
         active_script.updated_at = Set(chrono::Utc::now().into());

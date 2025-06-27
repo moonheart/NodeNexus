@@ -11,6 +11,7 @@ import VpsDetailPage from './pages/VpsDetailPage';
 import GlobalSettingsPage from './pages/GlobalSettingsPage';
 import AlertsSettingsPage from './pages/AlertsSettingsPage';
 import TagManagementPage from './pages/TagManagementPage';
+import ScriptManagementPage from './pages/ScriptManagementPage'; // Import the new page
 import BatchCommandPage from './pages/BatchCommandPage'; // Import the new page
 import NotificationsPage from './pages/NotificationsPage'; // Import the new page
 import ServiceMonitoringPage from './pages/ServiceMonitoringPage'; // Import the new page
@@ -72,7 +73,7 @@ function App() {
               <Route path="alerts" element={<AlertsSettingsPage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="tags"element={<TagManagementPage />} />
-              <Route path="scripts" element={<div>Script Management Page (TODO)</div>} />
+              <Route path="scripts" element={<ScriptManagementPage />} />
               <Route path="oauth" element={<AdminOAuthProvidersPage />} />
               <Route path="account" element={<AccountSettingsPage />} />
             </Route>
