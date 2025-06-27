@@ -387,8 +387,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
 
 
     // --- Run all servers and tasks concurrently ---
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    info!(address = %addr, "HTTP and gRPC server listening");
+    let socket = if addr.is_ipv4() {
+        tokio::net::TcpSocket::new_v4()?
+    } else {
+        tokio::net::TcpSocket::new_v6()?
+    };
+    socket.set_reuseaddr(true)?;
+    socket.set_keepalive(true)?;
+    socket.bind(addr)?;
+    let listener = socket.listen(1024)?;
+    info!(address = %addr, "HTTP and gRPC server listening with TCP Keepalive");
 
     let static_file_service = http_server::create_static_file_service();
 
