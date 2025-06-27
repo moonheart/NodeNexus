@@ -26,6 +26,9 @@ import {
   RefreshCw,
   Clipboard,
   Trash2,
+  UserCircle,
+  LogOut,
+  Cog,
   type LucideProps,
 } from 'lucide-react';
 
@@ -56,6 +59,9 @@ export const PlusIcon = Plus;
 export const RefreshCwIcon = RefreshCw;
 export const ClipboardIcon = Clipboard;
 export const Trash2Icon = Trash2;
+export const UserCircleIcon = UserCircle;
+export const LogoutIcon = LogOut;
+export const CogIcon = Cog;
 
 export type { LucideProps as SVGProps };
 export const ChartBarIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
