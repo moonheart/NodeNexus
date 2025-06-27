@@ -195,7 +195,7 @@ async fn manage_command_lifecycle(
 
     #[cfg(not(windows))]
     let mut command = {
-        let mut cmd = TokioCommand::new("/bin/sh");
+        let mut cmd = TokioCommand::new("/bin/bash");
         cmd.arg(temp_path.to_str().unwrap());
         cmd
     };
