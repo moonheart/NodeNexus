@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { VpsListItemResponse, CommandScript } from '../types';
+import type { VpsListItemResponse, CommandScript, Tag } from '../types';
 import { useServerListStore } from '../store/serverListStore';
 import { executeBatchCommand, getBatchCommandWebSocket, terminateBatchCommand } from '../services/batchCommandService';
 import { getCommandScripts, createCommandScript } from '../services/commandScriptService';
@@ -13,6 +13,7 @@ const BatchCommandPage: React.FC = () => {
     const [generalOutput, setGeneralOutput] = useState<string[]>([]);
     const [serverOutputs, setServerOutputs] = useState<Record<number, { name: string; logs: string[]; status: string; exitCode: number | string | null }>>({});
     const [activeView, setActiveView] = useState<'all' | 'per-server'>('all');
+    const [aggregatedLogs, setAggregatedLogs] = useState<{ vpsId: number; vpsName: string; log: string }[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const webSocketRef = useRef<WebSocket | null>(null);
@@ -23,13 +24,49 @@ const BatchCommandPage: React.FC = () => {
     const [scripts, setScripts] = useState<CommandScript[]>([]);
     const [showSaveModal, setShowSaveModal] = useState(false);
 
-    // Cleanup WebSocket on component unmount
+    // Helper constants for quick select buttons
+    const allOsTypes = [...new Set(servers.map(s => s.osType).filter((os): os is string => !!os))];
+    const allTags: Tag[] = Array.from(new Map(servers.flatMap(s => s.tags || []).map(tag => [tag.id, tag])).values());
+
+    // --- Selection Handlers ---
+
+    const handleVpsSelection = (vpsId: number) => {
+        setSelectedVps(prevSelected => {
+            const newSelected = new Set(prevSelected);
+            if (newSelected.has(vpsId)) {
+                newSelected.delete(vpsId);
+            } else {
+                newSelected.add(vpsId);
+            }
+            return newSelected;
+        });
+    };
+
+    const handleSelectAll = () => {
+        setSelectedVps(new Set(servers.map(s => s.id)));
+    };
+
+    const handleDeselectAll = () => {
+        setSelectedVps(new Set());
+    };
+
+    const handleSelectByOs = (os: string) => {
+        const idsToSelect = servers.filter(s => s.osType === os).map(s => s.id);
+        setSelectedVps(prev => new Set([...prev, ...idsToSelect]));
+    };
+
+    const handleSelectByTag = (tagName: string) => {
+        const idsToSelect = servers.filter(s => s.tags?.some(t => t.name === tagName)).map(s => s.id);
+        setSelectedVps(prev => new Set([...prev, ...idsToSelect]));
+    };
+
+    // --- End Selection Handlers ---
+
     useEffect(() => {
         if (!currentBatchCommandId) {
             return;
         }
 
-        // Establish WebSocket connection
         const ws = getBatchCommandWebSocket(currentBatchCommandId);
         webSocketRef.current = ws;
 
@@ -47,27 +84,36 @@ const BatchCommandPage: React.FC = () => {
                     return;
                 }
 
-                const server = servers.find(s => s.id === payload.vps_id);
+                // Get fresh data for every message to avoid stale closures
+                const currentServers = useServerListStore.getState().servers;
+                const server = currentServers.find(s => s.id === payload.vps_id);
                 const vpsName = server ? server.name : `VPS_ID_${payload.vps_id}`;
 
+                // This function is now defined inside `onmessage` to have access to the fresh `vpsName`.
                 const updateServerOutput = (vpsId: number, log: string, statusUpdate?: Partial<{ status: string; exitCode: number | string | null }>) => {
                     setServerOutputs(prev => {
                         const newOutputs = { ...prev };
-                        if (!newOutputs[vpsId]) {
+                        const existingData = newOutputs[vpsId];
+
+                        if (!existingData) {
+                            // Initialize with all available data
                             newOutputs[vpsId] = {
                                 name: vpsName,
-                                logs: [],
-                                status: 'Pending',
-                                exitCode: null,
+                                logs: [log],
+                                status: statusUpdate?.status || 'Pending',
+                                exitCode: statusUpdate?.exitCode !== undefined ? statusUpdate.exitCode : null,
                             };
-                        }
-                        // Avoid adding duplicate status messages
-                        if (newOutputs[vpsId].logs.includes(log)) {
-                            return prev;
-                        }
-                        newOutputs[vpsId].logs.push(log);
-                        if (statusUpdate) {
-                            newOutputs[vpsId] = { ...newOutputs[vpsId], ...statusUpdate };
+                        } else {
+                            // Update existing data
+                            if (!existingData.logs.includes(log)) {
+                                existingData.logs.push(log);
+                            }
+                            if (statusUpdate) {
+                                existingData.status = statusUpdate.status || existingData.status;
+                                existingData.exitCode = statusUpdate.exitCode !== undefined ? statusUpdate.exitCode : existingData.exitCode;
+                            }
+                            // Ensure name is up-to-date in case it was a placeholder
+                            existingData.name = vpsName;
                         }
                         return newOutputs;
                     });
@@ -78,6 +124,7 @@ const BatchCommandPage: React.FC = () => {
                         const timestamp = new Date(payload.timestamp).toLocaleTimeString();
                         const formattedMessage = `[${timestamp}] [${payload.stream_type.toUpperCase()}]: ${payload.log_line.trim()}`;
                         updateServerOutput(payload.vps_id, formattedMessage);
+                        setAggregatedLogs(prev => [...prev, { vpsId: payload.vps_id, vpsName, log: formattedMessage }]);
                         break;
                     }
                     case 'CHILD_TASK_UPDATE': {
@@ -85,6 +132,7 @@ const BatchCommandPage: React.FC = () => {
                         const exitCode = payload.exit_code ?? 'N/A';
                         const formattedMessage = `[${timestamp}] [STATUS]: Task status changed to ${payload.status}. Exit Code: ${exitCode}`;
                         updateServerOutput(payload.vps_id, formattedMessage, { status: payload.status, exitCode });
+                        setAggregatedLogs(prev => [...prev, { vpsId: payload.vps_id, vpsName, log: formattedMessage }]);
                         break;
                     }
                     case 'BATCH_TASK_UPDATE': {
@@ -92,7 +140,6 @@ const BatchCommandPage: React.FC = () => {
                         const formattedMessage = `[${timestamp}] [SYSTEM] [STATUS]: Batch command finished with status: ${payload.overall_status}.`;
                         setGeneralOutput(prev => [...prev, formattedMessage]);
                         setIsLoading(false);
-                        // The connection will be closed by the cleanup function of this effect
                         break;
                     }
                     default:
@@ -114,16 +161,15 @@ const BatchCommandPage: React.FC = () => {
         ws.onclose = () => {
             setGeneralOutput(prev => [...prev, 'WebSocket connection closed.']);
             setIsLoading(false);
-            setCurrentBatchCommandId(null); // Clear the ID to allow for new commands
+            setCurrentBatchCommandId(null);
         };
 
-        // Cleanup function for this effect
         return () => {
             ws.close();
             webSocketRef.current = null;
         };
 
-    }, [currentBatchCommandId]); // Rerun effect ONLY if batch ID changes
+    }, [currentBatchCommandId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         const storedHistory = localStorage.getItem('batchCommandHistory');
@@ -145,57 +191,36 @@ const BatchCommandPage: React.FC = () => {
 
     const addToHistory = (newCommand: string) => {
         if (!newCommand || commandHistory.includes(newCommand)) return;
-
-        const updatedHistory = [newCommand, ...commandHistory].slice(0, 20); // Keep last 20
+        const updatedHistory = [newCommand, ...commandHistory].slice(0, 20);
         setCommandHistory(updatedHistory);
         localStorage.setItem('batchCommandHistory', JSON.stringify(updatedHistory));
     };
 
-    const handleVpsSelection = (vpsId: number) => {
-        setSelectedVps(prevSelected => {
-            const newSelected = new Set(prevSelected);
-            if (newSelected.has(vpsId)) {
-                newSelected.delete(vpsId);
-            } else {
-                newSelected.add(vpsId);
-            }
-            return newSelected;
-        });
-    };
-
     const handleSendCommand = async () => {
         if (selectedVps.size === 0 || command.trim() === '') return;
-
-        // Close any existing connection before starting a new one.
         if (webSocketRef.current) {
             webSocketRef.current.close();
         }
-
         setIsLoading(true);
         setError(null);
         setGeneralOutput(['Initiating command execution...']);
         setServerOutputs({});
+        setAggregatedLogs([]);
         setActiveView('all');
         setActiveServersInTask(new Set(selectedVps));
 
         try {
-            addToHistory(command); // Add to history on execution
+            addToHistory(command);
             const response = await executeBatchCommand(
                 command,
                 Array.from(selectedVps),
                 workingDirectory
             );
-
-            // The useEffect hook will now handle the WebSocket connection
-            // once the batch command ID is set.
             setGeneralOutput(prev => [...prev, `Batch command started with ID: ${response.batch_command_id}`]);
             setCurrentBatchCommandId(response.batch_command_id);
-
         } catch (err: unknown) {
             console.error('Failed to execute batch command:', err);
             let errorMessage = 'An unknown error occurred.';
-            
-            // Type-safe error message extraction
             if (typeof err === 'object' && err !== null) {
                 const potentialError = err as { response?: { data?: { message?: string } }, message?: string };
                 if (potentialError.response?.data?.message) {
@@ -204,7 +229,6 @@ const BatchCommandPage: React.FC = () => {
                     errorMessage = potentialError.message;
                 }
             }
-
             setError(`Failed to start command: ${errorMessage}`);
             setIsLoading(false);
         }
@@ -219,7 +243,6 @@ const BatchCommandPage: React.FC = () => {
             setGeneralOutput(prev => [...prev, `[SYSTEM] Sending termination signal for batch command ID: ${currentBatchCommandId}...`]);
             const response = await terminateBatchCommand(currentBatchCommandId);
             setGeneralOutput(prev => [...prev, `[SYSTEM] Termination signal acknowledged: ${response.message}`]);
-            // The WebSocket 'onclose' or a 'BATCH_TASK_UPDATE' message should handle the final state change.
         } catch (err: unknown) {
             console.error('Failed to terminate batch command:', err);
             let errorMessage = 'An unknown error occurred during termination.';
@@ -238,7 +261,7 @@ const BatchCommandPage: React.FC = () => {
     const handleSaveScript = async (name: string, description: string) => {
         try {
             await createCommandScript(name, description, command, workingDirectory);
-            loadScripts(); // Refresh script list
+            loadScripts();
         } catch (err) {
             console.error("Failed to save script:", err);
             let errorMessage = 'An unknown error occurred while saving the script.';
@@ -261,11 +284,43 @@ const BatchCommandPage: React.FC = () => {
         <div className="container mx-auto p-4">
             <h1 className="text-2xl font-bold mb-4">Batch Command Execution</h1>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="flex flex-col md:flex-row gap-4">
                 {/* VPS Selector Panel */}
-                <div className="md:col-span-1 bg-white p-4 rounded-lg shadow">
+                <div className="w-full md:w-1/3 bg-white p-4 rounded-lg shadow flex flex-col">
                     <h2 className="text-xl font-semibold mb-2">Select Servers</h2>
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
+
+                    {/* Quick Select Section */}
+                    <div className="mb-4 p-2 border rounded-md bg-gray-50">
+                        <h3 className="text-md font-semibold mb-2">Quick Select</h3>
+                        <div className="flex flex-wrap gap-2 mb-2">
+                            <button onClick={handleSelectAll} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded">Select All</button>
+                            <button onClick={handleDeselectAll} className="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded">Deselect All</button>
+                        </div>
+                        
+                        {allOsTypes.length > 0 && (
+                            <div className="mb-2">
+                                <h4 className="text-sm font-medium text-gray-600">By OS</h4>
+                                <div className="flex flex-wrap gap-2 mt-1">
+                                    {allOsTypes.map(os => (
+                                        <button key={os} onClick={() => handleSelectByOs(os)} className="px-2 py-1 text-xs bg-green-100 text-green-800 hover:bg-green-200 rounded">{os}</button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {allTags.length > 0 && (
+                            <div>
+                                <h4 className="text-sm font-medium text-gray-600">By Tag</h4>
+                                <div className="flex flex-wrap gap-2 mt-1">
+                                    {allTags.map(tag => (
+                                        <button key={tag.id} onClick={() => handleSelectByTag(tag.name)} className="px-2 py-1 text-xs text-white hover:opacity-80 rounded" style={{ backgroundColor: tag.color }}>{tag.name}</button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="space-y-2 overflow-y-auto flex-grow">
                         {servers.map((vps: VpsListItemResponse) => (
                             <div key={vps.id} className="flex items-center">
                                 <input
@@ -284,7 +339,7 @@ const BatchCommandPage: React.FC = () => {
                 </div>
 
                 {/* Command Input and Output Panel */}
-                <div className="md:col-span-2 bg-white p-4 rounded-lg shadow">
+                <div className="w-full md:w-2/3 bg-white p-4 rounded-lg shadow">
                     <div className="mb-4">
                         <label htmlFor="working-directory-input" className="block text-sm font-medium text-gray-700 mb-1">
                             Working Directory
@@ -392,7 +447,6 @@ const BatchCommandPage: React.FC = () => {
 
                     <div className="mt-4">
                         <h3 className="text-lg font-semibold mb-2">Live Output</h3>
-                        {/* View Toggles */}
                         <div className="flex items-center space-x-2 mb-2">
                             <button
                                 onClick={() => setActiveView('all')}
@@ -414,14 +468,12 @@ const BatchCommandPage: React.FC = () => {
                                     {generalOutput.map((line, index) => (
                                         <div key={`general-${index}`} style={{ whiteSpace: 'pre-wrap' }}>{line}</div>
                                     ))}
-                                    {Object.entries(serverOutputs).map(([vpsId, data]) =>
-                                        data.logs.map((log, logIndex) => (
-                                            <div key={`${vpsId}-${logIndex}`} style={{ whiteSpace: 'pre-wrap' }}>
-                                                <span className="text-cyan-400 mr-2">[{data.name}]</span>{log}
-                                            </div>
-                                        ))
-                                    )}
-                                    {generalOutput.length === 0 && Object.keys(serverOutputs).length === 0 && (
+                                    {aggregatedLogs.map((item, index) => (
+                                       <div key={`agg-${index}`} style={{ whiteSpace: 'pre-wrap' }}>
+                                           <span className="text-cyan-400 mr-2">[{item.vpsName}]</span>{item.log}
+                                       </div>
+                                    ))}
+                                    {generalOutput.length === 0 && aggregatedLogs.length === 0 && (
                                         <p>Command output will appear here...</p>
                                     )}
                                 </>
