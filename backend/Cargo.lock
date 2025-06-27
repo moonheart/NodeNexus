@@ -368,6 +368,7 @@ dependencies = [
  "sqlx",
  "surge-ping",
  "sysinfo",
+ "tempfile",
  "tera",
  "thiserror 2.0.12",
  "time",
