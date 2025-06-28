@@ -28,16 +28,26 @@ impl ResultBroadcaster {
         });
         match serde_json::to_string(&message_content) {
             Ok(json_string) => {
-                if let Err(e) = self.batch_updates_tx.send(json_string.clone()) {
-                    error!(
-                        message_type = message_type,
-                        error = %e,
-                        "Failed to broadcast batch command update."
-                    );
+                let receiver_count = self.batch_updates_tx.receiver_count();
+                if receiver_count > 0 {
+                    if let Err(e) = self.batch_updates_tx.send(json_string.clone()) {
+                        error!(
+                            message_type = message_type,
+                            error = %e,
+                            "Failed to broadcast batch command update to {} receivers.",
+                            receiver_count
+                        );
+                    } else {
+                        debug!(
+                            message_type = message_type,
+                            "Successfully broadcasted batch command update to {} receivers.",
+                            receiver_count
+                        );
+                    }
                 } else {
                     debug!(
                         message_type = message_type,
-                        "Successfully broadcasted batch command update."
+                        "No active receivers, skipping broadcast."
                     );
                 }
             }

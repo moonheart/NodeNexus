@@ -252,10 +252,6 @@ pub fn create_axum_router(
                 auth::auth,
             )),
         )
-        .route(
-            "/ws/batch-command/{batch_command_id}",
-            get(ws_batch_command_handler::batch_command_ws_handler),
-        )
         .with_state(app_state.clone())
         .layer(cors)
 }

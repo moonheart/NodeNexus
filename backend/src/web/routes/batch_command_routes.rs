@@ -1,29 +1,21 @@
 use axum::{
     Json,
     Router,
-    extract::{Extension, Path, State}, // Added Extension
+    extract::{Extension, Path, State},
     routing::{get, post},
 };
 use std::sync::Arc;
 use tracing::error;
 use uuid::Uuid;
 
-use crate::web::models::batch_command_models::{
-    BatchCommandAcceptedResponse,
-    BatchCommandTaskDetailResponse,
-    // BatchCommandTaskListItem, // For listing, if implemented later
-    CreateBatchCommandRequest,
-};
-// use crate::http_server::auth_logic::Claims; // No longer directly extracting Claims
-use crate::agent_service::CommandType as GrpcCommandType;
-use crate::web::models::AuthenticatedUser; // Use AuthenticatedUser
-use crate::web::{AppState, error::AppError}; // Import AppState and AppError // For dispatching
+use crate::web::handlers::batch_command_upgrade_handler::batch_command_upgrade_handler;
+use crate::web::models::batch_command_models::BatchCommandTaskDetailResponse;
+use crate::web::models::AuthenticatedUser;
+use crate::web::{AppState, error::AppError};
 
-// pub fn batch_command_routes(db: Arc<DatabaseConnection>) -> Router {
 pub fn batch_command_routes() -> Router<Arc<AppState>> {
-    // Expects AppState
-    Router::<Arc<AppState>>::new() // Explicitly type Router::new()
-        .route("/", post(create_batch_command))
+    Router::<Arc<AppState>>::new()
+        .route("/", get(batch_command_upgrade_handler)) // Changed to GET for WebSocket upgrade
         .route("/{batch_command_id}", get(get_batch_command_detail))
         .route(
             "/{batch_command_id}/terminate",
@@ -33,114 +25,6 @@ pub fn batch_command_routes() -> Router<Arc<AppState>> {
             "/{batch_id}/tasks/{child_id}/terminate",
             post(terminate_child_command),
         ) // More granular control
-}
-
-#[axum::debug_handler]
-async fn create_batch_command(
-    Extension(authenticated_user): Extension<AuthenticatedUser>, // Extract AuthenticatedUser
-    State(app_state): State<Arc<AppState>>,
-    Json(payload): Json<CreateBatchCommandRequest>,
-) -> Result<Json<BatchCommandAcceptedResponse>, AppError> {
-    let command_manager = app_state.batch_command_manager.clone();
-    let dispatcher = app_state.command_dispatcher.clone();
-    let user_id = authenticated_user.id; // No longer converting to string
-
-    match command_manager
-        .create_batch_command(user_id, payload.clone()) // Pass i32 directly
-        .await
-    {
-        Ok((batch_task_model, child_tasks)) => {
-            // Asynchronously dispatch commands for each child task
-            for child_task in child_tasks {
-                let dispatcher_clone = dispatcher.clone();
-                let command_manager_clone = command_manager.clone(); // Clone for status updates
-                let payload_clone = payload.clone(); // Clone for the spawned task
-                tokio::spawn(async move {
-                    let command_content = payload_clone.command_content.unwrap_or_default(); // Assuming script_id implies content is elsewhere
-                    let command_type = if payload_clone.script_id.is_some() {
-                        GrpcCommandType::SavedScript
-                    } else {
-                        GrpcCommandType::AdhocCommand
-                    };
-                    let working_directory = payload_clone.working_directory;
-
-                    // TODO: Determine actual command content if script_id is used.
-                    // This might involve fetching script content from DB based on script_id.
-                    // For now, if script_id is present, command_content might be empty or a placeholder.
-                    // The CommandDispatcher expects the actual command string.
-                    // For simplicity here, we'll pass the raw command_content or an empty string if it's a script.
-                    // This needs refinement based on how script_id translates to executable content.
-                    let effective_command_content = if command_type == GrpcCommandType::SavedScript
-                    {
-                        // Placeholder: In a real scenario, fetch script content using payload_clone.script_id
-                        // For now, let's assume script_id itself or some related info is the "content"
-                        // or that the agent knows how to interpret script_id.
-                        // This part is crucial and needs to align with agent's capabilities.
-                        // For this iteration, we'll pass the script_id as content if command_content is empty.
-                        if command_content.is_empty() && payload_clone.script_id.is_some() {
-                            payload_clone.script_id.unwrap_or_default()
-                        } else {
-                            command_content
-                        }
-                    } else {
-                        command_content
-                    };
-
-                    let dispatch_result = dispatcher_clone
-                        .dispatch_command_to_agent(
-                            child_task.child_command_id,
-                            child_task.vps_id, // vps_id is String in ChildCommandTask model
-                            &effective_command_content,
-                            command_type,
-                            working_directory,
-                        )
-                        .await;
-
-                    let (new_status, error_message) = if let Err(e) = dispatch_result {
-                        error!(
-                            child_task_id = %child_task.child_command_id,
-                            error = ?e,
-                            "Failed to dispatch command."
-                        );
-                        (
-                            crate::db::enums::ChildCommandStatus::AgentUnreachable,
-                            Some(e.to_string()),
-                        )
-                    } else {
-                        (crate::db::enums::ChildCommandStatus::SentToAgent, None)
-                    };
-
-                    if let Err(update_err) = command_manager_clone
-                        .update_child_task_status(
-                            child_task.child_command_id,
-                            new_status,
-                            None, // No exit code at this stage
-                            error_message,
-                        )
-                        .await
-                    {
-                        error!(
-                            child_task_id = %child_task.child_command_id,
-                            error = ?update_err,
-                            "Failed to update status after dispatch."
-                        );
-                    }
-                });
-            }
-
-            Ok(Json(BatchCommandAcceptedResponse {
-                batch_command_id: batch_task_model.batch_command_id,
-                status: batch_task_model.status.to_string(),
-                message: "Batch command task accepted and is being processed.".to_string(),
-            }))
-        }
-        Err(e) => {
-            error!(error = ?e, "Failed to create batch command.");
-            Err(AppError::InternalServerError(format!(
-                "Failed to create batch command: {e}"
-            )))
-        }
-    }
 }
 
 #[axum::debug_handler]

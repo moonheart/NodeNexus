@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { VpsListItemResponse, CommandScript, Tag } from '../types';
 import { useServerListStore } from '../store/serverListStore';
-import { executeBatchCommand, getBatchCommandWebSocket, terminateBatchCommand } from '../services/batchCommandService';
+import { connectForBatchCommand } from '../services/batchCommandService';
 import { getCommandScripts, createCommandScript } from '../services/commandScriptService';
 import SaveScriptModal from '../components/SaveScriptModal';
 import Editor from '@monaco-editor/react';
@@ -69,116 +69,6 @@ const BatchCommandPage: React.FC = () => {
 
     // --- End Selection Handlers ---
 
-    useEffect(() => {
-        if (!currentBatchCommandId) {
-            return;
-        }
-
-        const ws = getBatchCommandWebSocket(currentBatchCommandId);
-        webSocketRef.current = ws;
-
-        ws.onopen = () => {
-            setGeneralOutput(prev => [...prev, '<span class="log-content">WebSocket connection established. Waiting for output...</span>']);
-        };
-
-        ws.onmessage = (event) => {
-            try {
-                const message = JSON.parse(event.data);
-                const { type, payload } = message;
-
-                if (!type || !payload) {
-                    setGeneralOutput(prev => [...prev, `[RAW] ${event.data}`]);
-                    return;
-                }
-
-                // Get fresh data for every message to avoid stale closures
-                const currentServers = useServerListStore.getState().servers;
-                const server = currentServers.find(s => s.id === payload.vps_id);
-                const vpsName = server ? server.name : `VPS_ID_${payload.vps_id}`;
-
-                // This function is now defined inside `onmessage` to have access to the fresh `vpsName`.
-                const updateServerOutput = (vpsId: number, log: string, statusUpdate?: Partial<{ status: string; exitCode: number | string | null }>) => {
-                    setServerOutputs(prev => {
-                        const newOutputs = { ...prev };
-                        const existingData = newOutputs[vpsId];
-
-                        if (!existingData) {
-                            // Initialize with all available data
-                            newOutputs[vpsId] = {
-                                name: vpsName,
-                                logs: [log],
-                                status: statusUpdate?.status || 'Pending',
-                                exitCode: statusUpdate?.exitCode !== undefined ? statusUpdate.exitCode : null,
-                            };
-                        } else {
-                            // Update existing data
-                            if (!existingData.logs.includes(log)) {
-                                existingData.logs.push(log);
-                            }
-                            if (statusUpdate) {
-                                existingData.status = statusUpdate.status || existingData.status;
-                                existingData.exitCode = statusUpdate.exitCode !== undefined ? statusUpdate.exitCode : existingData.exitCode;
-                            }
-                            // Ensure name is up-to-date in case it was a placeholder
-                            existingData.name = vpsName;
-                        }
-                        return newOutputs;
-                    });
-                };
-
-                switch (type) {
-                    case 'NEW_LOG_OUTPUT': {
-                        const timestamp = new Date(payload.timestamp).toLocaleTimeString();
-                        const rawLog = payload.log_line;
-                        const formattedHtml = ansiConverter.current.toHtml(rawLog);
-                        const formattedMessage = `<span class="log-meta text-gray-500">[${timestamp}] [${payload.stream_type.toUpperCase()}]: </span><span class="log-content">${formattedHtml}</span>`;
-                        updateServerOutput(payload.vps_id, formattedMessage);
-                        setAggregatedLogs(prev => [...prev, { vpsId: payload.vps_id, vpsName, log: formattedMessage }]);
-                        break;
-                    }
-                    case 'CHILD_TASK_UPDATE': {
-                        const timestamp = new Date().toLocaleTimeString();
-                        const exitCode = payload.exit_code ?? 'N/A';
-                        const formattedMessage = `<span class="log-meta text-gray-500">[${timestamp}] [STATUS]: </span><span class="log-content">Task status changed to ${payload.status}. Exit Code: ${exitCode}</span>`;
-                        updateServerOutput(payload.vps_id, formattedMessage, { status: payload.status, exitCode });
-                        setAggregatedLogs(prev => [...prev, { vpsId: payload.vps_id, vpsName, log: formattedMessage }]);
-                        break;
-                    }
-                    case 'BATCH_TASK_UPDATE': {
-                        const timestamp = new Date(payload.completed_at).toLocaleTimeString();
-                        const formattedMessage = `<span class="log-meta text-gray-500">[${timestamp}] [SYSTEM]: </span><span class="log-content">Batch command finished with status: ${payload.overall_status}.</span>`;
-                        setGeneralOutput(prev => [...prev, formattedMessage]);
-                        setIsLoading(false);
-                        break;
-                    }
-                    default:
-                        setGeneralOutput(prev => [...prev, `[UNKNOWN] ${event.data}`]);
-                        break;
-                }
-
-            } catch (e) {
-                console.error('Failed to parse or process WebSocket message:', e);
-                setGeneralOutput(prev => [...prev, `[RAW] ${event.data}`]);
-            }
-        };
-
-        ws.onerror = () => {
-            setError('WebSocket connection error. Check the console for details.');
-            setIsLoading(false);
-        };
-
-        ws.onclose = () => {
-            setGeneralOutput(prev => [...prev, '<span class="log-content">WebSocket connection closed.</span>']);
-            setIsLoading(false);
-            setCurrentBatchCommandId(null);
-        };
-
-        return () => {
-            ws.close();
-            webSocketRef.current = null;
-        };
-
-    }, [currentBatchCommandId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         const storedHistory = localStorage.getItem('batchCommandHistory');
@@ -217,68 +107,152 @@ const BatchCommandPage: React.FC = () => {
         setShowHistory(false);
     };
 
-    const handleSendCommand = async () => {
+    const handleSendCommand = () => {
         if (selectedVps.size === 0 || command.trim() === '') return;
         if (webSocketRef.current) {
             webSocketRef.current.close();
         }
+
         setIsLoading(true);
         setError(null);
-        setGeneralOutput(['<span class="log-content">Initiating command execution...</span>']);
+        setGeneralOutput(['<span class="log-content">Connecting to server...</span>']);
         setServerOutputs({});
         setAggregatedLogs([]);
         setActiveView('all');
         setActiveServersInTask(new Set(selectedVps));
+        setCurrentBatchCommandId(null); // Reset previous command ID
 
+        addToHistory(command);
         const processedCommand = scriptLanguage === 'shell' ? command.replace(/\r\n/g, '\n') : command;
 
-        try {
-            addToHistory(command);
-            const response = await executeBatchCommand(
-                processedCommand,
-                Array.from(selectedVps),
-                workingDirectory
-            );
-            setGeneralOutput(prev => [...prev, `<span class="log-meta text-gray-500">[SYSTEM]: </span><span class="log-content">Batch command started with ID: ${response.batch_command_id}</span>`]);
-            setCurrentBatchCommandId(response.batch_command_id);
-        } catch (err: unknown) {
-            console.error('Failed to execute batch command:', err);
-            let errorMessage = 'An unknown error occurred.';
-            if (typeof err === 'object' && err !== null) {
-                const potentialError = err as { response?: { data?: { message?: string } }, message?: string };
-                if (potentialError.response?.data?.message) {
-                    errorMessage = potentialError.response.data.message;
-                } else if (potentialError.message) {
-                    errorMessage = potentialError.message;
+        const ws = connectForBatchCommand();
+        webSocketRef.current = ws;
+
+        ws.onopen = () => {
+            setGeneralOutput(prev => [...prev, '<span class="log-content">Connection established. Sending command...</span>']);
+            const payload = {
+                command_content: processedCommand,
+                target_vps_ids: Array.from(selectedVps),
+                working_directory: workingDirectory,
+            };
+            ws.send(JSON.stringify(payload));
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                const { type, payload } = message;
+
+                if (!type || !payload) {
+                    setGeneralOutput(prev => [...prev, `[RAW] ${event.data}`]);
+                    return;
                 }
+
+                const currentServers = useServerListStore.getState().servers;
+                const server = currentServers.find(s => s.id === payload.vps_id);
+                const vpsName = server ? server.name : `VPS_ID_${payload.vps_id}`;
+
+                const updateServerOutput = (vpsId: number, log: string, statusUpdate?: Partial<{ status: string; exitCode: number | string | null }>) => {
+                    setServerOutputs(prev => {
+                        const newOutputs = { ...prev };
+                        const existingData = newOutputs[vpsId];
+                        if (!existingData) {
+                            newOutputs[vpsId] = { name: vpsName, logs: [log], status: statusUpdate?.status || 'Pending', exitCode: statusUpdate?.exitCode !== undefined ? statusUpdate.exitCode : null };
+                        } else {
+                            if (!existingData.logs.includes(log)) existingData.logs.push(log);
+                            if (statusUpdate) {
+                                existingData.status = statusUpdate.status || existingData.status;
+                                existingData.exitCode = statusUpdate.exitCode !== undefined ? statusUpdate.exitCode : existingData.exitCode;
+                            }
+                            existingData.name = vpsName;
+                        }
+                        return newOutputs;
+                    });
+                };
+
+                switch (type) {
+                    case 'BATCH_TASK_CREATED': {
+                        const formattedMessage = `<span class="log-meta text-gray-500">[SYSTEM]: </span><span class="log-content">Batch command started with ID: ${payload.batch_command_id}</span>`;
+                        setGeneralOutput(prev => [...prev, formattedMessage]);
+                        setCurrentBatchCommandId(payload.batch_command_id);
+                        break;
+                    }
+                    case 'NEW_LOG_OUTPUT': {
+                        const timestamp = new Date(payload.timestamp).toLocaleTimeString();
+                        const rawLog = payload.log_line;
+                        const formattedHtml = ansiConverter.current.toHtml(rawLog);
+                        const formattedMessage = `<span class="log-meta text-gray-500">[${timestamp}] [${payload.stream_type.toUpperCase()}]: </span><span class="log-content">${formattedHtml}</span>`;
+                        updateServerOutput(payload.vps_id, formattedMessage);
+                        setAggregatedLogs(prev => [...prev, { vpsId: payload.vps_id, vpsName, log: formattedMessage }]);
+                        break;
+                    }
+                    case 'CHILD_TASK_UPDATE': {
+                        const timestamp = new Date().toLocaleTimeString();
+                        const exitCode = payload.exit_code ?? 'N/A';
+                        const formattedMessage = `<span class="log-meta text-gray-500">[${timestamp}] [STATUS]: </span><span class="log-content">Task status changed to ${payload.status}. Exit Code: ${exitCode}</span>`;
+                        updateServerOutput(payload.vps_id, formattedMessage, { status: payload.status, exitCode });
+                        setAggregatedLogs(prev => [...prev, { vpsId: payload.vps_id, vpsName, log: formattedMessage }]);
+                        break;
+                    }
+                    case 'BATCH_TASK_UPDATE': {
+                        const timestamp = new Date(payload.completed_at).toLocaleTimeString();
+                        const formattedMessage = `<span class="log-meta text-gray-500">[${timestamp}] [SYSTEM]: </span><span class="log-content">Batch command finished with status: ${payload.overall_status}.</span>`;
+                        setGeneralOutput(prev => [...prev, formattedMessage]);
+
+                        const terminalStates = [
+                            "CompletedSuccessfully",
+                            "CompletedWithErrors",
+                            "Terminated",
+                            "FailedToDispatch"
+                        ];
+
+                        if (terminalStates.includes(payload.overall_status)) {
+                            setIsLoading(false);
+                            if (webSocketRef.current) {
+                                webSocketRef.current.close();
+                            }
+                        }
+                        break;
+                    }
+                    default:
+                        setGeneralOutput(prev => [...prev, `[UNKNOWN] ${event.data}`]);
+                        break;
+                }
+            } catch (e) {
+                console.error('Failed to parse or process WebSocket message:', e);
+                setGeneralOutput(prev => [...prev, `[RAW] ${event.data}`]);
             }
-            setError(`Failed to start command: ${errorMessage}`);
+        };
+
+        ws.onerror = (event) => {
+            console.error('WebSocket connection error:', event);
+            setError('WebSocket connection error. Could not connect to the server.');
             setIsLoading(false);
-        }
+        };
+
+        ws.onclose = (event) => {
+            setGeneralOutput(prev => [...prev, `<span class="log-content">WebSocket connection closed. Code: ${event.code}</span>`]);
+            setIsLoading(false);
+            // Do not reset currentBatchCommandId here, so terminate can still be used if needed.
+        };
     };
 
-    const handleTerminateCommand = async () => {
+    const handleTerminateCommand = () => {
         if (!currentBatchCommandId) {
             setError("No active command to terminate.");
             return;
         }
-        try {
-            setGeneralOutput(prev => [...prev, `<span class="log-meta text-gray-500">[SYSTEM]: </span><span class="log-content">Sending termination signal for batch command ID: ${currentBatchCommandId}...</span>`]);
-            const response = await terminateBatchCommand(currentBatchCommandId);
-            setGeneralOutput(prev => [...prev, `<span class="log-meta text-gray-500">[SYSTEM]: </span><span class="log-content">Termination signal acknowledged: ${response.message}</span>`]);
-        } catch (err: unknown) {
-            console.error('Failed to terminate batch command:', err);
-            let errorMessage = 'An unknown error occurred during termination.';
-            if (typeof err === 'object' && err !== null) {
-                const potentialError = err as { response?: { data?: { message?: string } }, message?: string };
-                if (potentialError.response?.data?.message) {
-                    errorMessage = potentialError.response.data.message;
-                } else if (potentialError.message) {
-                    errorMessage = potentialError.message;
-                }
-            }
-            setError(`Failed to terminate command: ${errorMessage}`);
+        if (!webSocketRef.current || webSocketRef.current.readyState !== WebSocket.OPEN) {
+            setError("WebSocket is not connected. Cannot send termination signal.");
+            return;
         }
+
+        setGeneralOutput(prev => [...prev, `<span class="log-meta text-gray-500">[SYSTEM]: </span><span class="log-content">Sending termination signal for batch command ID: ${currentBatchCommandId}...</span>`]);
+        
+        const payload = {
+            type: "TERMINATE_TASK"
+        };
+        webSocketRef.current.send(JSON.stringify(payload));
     };
 
     const handleSaveScript = async (name: string, description: string) => {

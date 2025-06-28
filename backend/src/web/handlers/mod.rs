@@ -1,2 +1,2 @@
+pub mod batch_command_upgrade_handler;
 pub mod websocket_handler;
-pub mod ws_batch_command_handler;
