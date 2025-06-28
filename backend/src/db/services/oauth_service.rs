@@ -1,6 +1,6 @@
 // backend/src/db/services/oauth_service.rs
 
-use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, ActiveModelTrait, Set, DbErr};
+use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, ActiveModelTrait, Set};
 use crate::db::entities::{oauth2_provider, prelude::Oauth2Provider, user, user_identity_provider};
 use crate::http_server::AppError;
 use serde::{Deserialize, Serialize};

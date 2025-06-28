@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Extension, Path, Query, State},
+    extract::{Extension, Path, State},
     routing::{get, post},
     Json, Router,
 };

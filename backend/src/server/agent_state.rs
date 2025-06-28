@@ -1,5 +1,3 @@
-
-
 use std::collections::HashMap;
 use crate::websocket_models::ServerWithDetails;
 use std::sync::Arc;
@@ -9,24 +7,97 @@ use tokio::sync::mpsc;
 use std::fmt;
 use tracing::{info, warn};
 use crate::agent_service::message_to_agent::Payload;
+use futures_util::{Sink, SinkExt};
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use axum::extract::ws::{WebSocket, Message};
+use futures_util::stream::SplitSink;
+use prost::Message as ProstMessage;
 
+// 1. Define the AgentSender enum
+#[derive(Clone)]
+pub enum AgentSender {
+    Grpc(mpsc::Sender<Result<MessageToAgent, tonic::Status>>),
+    WebSocket(Arc<Mutex<SplitSink<WebSocket, Message>>>),
+}
+
+// 2. Implement Sink for AgentSender
+impl Sink<MessageToAgent> for AgentSender {
+    type Error = tonic::Status;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        match self.get_mut() {
+            AgentSender::Grpc(sender) => {
+                // mpsc::Sender's poll_ready is for reserving a slot, which we don't need
+                // to do explicitly when using try_send. We can consider it always ready
+                // and let start_send handle the backpressure/closed channel case.
+                Poll::Ready(Ok(()))
+            }
+            AgentSender::WebSocket(sink) => {
+                let mut sink = sink.try_lock().unwrap();
+                Pin::new(&mut *sink).poll_ready(cx).map_err(|e| tonic::Status::internal(e.to_string()))
+            }
+        }
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: MessageToAgent) -> Result<(), Self::Error> {
+        match self.get_mut() {
+            AgentSender::Grpc(sender) => {
+                sender.try_send(Ok(item)).map_err(|e| tonic::Status::internal(e.to_string()))
+            }
+            AgentSender::WebSocket(sink) => {
+                let mut sink = sink.try_lock().unwrap();
+                let mut buf = Vec::new();
+                item.encode(&mut buf).unwrap();
+                // Corrected: Convert Vec<u8> to Bytes
+                Pin::new(&mut *sink).start_send(Message::Binary(buf.into())).map_err(|e| tonic::Status::internal(e.to_string()))
+            }
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        match self.get_mut() {
+            AgentSender::Grpc(_) => Poll::Ready(Ok(())),
+            AgentSender::WebSocket(sink) => {
+                let mut sink = sink.try_lock().unwrap();
+                Pin::new(&mut *sink).poll_flush(cx).map_err(|e| tonic::Status::internal(e.to_string()))
+            }
+        }
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        match self.get_mut() {
+            AgentSender::Grpc(_) => Poll::Ready(Ok(())),
+            AgentSender::WebSocket(sink) => {
+                let mut sink = sink.try_lock().unwrap();
+                Pin::new(&mut *sink).poll_close(cx).map_err(|e| tonic::Status::internal(e.to_string()))
+            }
+        }
+    }
+}
+
+// 3. Update AgentState
 #[derive(Clone)]
 pub struct AgentState {
     pub agent_id: String,
     pub last_heartbeat_ms: i64,
     pub config: AgentConfig,
     pub vps_db_id: i32,
-    pub sender: mpsc::Sender<Result<MessageToAgent, tonic::Status>>,
+    pub sender: AgentSender,
 }
 
 impl fmt::Debug for AgentState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let sender_type = match self.sender {
+            AgentSender::Grpc(_) => "Grpc",
+            AgentSender::WebSocket(_) => "WebSocket",
+        };
         f.debug_struct("AgentState")
             .field("agent_id", &self.agent_id)
             .field("last_heartbeat_ms", &self.last_heartbeat_ms)
             .field("config", &self.config)
             .field("vps_db_id", &self.vps_db_id)
-            .field("sender", &"mpsc::Sender<...>") // Don't print the sender itself
+            .field("sender_type", &sender_type)
             .finish()
     }
 }
@@ -41,15 +112,13 @@ impl ConnectedAgents {
         Arc::new(Mutex::new(Self::default()))
     }
 
-    /// Finds an agent's state by their VPS database ID.
-    /// This requires iterating through the values, so it's O(n) on the number of connected agents.
     pub fn find_by_vps_id(&self, vps_id: i32) -> Option<AgentState> {
         self.agents.values().find(|state| state.vps_db_id == vps_id).cloned()
     }
 
-    /// Sends a command to an agent to trigger an update check.
+    // 4. Update send_update_check_command
     pub async fn send_update_check_command(&self, vps_id: i32) -> bool {
-        if let Some(agent_state) = self.find_by_vps_id(vps_id) {
+        if let Some(mut agent_state) = self.find_by_vps_id(vps_id) {
             let command = MessageToAgent {
                 server_message_id: chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default() as u64,
                 payload: Some(Payload::TriggerUpdateCheck(
@@ -57,7 +126,7 @@ impl ConnectedAgents {
                 )),
             };
 
-            match agent_state.sender.send(Ok(command)).await {
+            match agent_state.sender.send(command).await {
                 Ok(_) => {
                     info!(vps_id, "Successfully sent TriggerUpdateCheckCommand to agent.");
                     true
@@ -74,5 +143,4 @@ impl ConnectedAgents {
     }
 }
 
-// Cache for live server data including basic info and latest metrics
 pub type LiveServerDataCache = Arc<Mutex<HashMap<i32, ServerWithDetails>>>;

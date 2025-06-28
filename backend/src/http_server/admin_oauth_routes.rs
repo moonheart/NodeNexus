@@ -4,12 +4,11 @@ use std::sync::Arc;
 use axum::{
     extract::{Path, State},
     response::IntoResponse,
-    routing::{get, post, put, delete},
+    routing::{get, put},
     Json, Router,
 };
 use crate::http_server::{AppState, AppError};
 use crate::db::services::oauth_service::{self, ProviderUpsertPayload};
-use crate::db::entities::oauth2_provider;
 
 pub fn create_router() -> Router<Arc<AppState>> {
     Router::new()

@@ -4,7 +4,7 @@ use tracing::{error, debug};
 
 use crate::db::services;
 use crate::server::agent_state::LiveServerDataCache;
-use crate::websocket_models::{FullServerListPush, WsMessage, ServerWithDetails, ServerBasicInfo};
+use crate::websocket_models::{FullServerListPush, WsMessage, ServerWithDetails};
 
 /// The centralized function to trigger a full state update and broadcast to all WebSocket clients.
 ///

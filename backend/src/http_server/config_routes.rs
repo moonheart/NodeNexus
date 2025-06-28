@@ -11,6 +11,7 @@ use crate::db::services as db_services;
 use crate::db::entities::{setting, vps}; // Added setting and vps entities
 use uuid::Uuid;
 use tracing::{error, warn};
+use futures_util::SinkExt; // Import the SinkExt trait
 
 // This router is for global settings, mounted under /api/settings
 pub fn create_settings_router() -> Router<Arc<AppState>> {
@@ -125,7 +126,7 @@ pub async fn push_config_to_vps(
         agents_guard.find_by_vps_id(vps_id)
     };
 
-    if let Some(state) = agent_state {
+    if let Some(mut state) = agent_state { // Make state mutable
         let config_version_id = Uuid::new_v4().to_string();
         let update_req = UpdateConfigRequest {
             new_config: Some(effective_config),
@@ -136,7 +137,7 @@ pub async fn push_config_to_vps(
             payload: Some(AgentPayload::UpdateConfigRequest(update_req)),
         };
 
-        if state.sender.send(Ok(msg)).await.is_ok() {
+        if state.sender.send(msg).await.is_ok() {
             // Assuming update_vps_config_status returns Result<_, DbErr>
             if let Err(e) = db_services::update_vps_config_status(&app_state.db_pool, vps_id, "pending", None).await {
                 error!(vps_id = vps_id, error = ?e, "Failed to update VPS config status to pending.");

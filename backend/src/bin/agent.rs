@@ -61,7 +61,7 @@ async fn spawn_and_monitor_core_tasks(
     let (
         in_stream,
         tx_to_server,
-        client_message_id_counter, // This is an Arc<Mutex<u64>>
+        client_message_id_counter, // This is an Arc<AtomicU64>
         assigned_agent_id,
         _initial_agent_config, // No longer the source of truth, config is now in shared_agent_config
     ) = handler.split_for_tasks();
@@ -131,7 +131,7 @@ async fn spawn_and_monitor_core_tasks(
     tasks.push(tokio::spawn(async move {
         let agent_id_for_log = listener_agent_id.clone();
         server_message_handler_loop(
-            in_stream,
+            Box::pin(in_stream),
             listener_tx,
             listener_agent_id,
             listener_id_provider,

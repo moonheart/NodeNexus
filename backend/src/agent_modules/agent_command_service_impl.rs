@@ -4,7 +4,7 @@ use lazy_static::lazy_static;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::fs;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command as TokioCommand;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info, warn};

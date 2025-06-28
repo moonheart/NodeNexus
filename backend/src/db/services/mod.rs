@@ -34,7 +34,6 @@ pub use vps_core_service::*;
 pub use vps_detail_service::*;
 pub use vps_renewal_service::*;
 pub use vps_traffic_service::*;
-pub use vps_service::*;
 pub use alert_service::*; // Re-export alert_service
 pub use batch_command_service::*;
 pub use command_script_service::*;

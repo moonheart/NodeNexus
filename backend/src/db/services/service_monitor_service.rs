@@ -226,7 +226,7 @@ pub async fn update_monitor(
     // 4. Handle assignments if present
     if let Some(assignments) = payload.assignments {
         if let Some(assignment_type) = assignments.assignment_type {
-            let mut monitor_for_update = ServiceMonitor::find_by_id(monitor_id).one(&txn).await?.unwrap();
+            let monitor_for_update = ServiceMonitor::find_by_id(monitor_id).one(&txn).await?.unwrap();
             let mut active_monitor_for_update: service_monitor::ActiveModel = monitor_for_update.into();
             active_monitor_for_update.assignment_type = Set(assignment_type);
             active_monitor_for_update.update(&txn).await?;

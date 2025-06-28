@@ -31,10 +31,9 @@ use crate::db::entities::user; // Changed to use user entity
 use bcrypt::{hash, verify, DEFAULT_COST};
 use jsonwebtoken::{decode, encode, EncodingKey, Header, Validation, DecodingKey};
 use chrono::{Utc, Duration};
-use std::env;
 use crate::http_server::AppError;
 use axum::{http::{Request, header}, Extension};
-use tracing::{info, warn};
+use tracing::warn;
 use axum::middleware::Next;
 use axum::{response::Response, body::Body as AxumBody}; // Import AxumBody
 

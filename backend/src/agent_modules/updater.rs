@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{info, warn, error};
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tokio::fs::File;
 use std::fs;
 use tokio::io::AsyncWriteExt;

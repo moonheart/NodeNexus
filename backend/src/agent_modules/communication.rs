@@ -15,15 +15,47 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use sysinfo::System;
 use tokio::sync::mpsc;
-use tokio_stream::{wrappers::ReceiverStream, StreamExt};
+use tokio_stream::wrappers::ReceiverStream;
 use tower_service::Service;
 use uuid::Uuid;
  // For timestamps
 use tracing::{info, error, warn, debug};
+use futures_util::{Sink, Stream, SinkExt, StreamExt as FuturesStreamExt};
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio_tungstenite::{connect_async, tungstenite::protocol::Message as WsMessage};
+use prost::Message as ProstMessage;
+use tokio::sync::Mutex;
+
 
 // Import the refactored helper functions
 use crate::agent_modules::agent_command_service_impl::{handle_batch_agent_command, handle_batch_terminate_command};
 use crate::agent_modules::updater; // Import the new updater module
+
+struct GrpcSink {
+    tx: mpsc::Sender<MessageToServer>,
+}
+
+impl Sink<MessageToServer> for GrpcSink {
+    type Error = tonic::Status;
+
+    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: MessageToServer) -> Result<(), Self::Error> {
+        self.get_mut().tx.try_send(item).map_err(|e| tonic::Status::internal(e.to_string()))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
 
 pub async fn heartbeat_loop(
     tx_to_server: mpsc::Sender<MessageToServer>,
@@ -60,7 +92,7 @@ pub async fn heartbeat_loop(
 }
 
 pub async fn server_message_handler_loop(
-    mut in_stream: tonic::Streaming<MessageToAgent>,
+    mut in_stream: Pin<Box<dyn Stream<Item = Result<MessageToAgent, tonic::Status>> + Send + Unpin>>,
     tx_to_server: mpsc::Sender<MessageToServer>,
     agent_id: String,
     id_provider: impl Fn() -> u64 + Send + Sync + Clone + 'static, // Added Clone for spawning tasks
@@ -207,19 +239,161 @@ pub async fn server_message_handler_loop(
 }
 
 pub struct ConnectionHandler {
-    in_stream: tonic::Streaming<MessageToAgent>,
-    tx_to_server: mpsc::Sender<MessageToServer>,
+    in_stream: Pin<Box<dyn Stream<Item = Result<MessageToAgent, tonic::Status>> + Send + Unpin>>,
+    tx_to_server: Pin<Box<dyn Sink<MessageToServer, Error = tonic::Status> + Send + Unpin>>,
     pub assigned_agent_id: String,
     pub initial_agent_config: AgentConfig,
     client_message_id_counter: Arc<AtomicU64>,
+}
+
+// Adapter for WebSocket to use Sink and Stream with tonic Status errors
+#[derive(Clone)]
+pub struct WebSocketStreamAdapter {
+    ws_stream: Arc<Mutex<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>>,
+}
+
+impl Stream for WebSocketStreamAdapter {
+    type Item = Result<MessageToAgent, tonic::Status>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut stream_guard = match self.ws_stream.try_lock() {
+            Ok(guard) => guard,
+            Err(_) => {
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+        };
+        match Pin::new(&mut *stream_guard).poll_next(cx) {
+            Poll::Ready(Some(Ok(WsMessage::Binary(bin)))) => {
+                let msg = MessageToAgent::decode(bin.as_ref())
+                    .map_err(|e| tonic::Status::internal(format!("Protobuf decode error: {}", e)));
+                Poll::Ready(Some(msg))
+            }
+            Poll::Ready(Some(Ok(WsMessage::Close(_)))) => {
+                info!("WebSocket connection closed by server.");
+                Poll::Ready(None)
+            }
+            Poll::Ready(Some(Err(e))) => {
+                warn!("WebSocket receive error: {}", e);
+                Poll::Ready(Some(Err(tonic::Status::internal(format!("WebSocket error: {}", e)))))
+            }
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+            _ => Poll::Pending, // Ignore other message types
+        }
+    }
+}
+
+impl Sink<MessageToServer> for WebSocketStreamAdapter {
+    type Error = tonic::Status;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let mut stream = match self.ws_stream.try_lock() {
+            Ok(s) => s,
+            Err(_) => return Poll::Pending,
+        };
+        Pin::new(&mut *stream).poll_ready(cx).map_err(|e| tonic::Status::internal(e.to_string()))
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: MessageToServer) -> Result<(), Self::Error> {
+        let mut buf = Vec::new();
+        item.encode(&mut buf).map_err(|e| tonic::Status::internal(format!("Protobuf encode error: {}", e)))?;
+        let mut stream = self.ws_stream.try_lock().map_err(|_| tonic::Status::unavailable("WebSocket stream is busy, could not send"))?;
+        Pin::new(&mut *stream).start_send(WsMessage::Binary(buf.into())).map_err(|e| tonic::Status::internal(e.to_string()))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let mut stream = match self.ws_stream.try_lock() {
+            Ok(s) => s,
+            Err(_) => return Poll::Pending,
+        };
+        Pin::new(&mut *stream).poll_flush(cx).map_err(|e| tonic::Status::internal(e.to_string()))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let mut stream = match self.ws_stream.try_lock() {
+            Ok(s) => s,
+            Err(_) => return Poll::Pending,
+        };
+        Pin::new(&mut *stream).poll_close(cx).map_err(|e| tonic::Status::internal(e.to_string()))
+    }
 }
 
 impl ConnectionHandler {
     pub async fn connect_and_handshake(
         agent_cli_config: &AgentCliConfig,
         initial_message_id_counter_val: u64,
-    ) -> Result<Self, Box<dyn Error>> {
-        info!("Attempting to connect to server");
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        if agent_cli_config.server_address.starts_with("ws") {
+            Self::connect_and_handshake_ws(agent_cli_config, initial_message_id_counter_val).await
+        } else {
+            Self::connect_and_handshake_grpc(agent_cli_config, initial_message_id_counter_val).await
+        }
+    }
+
+    async fn connect_and_handshake_ws(
+        agent_cli_config: &AgentCliConfig,
+        initial_message_id_counter_val: u64,
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        info!("Attempting to connect to WebSocket server");
+        let base_url = agent_cli_config.server_address.trim_end_matches('/');
+        let full_url = if !agent_cli_config.server_address.contains("/ws/agent") {
+             format!("{}/ws/agent", base_url)
+        } else {
+            agent_cli_config.server_address.clone()
+        };
+
+        info!(url = %full_url, "Connecting to WebSocket URL");
+        let (ws_stream, _) = connect_async(&full_url).await?;
+        info!("Successfully connected to WebSocket endpoint.");
+
+        let mut adapter = WebSocketStreamAdapter { ws_stream: Arc::new(Mutex::new(ws_stream)) };
+
+        let handshake_payload = create_handshake_payload().await;
+        let client_message_id_counter = Arc::new(AtomicU64::new(initial_message_id_counter_val));
+        let handshake_msg_id = client_message_id_counter.fetch_add(1, Ordering::SeqCst);
+
+        let handshake_msg = MessageToServer {
+            client_message_id: handshake_msg_id,
+            payload: Some(ServerPayload::AgentHandshake(handshake_payload)),
+            vps_db_id: agent_cli_config.vps_id,
+            agent_secret: agent_cli_config.agent_secret.clone(),
+        };
+
+        adapter.send(handshake_msg).await.map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)?;
+        info!("Handshake message sent to server. Waiting for response...");
+
+        if let Some(Ok(response_msg)) = adapter.next().await {
+            if let Some(AgentPayload::ServerHandshakeAck(ack)) = response_msg.payload {
+                if ack.authentication_successful {
+                    info!(agent_id = %ack.assigned_agent_id, "Authenticated successfully. Server assigned Agent ID.");
+                    Ok(Self {
+                        in_stream: Box::pin(adapter.clone()),
+                        tx_to_server: Box::pin(adapter),
+                        assigned_agent_id: ack.assigned_agent_id,
+                        initial_agent_config: ack.initial_config.unwrap_or_default(),
+                        client_message_id_counter,
+                    })
+                } else {
+                    let err_msg = format!("Authentication failed: {}. This is a critical error. Agent will not retry automatically for auth failures.", ack.error_message);
+                    error!(error_message = %err_msg, "Handshake authentication failed.");
+                    Err(Box::new(std::io::Error::new(std::io::ErrorKind::PermissionDenied, ack.error_message)) as Box<dyn Error + Send + Sync>)
+                }
+            } else {
+                error!("Unexpected first message from server (not HandshakeAck).");
+                Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Unexpected first message from server")) as Box<dyn Error + Send + Sync>)
+            }
+        } else {
+            error!("Server closed stream during handshake.");
+            Err(Box::new(std::io::Error::new(std::io::ErrorKind::ConnectionAborted, "Server closed stream during handshake")) as Box<dyn Error + Send + Sync>)
+        }
+    }
+
+    async fn connect_and_handshake_grpc(
+        agent_cli_config: &AgentCliConfig,
+        initial_message_id_counter_val: u64,
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        info!("Attempting to connect to gRPC server");
         
         let tls = ClientTlsConfig::new()
             .with_native_roots();
@@ -233,7 +407,7 @@ impl ConnectionHandler {
             .await
             .map_err(|e| {
                 error!(error = %e, "Failed to connect to gRPC endpoint with TLS.");
-                e
+                Box::new(e) as Box<dyn Error + Send + Sync>
             })?;
 
         let mut client = AgentCommunicationServiceClient::new(channel);
@@ -242,52 +416,9 @@ impl ConnectionHandler {
 
         let stream_response_future = client.establish_communication_stream(ReceiverStream::new(rx_for_stream));
 
-        // let stream_response = client.establish_communication_stream(ReceiverStream::new(rx_for_stream)).await
-        //     .map_err(|e| {
-        //         error!(error = %e, "Failed to establish communication stream.");
-        //         e
-        //     })?;
-        // let mut in_stream = stream_response.into_inner();
         info!("Continue without wait for establish_communication_stream result.");
 
-        let os_type_proto = if cfg!(target_os = "linux") { OsType::Linux }
-                          else if cfg!(target_os = "macos") { OsType::Macos }
-                          else if cfg!(target_os = "windows") { OsType::Windows }
-                          else { OsType::default() }; 
-        
-        let (public_ips, country_opt) = collect_public_ip_addresses().await;
-
-        let mut sys = System::new(); 
-        sys.refresh_cpu_list(sysinfo::CpuRefreshKind::everything());
-        sys.refresh_memory_specifics(sysinfo::MemoryRefreshKind::everything());
-
-        let cpu_static_info_opt: Option<crate::agent_service::CpuStaticInfo> = sys.cpus().first().map(|cpu| {
-            crate::agent_service::CpuStaticInfo {
-                name: cpu.name().to_string(),
-                frequency: cpu.frequency(),
-                vendor_id: cpu.vendor_id().to_string(),
-                brand: cpu.brand().to_string(),
-            }
-        });
-
-        let handshake_payload = AgentHandshake {
-            agent_id_hint: Uuid::new_v4().to_string(),
-            agent_version: VERSION.to_string(),
-            os_type: i32::from(os_type_proto),
-            os_name: System::name().unwrap_or_else(|| "N/A".to_string()),
-            arch: System::cpu_arch(),
-            hostname: System::host_name().unwrap_or_else(|| "N/A".to_string()),
-            public_ip_addresses: public_ips,
-            kernel_version: System::kernel_version().unwrap_or_else(|| "N/A".to_string()),
-            os_version_detail: System::os_version().unwrap_or_else(|| "N/A".to_string()),
-            long_os_version: System::long_os_version().unwrap_or_else(|| "N/A".to_string()),
-            distribution_id: System::distribution_id(),
-            physical_core_count: System::physical_core_count().map(|c| c as u32),
-            total_memory_bytes: Some(sys.total_memory()),
-            total_swap_bytes: Some(sys.total_swap()),
-            cpu_static_info: cpu_static_info_opt,
-            country_code: country_opt,
-        };
+        let handshake_payload = create_handshake_payload().await;
         
         let client_message_id_counter = Arc::new(AtomicU64::new(initial_message_id_counter_val));
         let handshake_msg_id = client_message_id_counter.fetch_add(1, Ordering::SeqCst);
@@ -299,12 +430,12 @@ impl ConnectionHandler {
             agent_secret: agent_cli_config.agent_secret.clone(),
         }).await.map_err(|e| {
             error!(error = %e, "Failed to send handshake message.");
-            Box::new(e) as Box<dyn Error>
+            Box::new(e) as Box<dyn Error + Send + Sync>
         })?;
 
         info!("Handshake message sent to server. Waiting for response...");
 
-        let mut in_stream = stream_response_future.await?.into_inner();
+        let mut in_stream = stream_response_future.await.map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)?.into_inner();
 
         
         match in_stream.next().await {
@@ -312,9 +443,10 @@ impl ConnectionHandler {
                 if let Some(AgentPayload::ServerHandshakeAck(ack)) = response_msg.payload {
                     if ack.authentication_successful {
                         info!(agent_id = %ack.assigned_agent_id, "Authenticated successfully. Server assigned Agent ID.");
+                        let grpc_sink = GrpcSink { tx: tx_to_server };
                         Ok(Self {
-                            in_stream,
-                            tx_to_server,
+                            in_stream: Box::pin(in_stream),
+                            tx_to_server: Box::pin(grpc_sink),
                             assigned_agent_id: ack.assigned_agent_id,
                             initial_agent_config: ack.initial_config.unwrap_or_default(),
                             client_message_id_counter,
@@ -322,34 +454,45 @@ impl ConnectionHandler {
                     } else {
                         let err_msg = format!("Authentication failed: {}. This is a critical error. Agent will not retry automatically for auth failures.", ack.error_message);
                         error!(error_message = %err_msg, "Handshake authentication failed.");
-                        Err(Box::new(std::io::Error::new(std::io::ErrorKind::PermissionDenied, ack.error_message)) as Box<dyn Error>)
+                        Err(Box::new(std::io::Error::new(std::io::ErrorKind::PermissionDenied, ack.error_message)) as Box<dyn Error + Send + Sync>)
                     }
                 } else {
                     error!("Unexpected first message from server (not HandshakeAck).");
-                    Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Unexpected first message from server")) as Box<dyn Error>)
+                    Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Unexpected first message from server")) as Box<dyn Error + Send + Sync>)
                 }
             }
             Some(Err(status)) => {
                 error!(?status, "Error receiving handshake response.");
-                Err(Box::new(status) as Box<dyn Error>)
+                Err(Box::new(status) as Box<dyn Error + Send + Sync>)
             }
             None => {
                 error!("Server closed stream during handshake.");
-                Err(Box::new(std::io::Error::new(std::io::ErrorKind::ConnectionAborted, "Server closed stream during handshake")) as Box<dyn Error>)
+                Err(Box::new(std::io::Error::new(std::io::ErrorKind::ConnectionAborted, "Server closed stream during handshake")) as Box<dyn Error + Send + Sync>)
             }
         }
     }
 
-    pub fn split_for_tasks(self) -> (
-        tonic::Streaming<MessageToAgent>,
+    pub fn split_for_tasks(mut self) -> (
+        Pin<Box<dyn Stream<Item = Result<MessageToAgent, tonic::Status>> + Send + Unpin>>,
         mpsc::Sender<MessageToServer>,
         Arc<AtomicU64>, 
         String,          
         AgentConfig,     
     ) {
+        let (tx, mut rx) = mpsc::channel(128);
+        
+        tokio::spawn(async move {
+            while let Some(item) = rx.recv().await {
+                if self.tx_to_server.send(item).await.is_err() {
+                    error!("Failed to send message to server through sink.");
+                    break;
+                }
+            }
+        });
+
         (
             self.in_stream,
-            self.tx_to_server,
+            tx,
             self.client_message_id_counter,
             self.assigned_agent_id,
             self.initial_agent_config,
@@ -361,5 +504,50 @@ impl ConnectionHandler {
         move || {
             counter.fetch_add(1, Ordering::SeqCst)
         }
+    }
+}
+
+async fn create_handshake_payload() -> AgentHandshake {
+    let os_type_proto = if cfg!(target_os = "linux") {
+        OsType::Linux
+    } else if cfg!(target_os = "macos") {
+        OsType::Macos
+    } else if cfg!(target_os = "windows") {
+        OsType::Windows
+    } else {
+        OsType::default()
+    };
+
+    let (public_ips, country_opt) = collect_public_ip_addresses().await;
+
+    let mut sys = System::new();
+    sys.refresh_cpu_list(sysinfo::CpuRefreshKind::everything());
+    sys.refresh_memory_specifics(sysinfo::MemoryRefreshKind::everything());
+
+    let cpu_static_info_opt: Option<crate::agent_service::CpuStaticInfo> =
+        sys.cpus().first().map(|cpu| crate::agent_service::CpuStaticInfo {
+            name: cpu.name().to_string(),
+            frequency: cpu.frequency(),
+            vendor_id: cpu.vendor_id().to_string(),
+            brand: cpu.brand().to_string(),
+        });
+
+    AgentHandshake {
+        agent_id_hint: Uuid::new_v4().to_string(),
+        agent_version: VERSION.to_string(),
+        os_type: i32::from(os_type_proto),
+        os_name: System::name().unwrap_or_else(|| "N/A".to_string()),
+        arch: System::cpu_arch(),
+        hostname: System::host_name().unwrap_or_else(|| "N/A".to_string()),
+        public_ip_addresses: public_ips,
+        kernel_version: System::kernel_version().unwrap_or_else(|| "N/A".to_string()),
+        os_version_detail: System::os_version().unwrap_or_else(|| "N/A".to_string()),
+        long_os_version: System::long_os_version().unwrap_or_else(|| "N/A".to_string()),
+        distribution_id: System::distribution_id(),
+        physical_core_count: System::physical_core_count().map(|c| c as u32),
+        total_memory_bytes: Some(sys.total_memory()),
+        total_swap_bytes: Some(sys.total_swap()),
+        cpu_static_info: cpu_static_info_opt,
+        country_code: country_opt,
     }
 }

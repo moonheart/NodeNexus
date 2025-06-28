@@ -235,6 +235,7 @@ pub fn create_axum_router(
         )
         .route("/ws/metrics", get(websocket_handler::websocket_handler)) // Added WebSocket route
         .route("/ws/public", get(websocket_handler::public_websocket_handler)) // Added Public WebSocket route
+        .route("/ws/agent", get(crate::server::ws_agent_handler::ws_agent_handler)) // Add agent WebSocket route
         .merge(metrics_routes::metrics_router()) // 合并指标路由
         .nest(
             "/api/vps",

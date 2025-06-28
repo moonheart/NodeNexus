@@ -5,6 +5,7 @@ use std::sync::{
 use tokio::sync::Mutex;
 use uuid::Uuid;
 use tracing::{info, error, warn};
+use futures_util::SinkExt; // Import the SinkExt trait
 
 use crate::db::services::BatchCommandManager; // To update task status
 use crate::server::agent_state::ConnectedAgents; // To get agent connections (gRPC clients)
@@ -73,7 +74,7 @@ impl CommandDispatcher {
         };
 
         match agent_sender {
-            Some(sender) => {
+            Some(mut sender) => { // Make sender mutable
                 // Update status to SentToAgent before actually sending
                 self.batch_command_manager.update_child_task_status(
                     child_task_id,
@@ -94,7 +95,7 @@ let message_to_agent = MessageToAgent {
 };
 
 
-                if let Err(e) = sender.send(Ok(message_to_agent)).await {
+                if let Err(e) = sender.send(message_to_agent).await {
                     // If sending fails, update status to AgentUnreachable
                     self.batch_command_manager.update_child_task_status(
                         child_task_id,
@@ -135,7 +136,7 @@ let message_to_agent = MessageToAgent {
         };
 
         match agent_sender {
-            Some(sender) => {
+            Some(mut sender) => { // Make sender mutable
                 let terminate_req = BatchTerminateCommandRequest {
                     command_id: child_task_id.to_string(),
                 };
@@ -145,7 +146,7 @@ let message_to_agent = MessageToAgent {
                     payload: Some(message_to_agent::Payload::BatchTerminateCommandRequest(terminate_req)),
                 };
 
-                if let Err(e) = sender.send(Ok(message_to_agent)).await {
+                if let Err(e) = sender.send(message_to_agent).await {
                     // Log the error, but the task is already marked as Terminating in DB.
                     // Further DB update here might be redundant or could conflict if agent is truly unreachable.
                     // The primary responsibility here is to attempt sending the termination signal.
