@@ -97,8 +97,8 @@ impl BatchCommandManager {
             status: Set(BatchCommandStatus::Pending), // Initial status
             execution_alias: Set(request.execution_alias.clone()),
             user_id: Set(user_id),
-            created_at: Set(now.clone()),
-            updated_at: Set(now.clone()),
+            created_at: Set(now),
+            updated_at: Set(now),
             completed_at: Set(None),
         };
 
@@ -116,8 +116,8 @@ impl BatchCommandManager {
                 stdout_log_path: Set(None),
                 stderr_log_path: Set(None),
                 last_output_at: Set(None),
-                created_at: Set(now.clone()),
-                updated_at: Set(now.clone()),
+                created_at: Set(now),
+                updated_at: Set(now),
                 agent_started_at: Set(None),
                 agent_completed_at: Set(None),
             };
@@ -288,12 +288,10 @@ impl BatchCommandManager {
             return Err(BatchCommandServiceError::Unauthorized);
         }
 
-        let active_child_statuses = vec![
-            ChildCommandStatus::Pending,
+        let active_child_statuses = [ChildCommandStatus::Pending,
             ChildCommandStatus::SentToAgent,
             ChildCommandStatus::AgentAccepted,
-            ChildCommandStatus::Executing,
-        ];
+            ChildCommandStatus::Executing];
 
         if !active_child_statuses.contains(&child_task.status) {
             return Err(BatchCommandServiceError::TaskNotTerminable);
@@ -355,7 +353,7 @@ impl BatchCommandManager {
         self.result_broadcaster.broadcast_child_task_update(
             updated_task.batch_command_id,
             updated_task.child_command_id,
-            updated_task.vps_id.clone(), // Assuming vps_id is String or can be cloned
+            updated_task.vps_id, // Assuming vps_id is String or can be cloned
             updated_task.status.to_string(),
             updated_task.exit_code,
         ).await;
@@ -457,7 +455,7 @@ impl BatchCommandManager {
         self.result_broadcaster.broadcast_new_log_output(
             child_task.batch_command_id,
             child_task.child_command_id,
-            child_task.vps_id.clone(), // Assuming vps_id is String or can be cloned
+            child_task.vps_id, // Assuming vps_id is String or can be cloned
             log_line,
             DisplayableGrpcOutputType(stream_type).to_string(), // Use the wrapper
             Utc::now().to_rfc3339(), // Current timestamp as string

@@ -126,11 +126,9 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, user: Au
                 match msg {
                     Message::Text(t) => {
                         debug!(message = ?t, "Received text message.");
-                        if t == "ping" {
-                            if socket.send(Message::Text(Utf8Bytes::from("pong"))).await.is_err() {
-                                warn!("Error sending pong. Breaking loop.");
-                                break;
-                            }
+                        if t == "ping" && socket.send(Message::Text(Utf8Bytes::from("pong"))).await.is_err() {
+                            warn!("Error sending pong. Breaking loop.");
+                            break;
                         }
                     }
                     Message::Binary(b) => {

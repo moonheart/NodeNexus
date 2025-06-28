@@ -110,7 +110,7 @@ impl EvaluationService {
             // Rule is global, apply to all user's VPS
             debug!(rule_name = %rule.name, rule_id = rule.id, user_id = rule.user_id, "Evaluating global rule.");
             // Assuming get_all_vps_for_user now returns Vec<vps::Model>
-            let user_vps_list = crate::db::services::vps_service::get_all_vps_for_user(&*self.pool, rule.user_id).await?;
+            let user_vps_list = crate::db::services::vps_service::get_all_vps_for_user(&self.pool, rule.user_id).await?;
             
             if user_vps_list.is_empty() {
                 warn!(user_id = rule.user_id, rule_name = %rule.name, "No VPS found for user to evaluate global rule.");
@@ -253,7 +253,7 @@ impl EvaluationService {
 
         // Handle traffic_usage_percent separately as it uses current cycle data, not historical points
         if rule.metric_type.eq("traffic_usage_percent") {
-             let vps_model_option = vps_service::get_vps_by_id(&*self.pool, vps_id).await?; // Assuming this returns Option<vps::Model>
+             let vps_model_option = vps_service::get_vps_by_id(&self.pool, vps_id).await?; // Assuming this returns Option<vps::Model>
              if let Some(vps_model) = vps_model_option { // Changed vps to vps_model
                  if let Some(limit_bytes) = vps_model.traffic_limit_bytes {
                      if limit_bytes > 0 {

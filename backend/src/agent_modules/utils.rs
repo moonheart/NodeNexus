@@ -7,7 +7,7 @@ use once_cell::sync::Lazy;
 use std::str::FromStr; // For IpAddr::from_str
 use tracing::{info, error, warn, debug};
 
-const CF_TRACE_ENDPOINTS: &'static [&'static str] = &[
+const CF_TRACE_ENDPOINTS: &[&str] = &[
     "https://cloudflare.com/cdn-cgi/trace",
     "https://blog.cloudflare.com/cdn-cgi/trace",
     "https://developers.cloudflare.com/cdn-cgi/trace",
@@ -103,8 +103,8 @@ async fn fetch_ip_and_loc_from_endpoints(
 pub async fn collect_public_ip_addresses() -> (Vec<String>, Option<String>) {
     info!("Starting public IP address and country code collection...");
 
-    let ipv4_future = fetch_ip_and_loc_from_endpoints(&CF_TRACE_ENDPOINTS, &HTTP_CLIENT_V4, false);
-    let ipv6_future = fetch_ip_and_loc_from_endpoints(&CF_TRACE_ENDPOINTS, &HTTP_CLIENT_V6, true);
+    let ipv4_future = fetch_ip_and_loc_from_endpoints(CF_TRACE_ENDPOINTS, &HTTP_CLIENT_V4, false);
+    let ipv6_future = fetch_ip_and_loc_from_endpoints(CF_TRACE_ENDPOINTS, &HTTP_CLIENT_V6, true);
 
     let (ipv4_data, ipv6_data) = tokio::join!(ipv4_future, ipv6_future);
 

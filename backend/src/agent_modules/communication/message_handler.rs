@@ -36,7 +36,7 @@ pub async fn server_message_handler_loop(
     while let Some(message_result) = in_stream.next().await {
         match message_result {
             Ok(message_to_agent) => {
-                let server_msg_id_clone = message_to_agent.server_message_id.clone();
+                let server_msg_id_clone = message_to_agent.server_message_id;
                 let server_msg_id = message_to_agent.server_message_id;
 
                 if let Some(payload) = message_to_agent.payload {

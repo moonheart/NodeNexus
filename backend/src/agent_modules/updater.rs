@@ -161,7 +161,7 @@ async fn replace_and_restart(new_binary_path: &Path) -> Result<(), Box<dyn std::
                     tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
                     let final_start_status = Command::new("sc.exe").arg("start").arg(&service_name).status().await?;
                      if !final_start_status.success() {
-                        let msg = format!("'sc.exe start' failed again. Manual intervention required.");
+                        let msg = "'sc.exe start' failed again. Manual intervention required.".to_string();
                         error!("{}", msg);
                         return Err(msg.into());
                     }
@@ -171,7 +171,7 @@ async fn replace_and_restart(new_binary_path: &Path) -> Result<(), Box<dyn std::
                 Err(e) => {
                     let msg = format!("Failed to execute 'sc.exe start': {}. Manual intervention required.", e);
                     error!("{}", msg);
-                    return Err(msg.into());
+                    Err(msg.into())
                 }
             }
         } else {

@@ -11,6 +11,12 @@ pub struct TelegramSender {
     client: Client,
 }
 
+impl Default for TelegramSender {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TelegramSender {
     pub fn new() -> Self {
         Self {

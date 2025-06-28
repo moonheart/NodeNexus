@@ -167,7 +167,7 @@ async fn callback_handler(
                 .http_only(true)
                 .same_site(SameSite::Lax)
                 .secure(true)
-                .finish();
+                .build();
             
             let redirect_url = format!("{}/auth/callback?token={}", &app_state.config.frontend_url, auth_cookie.value());
             let mut resp = Redirect::to(&redirect_url).into_response();
@@ -194,7 +194,7 @@ async fn callback_handler(
     let remove_state_cookie = Cookie::build(("oauth_state", ""))
         .path("/")
         .max_age(time::Duration::ZERO)
-        .finish();
+        .build();
     response.headers_mut().append(
         axum::http::header::SET_COOKIE,
         remove_state_cookie.to_string().parse().unwrap(),

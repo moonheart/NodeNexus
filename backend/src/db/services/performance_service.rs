@@ -231,7 +231,7 @@ pub async fn save_performance_snapshot_batch(
                 used_bytes: Set(disk_usage.used_bytes as i64),
                 total_bytes: Set(disk_usage.total_bytes as i64),
                 fstype: Set(Some(disk_usage.fstype.clone())),
-                usage_percent: Set(disk_usage.usage_percent as f64),
+                usage_percent: Set(disk_usage.usage_percent),
                 ..Default::default() // For id
             };
             disk_usage_active_model.insert(&txn).await?;

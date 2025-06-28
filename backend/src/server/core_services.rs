@@ -51,7 +51,7 @@ pub async fn process_agent_stream<S>(
                 let mut auth_successful_for_msg = false;
                 let mut error_message_for_ack = String::new();
 
-                match services::get_vps_by_id(&*pool, vps_db_id_from_msg).await {
+                match services::get_vps_by_id(&pool, vps_db_id_from_msg).await {
                     Ok(Some(vps_record)) => {
                         if vps_record.agent_secret == *agent_secret_from_msg {
                             auth_successful_for_msg = true;
@@ -76,7 +76,7 @@ pub async fn process_agent_stream<S>(
                         let assigned_agent_id = Uuid::new_v4().to_string();
                         current_session_agent_id = Some(assigned_agent_id.clone());
 
-                        let tasks = match services::service_monitor_service::get_tasks_for_agent(&*pool, vps_db_id_from_msg).await {
+                        let tasks = match services::service_monitor_service::get_tasks_for_agent(&pool, vps_db_id_from_msg).await {
                             Ok(tasks) => {
                                 info!(count = tasks.len(), "Found service monitor tasks for agent.");
                                 tasks
@@ -102,7 +102,7 @@ pub async fn process_agent_stream<S>(
                         };
                         
                         match services::update_vps_info_on_handshake(
-                            &*pool,
+                            &pool,
                             vps_db_id_from_msg,
                             handshake,
                         ).await {
@@ -185,7 +185,7 @@ pub async fn process_agent_stream<S>(
                                     }
                                 }
                                 ServerPayload::PerformanceBatch(batch) => {
-                                    match services::save_performance_snapshot_batch(&*pool, vps_db_id_from_msg, &batch).await {
+                                    match services::save_performance_snapshot_batch(&pool, vps_db_id_from_msg, &batch).await {
                                         Ok(_) => {
                                             if update_trigger_tx.send(()).await.is_err() {
                                                 error!("Failed to send update trigger after metrics batch.");
@@ -200,7 +200,7 @@ pub async fn process_agent_stream<S>(
                                    info!(success = response.success, version_id = response.config_version_id, "Received UpdateConfigResponse.");
                                    let status = if response.success { "synced" } else { "failed" };
                                    let error_msg = if response.success { None } else { Some(response.error_message.as_str()) };
-                                   match services::update_vps_config_status(&*pool, vps_db_id_from_msg, status, error_msg).await {
+                                   match services::update_vps_config_status(&pool, vps_db_id_from_msg, status, error_msg).await {
                                        Ok(_) => {
                                            info!("Successfully updated config status. Triggering broadcast.");
                                            if update_trigger_tx.send(()).await.is_err() {
@@ -256,10 +256,10 @@ pub async fn process_agent_stream<S>(
                                    }
                                }
                                ServerPayload::ServiceMonitorResult(result) => {
-                                   if let Err(e) = services::service_monitor_service::record_monitor_result(&*pool, vps_db_id_from_msg, &result).await {
+                                   if let Err(e) = services::service_monitor_service::record_monitor_result(&pool, vps_db_id_from_msg, &result).await {
                                        error!(monitor_id = result.monitor_id, error = %e, "Failed to record monitor result.");
                                    } else {
-                                       let details = services::service_monitor_service::get_monitor_results_by_id(&*pool, result.monitor_id, None, None, Some(1)).await;
+                                       let details = services::service_monitor_service::get_monitor_results_by_id(&pool, result.monitor_id, None, None, Some(1)).await;
                                        if let Ok(mut details_vec) = details {
                                            if let Some(detail) = details_vec.pop() {
                                                if ws_data_broadcaster_tx.receiver_count() > 0 {
@@ -303,7 +303,7 @@ pub async fn process_agent_stream<S>(
 
         if let Some(id) = vps_db_id {
             info!("Setting status to 'offline'.");
-            match services::update_vps_status(&*pool, id, "offline").await {
+            match services::update_vps_status(&pool, id, "offline").await {
                 Ok(rows_affected) if rows_affected > 0 => {
                     info!("Successfully set status to 'offline'. Triggering broadcast.");
                     if update_trigger_tx.send(()).await.is_err() {

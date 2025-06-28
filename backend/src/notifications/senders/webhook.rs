@@ -11,6 +11,12 @@ pub struct WebhookSender {
     client: Client,
 }
 
+impl Default for WebhookSender {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WebhookSender {
     pub fn new() -> Self {
         Self {

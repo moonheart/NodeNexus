@@ -100,7 +100,7 @@ pub(super) async fn manage_command_lifecycle(
     #[cfg(windows)]
     let mut command = {
         let mut cmd = TokioCommand::new("powershell.exe");
-        cmd.args(&[
+        cmd.args([
             "-NoProfile",
             "-NonInteractive",
             "-File",

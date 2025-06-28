@@ -73,7 +73,7 @@ async fn register_handler(
 ) -> Result<Json<models::UserResponse>, AppError> {
     match auth_service::register_user(&app_state.db_pool, payload).await {
         Ok(user_response) => Ok(Json(user_response)),
-        Err(e) => Err(e.into()),
+        Err(e) => Err(e),
     }
 }
 
@@ -88,7 +88,7 @@ async fn login_handler(
         .http_only(true)
         .same_site(SameSite::Lax)
         .secure(true)
-        .finish();
+        .build();
 
     let mut response = Json(login_response).into_response();
     response.headers_mut().insert(
@@ -147,7 +147,9 @@ pub fn create_axum_router(
         .allow_methods(vec![Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
         .allow_headers(Any);
 
-    let app_router = Router::new()
+    
+
+    Router::new()
         .route("/api/health", get(health_check_handler))
         .route("/login_test_simple", post(login_test_handler))
         .route("/api/auth/login_test", post(login_test_handler))
@@ -208,7 +210,5 @@ pub fn create_axum_router(
        )
         .route("/ws/batch-command/{batch_command_id}", get(ws_batch_command_handler::batch_command_ws_handler))
         .with_state(app_state.clone())
-        .layer(cors);
-
-    app_router
+        .layer(cors)
 }

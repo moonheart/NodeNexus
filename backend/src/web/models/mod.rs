@@ -1,5 +1,3 @@
-use chrono::{DateTime, Utc};
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 
 pub mod alert_models;

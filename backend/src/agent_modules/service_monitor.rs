@@ -18,6 +18,12 @@ pub struct ServiceMonitorManager {
     running_tasks: HashMap<i32, (JoinHandle<()>, ServiceMonitorTask)>,
 }
 
+impl Default for ServiceMonitorManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ServiceMonitorManager {
     pub fn new() -> Self {
         Self {

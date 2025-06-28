@@ -183,7 +183,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
                 warn!(count = disconnected_vps_ids.len(), "Found disconnected agents. Updating status to 'offline'.");
                 let mut needs_broadcast = false;
                 for vps_id in disconnected_vps_ids {
-                    match db_services::update_vps_status(&*pool_for_check, vps_id, "offline").await { // Dereference Arc
+                    match db_services::update_vps_status(&pool_for_check, vps_id, "offline").await { // Dereference Arc
                         Ok(rows_affected) if rows_affected > 0 => {
                             needs_broadcast = true;
                         }
@@ -241,7 +241,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
             sleep(DEBOUNCE_DURATION).await;
 
             // After the quiet window, drain all other signals that have queued up.
-            while let Ok(_) = update_trigger_rx.try_recv() {
+            while update_trigger_rx.try_recv().is_ok() {
                 // Discard additional signals.
             }
 
@@ -420,7 +420,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         })
     );
 
-    axum::serve(listener, app.into_make_service()).await.map_err(|e| Box::new(e))?;
+    axum::serve(listener, app.into_make_service()).await.map_err(Box::new)?;
 
     // The debouncer_task will be aborted when main exits. For a graceful shutdown,
     // a cancellation token would be needed, but this is sufficient for now.

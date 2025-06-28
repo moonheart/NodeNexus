@@ -96,6 +96,12 @@ pub struct ServeEmbed<E: RustEmbed + Clone> {
     index_file: Arc<Option<String>>,
 }
 
+impl<E: RustEmbed + Clone> Default for ServeEmbed<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<E: RustEmbed + Clone> ServeEmbed<E> {
     /// Constructs a new `ServeEmbed` instance with default parameters.
     ///
@@ -244,7 +250,7 @@ impl<E: RustEmbed, T> ServeFuture<E, T> {
     ) -> GetFileResult<'a> {
         let mut path_candidate = Cow::Borrowed(path.trim_start_matches('/'));
 
-        if path_candidate == "" {
+        if path_candidate.is_empty() {
             if let Some(index_file) = self.index_file.as_ref() {
                 path_candidate = Cow::Owned(index_file.to_string());
             }
@@ -255,18 +261,16 @@ impl<E: RustEmbed, T> ServeFuture<E, T> {
                     path_candidate = Cow::Owned(new_path_candidate);
                 }
             }
-        } else {
-            if let Some(index_file) = self.index_file.as_ref().as_ref() {
-                let new_path_candidate = format!("{}/{}", path_candidate, index_file);
-                if E::get(&new_path_candidate).is_some() {
-                    return GetFileResult {
-                        path: Cow::Owned(new_path_candidate),
-                        file: None,
-                        should_redirect: Some(format!("/{}/", path_candidate)),
-                        compression_method: CompressionMethod::Identity,
-                        is_fallback: false,
-                    };
-                }
+        } else if let Some(index_file) = self.index_file.as_ref().as_ref() {
+            let new_path_candidate = format!("{}/{}", path_candidate, index_file);
+            if E::get(&new_path_candidate).is_some() {
+                return GetFileResult {
+                    path: Cow::Owned(new_path_candidate),
+                    file: None,
+                    should_redirect: Some(format!("/{}/", path_candidate)),
+                    compression_method: CompressionMethod::Identity,
+                    is_fallback: false,
+                };
             }
         }
 
@@ -348,8 +352,7 @@ impl<E: RustEmbed, T> Future for ServeFuture<E, T> {
                 self.request
                     .headers()
                     .get(http::header::ACCEPT_ENCODING)
-                    .map(|x| x.to_str().ok())
-                    .flatten(),
+                    .and_then(|x| x.to_str().ok()),
             ),
         ) {
             // if the file is found, return it
@@ -409,8 +412,7 @@ impl<E: RustEmbed, T> Future for ServeFuture<E, T> {
                 .and_then(|value| {
                     value
                         .to_str()
-                        .ok()
-                        .and_then(|value| Some(value.trim_matches('"')))
+                        .ok().map(|value| value.trim_matches('"'))
                 })
                 == Some(hash_to_string(&file.metadata.sha256_hash()).as_str())
         {
