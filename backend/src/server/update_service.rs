@@ -1,10 +1,10 @@
-use tokio::sync::broadcast;
 use sea_orm::DatabaseConnection; // Replaced PgPool
-use tracing::{error, debug};
+use tokio::sync::broadcast;
+use tracing::{debug, error};
 
 use crate::db::services;
 use crate::server::agent_state::LiveServerDataCache;
-use crate::web::models::websocket_models::{FullServerListPush, WsMessage, ServerWithDetails};
+use crate::web::models::websocket_models::{FullServerListPush, ServerWithDetails, WsMessage};
 
 /// The centralized function to trigger a full state update and broadcast to all WebSocket clients.
 ///
@@ -36,7 +36,9 @@ pub async fn broadcast_full_state_update(
             } // Lock is released here
 
             // 3. Broadcast the entire updated list to all clients.
-            let servers_list_for_broadcast: Vec<crate::web::models::websocket_models::ServerWithDetails> = all_servers;
+            let servers_list_for_broadcast: Vec<
+                crate::web::models::websocket_models::ServerWithDetails,
+            > = all_servers;
             let full_list_push = FullServerListPush {
                 servers: servers_list_for_broadcast,
             };
@@ -47,7 +49,10 @@ pub async fn broadcast_full_state_update(
                     // This can happen if all subscribers have disconnected between the check and the send.
                     debug!("Broadcast failed: No clients were listening.");
                 } else {
-                    debug!(clients = broadcaster.receiver_count(), "Successfully broadcasted full state update.");
+                    debug!(
+                        clients = broadcaster.receiver_count(),
+                        "Successfully broadcasted full state update."
+                    );
                 }
             } else {
                 debug!("No web clients listening, skipping broadcast.");
@@ -58,7 +63,6 @@ pub async fn broadcast_full_state_update(
         }
     }
 }
-
 
 pub async fn broadcast_full_state_update_to_all(
     pool: &DatabaseConnection,
@@ -87,7 +91,10 @@ pub async fn broadcast_full_state_update_to_all(
                 if private_broadcaster.send(message).is_err() {
                     debug!("Private broadcast failed: No clients were listening.");
                 } else {
-                    debug!(clients = private_broadcaster.receiver_count(), "Successfully broadcasted full state update to private channel.");
+                    debug!(
+                        clients = private_broadcaster.receiver_count(),
+                        "Successfully broadcasted full state update to private channel."
+                    );
                 }
             } else {
                 debug!("No private web clients listening, skipping private broadcast.");
@@ -99,7 +106,7 @@ pub async fn broadcast_full_state_update_to_all(
                     .iter()
                     .map(|s| s.desensitize()) // Use the new method
                     .collect();
-                
+
                 let public_list_push = FullServerListPush {
                     servers: public_servers_list,
                 };
@@ -109,7 +116,10 @@ pub async fn broadcast_full_state_update_to_all(
                 if public_broadcaster.send(message).is_err() {
                     debug!("Public broadcast failed: No clients were listening.");
                 } else {
-                    debug!(clients = public_broadcaster.receiver_count(), "Successfully broadcasted desensitized state update to public channel.");
+                    debug!(
+                        clients = public_broadcaster.receiver_count(),
+                        "Successfully broadcasted desensitized state update to public channel."
+                    );
                 }
             } else {
                 debug!("No public web clients listening, skipping public broadcast.");

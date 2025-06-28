@@ -37,9 +37,9 @@ pub enum Relation {
         on_update = "Cascade"  // If VPS ID changes, update here
     )]
     Vps, // This relation is for vps_id_target
-    // Task might have_many TaskRun
-    // #[sea_orm(has_many = "super::task_run::Entity")]
-    // TaskRun,
+         // Task might have_many TaskRun
+         // #[sea_orm(has_many = "super::task_run::Entity")]
+         // TaskRun,
 }
 
 impl Related<super::user::Entity> for Entity {

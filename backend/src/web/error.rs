@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use thiserror::Error;
 
@@ -40,9 +40,18 @@ impl IntoResponse for AppError {
             AppError::UserAlreadyExists(msg) => (StatusCode::CONFLICT, msg),
             AppError::UserNotFound => (StatusCode::UNAUTHORIZED, "无效凭据".to_string()),
             AppError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "无效凭据".to_string()),
-            AppError::PasswordHashingError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Password hashing error: {msg}")),
-            AppError::TokenCreationError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Token creation error: {msg}")),
-            AppError::DatabaseError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {msg}")),
+            AppError::PasswordHashingError(msg) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Password hashing error: {msg}"),
+            ),
+            AppError::TokenCreationError(msg) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Token creation error: {msg}"),
+            ),
+            AppError::DatabaseError(msg) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Database error: {msg}"),
+            ),
             AppError::InternalServerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             AppError::ServerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),

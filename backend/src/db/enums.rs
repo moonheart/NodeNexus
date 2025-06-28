@@ -1,10 +1,14 @@
 use sea_orm::entity::prelude::*;
-use serde::{Serialize, Deserialize};
- // Import ActiveEnum to use as_str()
+use serde::{Deserialize, Serialize};
+// Import ActiveEnum to use as_str()
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
-#[sea_orm(rs_type = "String", db_type = "Text", enum_name = "batch_command_status_enum")]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Text",
+    enum_name = "batch_command_status_enum"
+)]
 pub enum BatchCommandStatus {
     #[sea_orm(string_value = "PENDING")]
     Pending,
@@ -31,7 +35,11 @@ impl fmt::Display for BatchCommandStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
-#[sea_orm(rs_type = "String", db_type = "Text", enum_name = "child_command_status_enum")]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Text",
+    enum_name = "child_command_status_enum"
+)]
 pub enum ChildCommandStatus {
     #[sea_orm(string_value = "PENDING")]
     Pending,

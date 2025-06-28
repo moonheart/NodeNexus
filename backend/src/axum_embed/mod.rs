@@ -409,11 +409,7 @@ impl<E: RustEmbed, T> Future for ServeFuture<E, T> {
                 .request
                 .headers()
                 .get(http::header::IF_NONE_MATCH)
-                .and_then(|value| {
-                    value
-                        .to_str()
-                        .ok().map(|value| value.trim_matches('"'))
-                })
+                .and_then(|value| value.to_str().ok().map(|value| value.trim_matches('"')))
                 == Some(hash_to_string(&file.metadata.sha256_hash()).as_str())
         {
             return Poll::Ready(Ok(Response::builder()

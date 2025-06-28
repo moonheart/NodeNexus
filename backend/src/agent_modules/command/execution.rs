@@ -95,7 +95,6 @@ pub(super) async fn manage_command_lifecycle(
     let temp_path = temp_file.into_temp_path();
     info!("Temporary script file created at: {:?}", temp_path);
 
-
     // --- Command Spawning ---
     #[cfg(windows)]
     let mut command = {

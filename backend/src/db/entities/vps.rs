@@ -38,7 +38,7 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_many = "super::performance_metric::Entity")] // Added HasMany relation
-    PerformanceMetrics,                                     // Renamed for clarity (plural)
+    PerformanceMetrics, // Renamed for clarity (plural)
 
     #[sea_orm(has_one = "super::vps_renewal_info::Entity")]
     VpsRenewalInfo,
@@ -52,7 +52,6 @@ pub enum Relation {
     )]
     User,
 }
-
 
 impl Related<super::tag::Entity> for Entity {
     fn to() -> RelationDef {

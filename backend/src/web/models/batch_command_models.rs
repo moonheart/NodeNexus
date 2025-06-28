@@ -1,6 +1,6 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 /// A summary item for listing multiple batch command tasks.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -16,7 +16,6 @@ pub struct BatchCommandTaskListItem {
     pub created_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
 }
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CreateBatchCommandRequest {

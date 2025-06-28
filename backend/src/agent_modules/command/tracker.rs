@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
-use tracing::{info, warn, debug};
+use tracing::{debug, info, warn};
 
 // The tracker now holds a sender part of a one-shot channel.
 // Sending a message on this channel signals the command's managing task to terminate it.

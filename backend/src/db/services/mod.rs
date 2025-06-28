@@ -9,24 +9,29 @@
 //! under the `crate::db::services::` path.
 
 // Declare the sub-modules for each service area.
+pub mod alert_service; // Added alert_service module
+pub mod batch_command_service;
+pub mod command_script_service;
+pub mod oauth_service;
 pub mod performance_service;
+pub mod service_monitor_service;
 pub mod settings_service;
 pub mod tag_service;
 pub mod user_service;
 pub mod vps_core_service; // Added vps_core_service module
 pub mod vps_detail_service; // Added vps_detail_service module
 pub mod vps_renewal_service; // Added vps_renewal_service module
-pub mod vps_traffic_service; // Added vps_traffic_service module
 pub mod vps_service; // This now re-exports from the above vps_* modules
-pub mod alert_service; // Added alert_service module
-pub mod batch_command_service;
-pub mod command_script_service;
-pub mod service_monitor_service;
-pub mod oauth_service;
+pub mod vps_traffic_service; // Added vps_traffic_service module
 
 // Re-export all public functions and structs from the sub-modules
 // to make them accessible directly under `crate::db::services::*`.
+pub use alert_service::*; // Re-export alert_service
+pub use batch_command_service::*;
+pub use command_script_service::*;
+pub use oauth_service::*;
 pub use performance_service::*;
+pub use service_monitor_service::*;
 pub use settings_service::*;
 pub use tag_service::*;
 pub use user_service::*;
@@ -34,8 +39,3 @@ pub use vps_core_service::*;
 pub use vps_detail_service::*;
 pub use vps_renewal_service::*;
 pub use vps_traffic_service::*;
-pub use alert_service::*; // Re-export alert_service
-pub use batch_command_service::*;
-pub use command_script_service::*;
-pub use service_monitor_service::*;
-pub use oauth_service::*;

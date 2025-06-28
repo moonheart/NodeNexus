@@ -1,11 +1,18 @@
-use sea_orm::{DatabaseConnection, DbErr, EntityTrait, ModelTrait, QueryFilter, QueryOrder, ColumnTrait}; // Removed QuerySelect
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ModelTrait, QueryFilter, QueryOrder,
+}; // Removed QuerySelect
 // Removed use sea_orm::sea_query::Expr;
 
-
 use crate::db::entities::{
-    performance_disk_usage, performance_metric, tag, vps, vps_renewal_info, // Removed vps_tag
+    performance_disk_usage,
+    performance_metric,
+    tag,
+    vps,
+    vps_renewal_info, // Removed vps_tag
 };
-use crate::web::models::websocket_models::{ServerBasicInfo, ServerMetricsSnapshot, ServerWithDetails, Tag as WebsocketTag};
+use crate::web::models::websocket_models::{
+    ServerBasicInfo, ServerMetricsSnapshot, ServerWithDetails, Tag as WebsocketTag,
+};
 
 // --- Vps Detail Service Functions ---
 
@@ -54,7 +61,9 @@ async fn build_server_with_details(
             network_tx_cumulative: Some(latest_metric.network_tx_cumulative as u64), // Cumulative
             total_processes_count: Some(latest_metric.total_processes_count as u32),
             running_processes_count: Some(latest_metric.running_processes_count as u32),
-            tcp_established_connection_count: Some(latest_metric.tcp_established_connection_count as u32),
+            tcp_established_connection_count: Some(
+                latest_metric.tcp_established_connection_count as u32,
+            ),
         });
     }
 
@@ -112,16 +121,34 @@ async fn build_server_with_details(
         os_type: vps_model.os_type,
         created_at: vps_model.created_at,
         metadata: vps_model.metadata,
-        renewal_cycle: renewal_info_opt.as_ref().and_then(|ri| ri.renewal_cycle.clone()),
-        renewal_cycle_custom_days: renewal_info_opt.as_ref().and_then(|ri| ri.renewal_cycle_custom_days),
+        renewal_cycle: renewal_info_opt
+            .as_ref()
+            .and_then(|ri| ri.renewal_cycle.clone()),
+        renewal_cycle_custom_days: renewal_info_opt
+            .as_ref()
+            .and_then(|ri| ri.renewal_cycle_custom_days),
         renewal_price: renewal_info_opt.as_ref().and_then(|ri| ri.renewal_price),
-        renewal_currency: renewal_info_opt.as_ref().and_then(|ri| ri.renewal_currency.clone()),
-        next_renewal_date: renewal_info_opt.as_ref().and_then(|ri| ri.next_renewal_date),
-        last_renewal_date: renewal_info_opt.as_ref().and_then(|ri| ri.last_renewal_date),
-        service_start_date: renewal_info_opt.as_ref().and_then(|ri| ri.service_start_date),
-        payment_method: renewal_info_opt.as_ref().and_then(|ri| ri.payment_method.clone()),
-        auto_renew_enabled: renewal_info_opt.as_ref().and_then(|ri| ri.auto_renew_enabled),
-        renewal_notes: renewal_info_opt.as_ref().and_then(|ri| ri.renewal_notes.clone()),
+        renewal_currency: renewal_info_opt
+            .as_ref()
+            .and_then(|ri| ri.renewal_currency.clone()),
+        next_renewal_date: renewal_info_opt
+            .as_ref()
+            .and_then(|ri| ri.next_renewal_date),
+        last_renewal_date: renewal_info_opt
+            .as_ref()
+            .and_then(|ri| ri.last_renewal_date),
+        service_start_date: renewal_info_opt
+            .as_ref()
+            .and_then(|ri| ri.service_start_date),
+        payment_method: renewal_info_opt
+            .as_ref()
+            .and_then(|ri| ri.payment_method.clone()),
+        auto_renew_enabled: renewal_info_opt
+            .as_ref()
+            .and_then(|ri| ri.auto_renew_enabled),
+        renewal_notes: renewal_info_opt
+            .as_ref()
+            .and_then(|ri| ri.renewal_notes.clone()),
         reminder_active: renewal_info_opt.as_ref().and_then(|ri| ri.reminder_active),
     })
 }
@@ -130,7 +157,10 @@ async fn build_server_with_details(
 pub async fn get_all_vps_with_details_for_cache(
     db: &DatabaseConnection,
 ) -> Result<Vec<ServerWithDetails>, DbErr> {
-    let all_vps: Vec<vps::Model> = vps::Entity::find().order_by_asc(vps::Column::Id).all(db).await?;
+    let all_vps: Vec<vps::Model> = vps::Entity::find()
+        .order_by_asc(vps::Column::Id)
+        .all(db)
+        .await?;
     let mut servers_with_details = Vec::new();
 
     for vps_model in all_vps {

@@ -1,5 +1,5 @@
-use crate::agent_service::{AgentHandshake, OsType};
 use crate::agent_modules::utils::collect_public_ip_addresses;
+use crate::agent_service::{AgentHandshake, OsType};
 use crate::version::VERSION;
 use sysinfo::System;
 use uuid::Uuid;
@@ -21,12 +21,15 @@ pub async fn create_handshake_payload() -> AgentHandshake {
     sys.refresh_cpu_list(sysinfo::CpuRefreshKind::everything());
     sys.refresh_memory_specifics(sysinfo::MemoryRefreshKind::everything());
 
-    let cpu_static_info_opt = sys.cpus().first().map(|cpu| crate::agent_service::CpuStaticInfo {
-        name: cpu.name().to_string(),
-        frequency: cpu.frequency(),
-        vendor_id: cpu.vendor_id().to_string(),
-        brand: cpu.brand().to_string(),
-    });
+    let cpu_static_info_opt = sys
+        .cpus()
+        .first()
+        .map(|cpu| crate::agent_service::CpuStaticInfo {
+            name: cpu.name().to_string(),
+            frequency: cpu.frequency(),
+            vendor_id: cpu.vendor_id().to_string(),
+            brand: cpu.brand().to_string(),
+        });
 
     AgentHandshake {
         agent_id_hint: Uuid::new_v4().to_string(),

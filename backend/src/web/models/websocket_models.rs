@@ -1,5 +1,5 @@
-use serde::Serialize;
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 
 /// Represents a tag as it will be sent to the frontend via WebSocket.
 use serde::Deserialize;
@@ -133,7 +133,6 @@ impl ServerWithDetails {
         }
     }
 }
-
 
 use crate::web::models::service_monitor_models::ServiceMonitorResultDetails;
 

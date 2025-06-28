@@ -1,8 +1,23 @@
 use chrono::Utc;
 use sea_orm::{
-    sea_query::OnConflict, ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, DeleteResult,
-    EntityTrait, FromQueryResult, InsertResult, IntoActiveModel, JoinType, // Removed ModelTrait
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Set, TransactionTrait,
+    ActiveModelTrait,
+    ColumnTrait,
+    DatabaseConnection,
+    DbErr,
+    DeleteResult,
+    EntityTrait,
+    FromQueryResult,
+    InsertResult,
+    IntoActiveModel,
+    JoinType, // Removed ModelTrait
+    PaginatorTrait,
+    QueryFilter,
+    QueryOrder,
+    QuerySelect,
+    RelationTrait,
+    Set,
+    TransactionTrait,
+    sea_query::OnConflict,
 };
 
 use crate::db::entities::{tag, vps, vps_tag}; // Removed prelude::*
@@ -67,7 +82,10 @@ pub async fn get_tags_by_user_id_with_count(
         .column(tag::Column::CreatedAt)
         .column(tag::Column::UpdatedAt)
         .column_as(vps_tag::Column::VpsId.count(), "vps_count")
-        .join(JoinType::LeftJoin, crate::db::entities::vps_tag::Relation::Tag.def().rev())
+        .join(
+            JoinType::LeftJoin,
+            crate::db::entities::vps_tag::Relation::Tag.def().rev(),
+        )
         .filter(tag::Column::UserId.eq(user_id))
         .group_by(tag::Column::Id)
         .group_by(tag::Column::UserId)
@@ -100,7 +118,9 @@ pub async fn update_tag(
         .filter(tag::Column::UserId.eq(user_id))
         .one(db)
         .await?
-        .ok_or_else(|| DbErr::RecordNotFound(format!("Tag with id {tag_id} not found for user {user_id}")))?;
+        .ok_or_else(|| {
+            DbErr::RecordNotFound(format!("Tag with id {tag_id} not found for user {user_id}"))
+        })?;
 
     let mut active_tag: tag::ActiveModel = tag_to_update.into_active_model();
     active_tag.name = Set(name.to_owned());
@@ -113,7 +133,11 @@ pub async fn update_tag(
 }
 
 /// Deletes a tag. The ON DELETE CASCADE in the DB will handle vps_tags entries.
-pub async fn delete_tag(db: &DatabaseConnection, tag_id: i32, user_id: i32) -> Result<DeleteResult, DbErr> {
+pub async fn delete_tag(
+    db: &DatabaseConnection,
+    tag_id: i32,
+    user_id: i32,
+) -> Result<DeleteResult, DbErr> {
     tag::Entity::delete_many()
         .filter(tag::Column::Id.eq(tag_id))
         .filter(tag::Column::UserId.eq(user_id))
@@ -123,7 +147,11 @@ pub async fn delete_tag(db: &DatabaseConnection, tag_id: i32, user_id: i32) -> R
 
 /// Associates a tag with a VPS. Ignores conflicts if the association already exists.
 /// Returns InsertResult which includes rows_affected.
-pub async fn add_tag_to_vps(db: &DatabaseConnection, vps_id: i32, tag_id: i32) -> Result<InsertResult<vps_tag::ActiveModel>, DbErr> {
+pub async fn add_tag_to_vps(
+    db: &DatabaseConnection,
+    vps_id: i32,
+    tag_id: i32,
+) -> Result<InsertResult<vps_tag::ActiveModel>, DbErr> {
     vps_tag::Entity::insert(vps_tag::ActiveModel {
         vps_id: Set(vps_id),
         tag_id: Set(tag_id),
@@ -137,18 +165,29 @@ pub async fn add_tag_to_vps(db: &DatabaseConnection, vps_id: i32, tag_id: i32) -
     .await
 }
 
-
 /// Removes a tag from a VPS.
-pub async fn remove_tag_from_vps(db: &DatabaseConnection, vps_id: i32, tag_id: i32) -> Result<DeleteResult, DbErr> {
-    vps_tag::Entity::delete_by_id((vps_id, tag_id)).exec(db).await
+pub async fn remove_tag_from_vps(
+    db: &DatabaseConnection,
+    vps_id: i32,
+    tag_id: i32,
+) -> Result<DeleteResult, DbErr> {
+    vps_tag::Entity::delete_by_id((vps_id, tag_id))
+        .exec(db)
+        .await
 }
 
 /// Retrieves all tags for a specific VPS.
-pub async fn get_tags_for_vps(db: &DatabaseConnection, vps_id: i32) -> Result<Vec<tag::Model>, DbErr> {
+pub async fn get_tags_for_vps(
+    db: &DatabaseConnection,
+    vps_id: i32,
+) -> Result<Vec<tag::Model>, DbErr> {
     // Assuming Vps entity has a find_related(tag::Entity) through VpsTag
     // If not, the manual join is correct. Let's use the manual join for clarity as per plan.
     tag::Entity::find()
-        .join(JoinType::InnerJoin, crate::db::entities::vps_tag::Relation::Tag.def().rev())
+        .join(
+            JoinType::InnerJoin,
+            crate::db::entities::vps_tag::Relation::Tag.def().rev(),
+        )
         .filter(vps_tag::Column::VpsId.eq(vps_id))
         .order_by_asc(tag::Column::Name)
         .all(db)
@@ -185,7 +224,6 @@ pub async fn bulk_update_vps_tags(
             ));
         }
     }
-
 
     // Bulk add tags
     if !add_tag_ids.is_empty() && !vps_ids.is_empty() {

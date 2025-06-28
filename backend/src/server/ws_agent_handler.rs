@@ -1,7 +1,7 @@
 use axum::{
     extract::{
-        ws::{Message, WebSocket},
         State, WebSocketUpgrade,
+        ws::{Message, WebSocket},
     },
     response::Response,
 };
@@ -20,11 +20,11 @@ use tracing::{info, warn};
 
 use crate::{
     agent_service::{MessageToAgent, MessageToServer},
-    web::AppState,
     server::{
         agent_state::AgentSender,
         core_services::{self, AgentStream},
     },
+    web::AppState,
 };
 
 /// Axum handler for the WebSocket agent connection.
@@ -116,7 +116,10 @@ impl Sink<MessageToAgent> for WebSocketStreamAdapter {
     type Error = tonic::Status;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let mut sender = self.sender.try_lock().expect("WebSocket sender lock failed in poll_ready");
+        let mut sender = self
+            .sender
+            .try_lock()
+            .expect("WebSocket sender lock failed in poll_ready");
         Pin::new(&mut *sender)
             .poll_ready(cx)
             .map_err(|e| tonic::Status::internal(format!("WebSocket sink error: {e}")))
@@ -127,21 +130,30 @@ impl Sink<MessageToAgent> for WebSocketStreamAdapter {
         item.encode(&mut buf)
             .map_err(|e| tonic::Status::internal(format!("Protobuf encode error: {e}")))?;
 
-        let mut sender = self.sender.try_lock().expect("WebSocket sender lock failed in start_send");
+        let mut sender = self
+            .sender
+            .try_lock()
+            .expect("WebSocket sender lock failed in start_send");
         Pin::new(&mut *sender)
             .start_send(Message::Binary(buf.into()))
             .map_err(|e| tonic::Status::internal(format!("WebSocket send error: {e}")))
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let mut sender = self.sender.try_lock().expect("WebSocket sender lock failed in poll_flush");
+        let mut sender = self
+            .sender
+            .try_lock()
+            .expect("WebSocket sender lock failed in poll_flush");
         Pin::new(&mut *sender)
             .poll_flush(cx)
             .map_err(|e| tonic::Status::internal(format!("WebSocket flush error: {e}")))
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let mut sender = self.sender.try_lock().expect("WebSocket sender lock failed in poll_close");
+        let mut sender = self
+            .sender
+            .try_lock()
+            .expect("WebSocket sender lock failed in poll_close");
         Pin::new(&mut *sender)
             .poll_close(cx)
             .map_err(|e| tonic::Status::internal(format!("WebSocket close error: {e}")))

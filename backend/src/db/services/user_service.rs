@@ -12,12 +12,13 @@ pub async fn create_user(
     db: &DatabaseConnection, // Changed from pool: &PgPool
     username: &str,
     password_hash: &str,
-) -> Result<user::Model, DbErr> { // Changed return type
+) -> Result<user::Model, DbErr> {
+    // Changed return type
     let now = Utc::now();
     let new_user = user::ActiveModel {
         username: Set(username.to_owned()),
         password_hash: Set(Some(password_hash.to_owned())),
-        role: Set("user".to_string()), // Default role
+        role: Set("user".to_string()),       // Default role
         password_login_disabled: Set(false), // Default value
         created_at: Set(now),
         updated_at: Set(now),
@@ -30,7 +31,8 @@ pub async fn create_user(
 pub async fn get_user_by_id(
     db: &DatabaseConnection, // Changed from pool: &PgPool
     user_id: i32,
-) -> Result<Option<user::Model>, DbErr> { // Changed return type
+) -> Result<Option<user::Model>, DbErr> {
+    // Changed return type
     user::Entity::find_by_id(user_id).one(db).await
 }
 
@@ -38,7 +40,8 @@ pub async fn get_user_by_id(
 pub async fn get_user_by_username(
     db: &DatabaseConnection, // Changed from pool: &PgPool
     username: &str,
-) -> Result<Option<user::Model>, DbErr> { // Changed return type
+) -> Result<Option<user::Model>, DbErr> {
+    // Changed return type
     user::Entity::find()
         .filter(user::Column::Username.eq(username))
         .one(db)

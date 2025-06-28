@@ -7,7 +7,8 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
     pub user_id: i32,
-    #[sea_orm(unique)] // Assuming tag names are unique per user, or globally if user_id is not part of a composite unique key
+    #[sea_orm(unique)]
+    // Assuming tag names are unique per user, or globally if user_id is not part of a composite unique key
     pub name: String,
     pub color: String,
     pub icon: Option<String>,
@@ -26,7 +27,7 @@ pub enum Relation {
         on_delete = "Cascade", // If a User is deleted, their tags are also deleted
         on_update = "Cascade"
     )]
-    User
+    User,
 }
 
 impl Related<super::user::Entity> for Entity {
@@ -34,7 +35,6 @@ impl Related<super::user::Entity> for Entity {
         Relation::User.def()
     }
 }
-
 
 impl Related<super::vps::Entity> for Entity {
     fn to() -> RelationDef {

@@ -1,17 +1,17 @@
 use axum::{
     body::Body as AxumBody,
     extract::State,
-    http::{header, Request},
+    http::{Request, header},
     middleware::Next,
     response::Response,
 };
 use axum_extra::extract::cookie::CookieJar;
-use jsonwebtoken::{decode, DecodingKey, Validation};
+use jsonwebtoken::{DecodingKey, Validation, decode};
 use std::sync::Arc;
 use tracing::warn;
 
 use crate::web::models::{AuthenticatedUser, Claims};
-use crate::web::{error::AppError, AppState};
+use crate::web::{AppState, error::AppError};
 
 pub async fn auth(
     State(state): State<Arc<AppState>>,

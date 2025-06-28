@@ -17,7 +17,10 @@ impl Sink<MessageToServer> for GrpcSink {
     }
 
     fn start_send(self: Pin<&mut Self>, item: MessageToServer) -> Result<(), Self::Error> {
-        self.get_mut().tx.try_send(item).map_err(|e| Status::internal(e.to_string()))
+        self.get_mut()
+            .tx
+            .try_send(item)
+            .map_err(|e| Status::internal(e.to_string()))
     }
 
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {

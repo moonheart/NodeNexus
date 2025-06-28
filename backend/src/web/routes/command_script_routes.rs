@@ -1,15 +1,15 @@
 use axum::{
+    Json, Router,
     extract::{Extension, Path, State},
     routing::{get, post},
-    Json, Router,
 };
-use std::sync::Arc;
 use serde::Deserialize;
+use std::sync::Arc;
 
 use crate::db::entities::command_script::{self, ScriptLanguage};
-use crate::db::services::command_script_service::{CommandScriptService, CommandScriptError};
-use crate::web::{AppState, AppError};
+use crate::db::services::command_script_service::{CommandScriptError, CommandScriptService};
 use crate::web::models::AuthenticatedUser;
+use crate::web::{AppError, AppState};
 
 #[derive(Deserialize)]
 pub struct ScriptPayload {
@@ -23,7 +23,10 @@ pub struct ScriptPayload {
 pub fn command_script_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", post(create_script).get(list_scripts))
-        .route("/{id}", get(get_script).put(update_script).delete(delete_script))
+        .route(
+            "/{id}",
+            get(get_script).put(update_script).delete(delete_script),
+        )
 }
 
 async fn create_script(
@@ -95,9 +98,15 @@ impl From<CommandScriptError> for AppError {
     fn from(err: CommandScriptError) -> Self {
         match err {
             CommandScriptError::DbErr(e) => AppError::InternalServerError(e.to_string()),
-            CommandScriptError::NotFound(id) => AppError::NotFound(format!("Script with ID {id} not found")),
-            CommandScriptError::Unauthorized => AppError::Unauthorized("You are not authorized to perform this action.".to_string()),
-            CommandScriptError::DuplicateName(name) => AppError::Conflict(format!("A script with the name '{name}' already exists.")),
+            CommandScriptError::NotFound(id) => {
+                AppError::NotFound(format!("Script with ID {id} not found"))
+            }
+            CommandScriptError::Unauthorized => {
+                AppError::Unauthorized("You are not authorized to perform this action.".to_string())
+            }
+            CommandScriptError::DuplicateName(name) => {
+                AppError::Conflict(format!("A script with the name '{name}' already exists."))
+            }
         }
     }
 }

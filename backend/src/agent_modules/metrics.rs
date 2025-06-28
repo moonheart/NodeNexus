@@ -2,12 +2,12 @@ use crate::agent_service::{
     AgentConfig, MessageToServer, PerformanceSnapshot, PerformanceSnapshotBatch,
     message_to_server::Payload,
 };
+use netdev::interface::InterfaceType;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sysinfo::{Disks, Networks, ProcessRefreshKind, System};
-use netdev::interface::InterfaceType;
 use tokio::sync::mpsc;
-use tracing::{info, error, warn, debug};
+use tracing::{debug, error, info, warn};
 
 // PreviousNetworkState struct is no longer needed
 // PreviousDiskState struct is no longer needed
@@ -19,12 +19,17 @@ fn collect_performance_snapshot(
     disks: &mut Disks, // Added Disks as a mutable reference
     networks: &mut Networks,
     prev_collection_time_opt: &Option<Instant>, // Changed from PreviousNetworkState
-    current_time: Instant, // Pass current time for rate calculation
-) -> PerformanceSnapshot { // Return type changed back
+    current_time: Instant,                      // Pass current time for rate calculation
+) -> PerformanceSnapshot {
+    // Return type changed back
     // Refresh relevant parts of System
     sys.refresh_cpu_all();
     sys.refresh_memory();
-    sys.refresh_processes_specifics(sysinfo::ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
+    sys.refresh_processes_specifics(
+        sysinfo::ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing(),
+    );
 
     // Refresh the persistent Networks instance. This updates delta values.
     networks.refresh(true);
@@ -56,7 +61,8 @@ fn collect_performance_snapshot(
         duration_secs_for_disk = duration.as_secs_f64();
         if duration_secs_for_disk > 0.0 {
             disk_read_bps = (delta_total_disk_read_bytes as f64 / duration_secs_for_disk) as u64;
-            disk_write_bps = (delta_total_disk_written_bytes as f64 / duration_secs_for_disk) as u64;
+            disk_write_bps =
+                (delta_total_disk_written_bytes as f64 / duration_secs_for_disk) as u64;
         }
     }
     // If prev_net_state is None (first run), BPS will remain 0, which is correct.
@@ -75,7 +81,8 @@ fn collect_performance_snapshot(
             0.0
         };
 
-        collected_disk_usages.push(crate::agent_service::DiskUsage { // Explicitly use crate::agent_service
+        collected_disk_usages.push(crate::agent_service::DiskUsage {
+            // Explicitly use crate::agent_service
             mount_point: disk_info.mount_point().to_string_lossy().into_owned(),
             used_bytes: used_space,
             total_bytes: total_space,
@@ -129,7 +136,9 @@ fn collect_performance_snapshot(
             }
         }
         None => {
-            warn!("Failed to find an active network interface with a gateway. Network stats will be 0.");
+            warn!(
+                "Failed to find an active network interface with a gateway. Network stats will be 0."
+            );
             // Keep cumulative and delta values at 0
         }
     }
@@ -158,12 +167,12 @@ fn collect_performance_snapshot(
             );
             // --- End Debugging ---
         } else if duration_secs <= 0.0 {
-             warn!("Duration is zero or negative, cannot calculate BPS.");
+            warn!("Duration is zero or negative, cannot calculate BPS.");
         } else {
-             warn!("Delta RX/TX is zero, BPS is 0.");
+            warn!("Delta RX/TX is zero, BPS is 0.");
         }
     } else {
-         warn!("No previous network state, cannot calculate BPS for the first snapshot.");
+        warn!("No previous network state, cannot calculate BPS for the first snapshot.");
     }
     // --- End Network I/O ---
 
@@ -179,7 +188,7 @@ fn collect_performance_snapshot(
         swap_total_bytes: sys.total_swap(),
         disk_total_io_read_bytes_per_sec: disk_read_bps, // NOW ACTUAL BPS
         disk_total_io_write_bytes_per_sec: disk_write_bps, // NOW ACTUAL BPS
-        disk_usages: collected_disk_usages, // MODIFIED
+        disk_usages: collected_disk_usages,              // MODIFIED
         // Cumulative network data (Default Interface Only)
         network_rx_bytes_cumulative: cumulative_rx_bytes, // Field 10
         network_tx_bytes_cumulative: cumulative_tx_bytes, // Field 11
@@ -187,15 +196,13 @@ fn collect_performance_snapshot(
         // Removed load_average fields
         uptime_seconds: System::uptime(), // Renumbered field 12
         total_processes_count: sys.processes().len() as u32, // Renumbered field 13
-        running_processes_count: 0, // Placeholder, Renumbered field 14
+        running_processes_count: 0,       // Placeholder, Renumbered field 14
         tcp_established_connection_count: 0, // Placeholder, Renumbered field 15
         // Instantaneous network speed (Default Interface Only)
         network_rx_bytes_per_sec: network_rx_bps, // Renumbered field 16
         network_tx_bytes_per_sec: network_tx_bps, // Renumbered field 17
     }
 }
-
-
 
 pub async fn metrics_collection_loop(
     tx_to_server: mpsc::Sender<MessageToServer>,
@@ -219,12 +226,20 @@ pub async fn metrics_collection_loop(
             config.metrics_upload_batch_max_size,
         )
     };
-    if collect_interval_duration == 0 { collect_interval_duration = 60; }
-    if upload_interval_duration == 0 { upload_interval_duration = 60; }
-    if batch_max_size == 0 { batch_max_size = 10; }
+    if collect_interval_duration == 0 {
+        collect_interval_duration = 60;
+    }
+    if upload_interval_duration == 0 {
+        upload_interval_duration = 60;
+    }
+    if batch_max_size == 0 {
+        batch_max_size = 10;
+    }
 
-    let mut collect_interval = tokio::time::interval(Duration::from_secs(collect_interval_duration as u64));
-    let mut upload_interval = tokio::time::interval(Duration::from_secs(upload_interval_duration as u64));
+    let mut collect_interval =
+        tokio::time::interval(Duration::from_secs(collect_interval_duration as u64));
+    let mut upload_interval =
+        tokio::time::interval(Duration::from_secs(upload_interval_duration as u64));
     // --- End Dynamic Configuration Setup ---
 
     info!(
@@ -247,19 +262,39 @@ pub async fn metrics_collection_loop(
         // --- Check for configuration changes ---
         {
             let config = shared_agent_config.read().unwrap();
-            let new_collect_interval = if config.metrics_collect_interval_seconds > 0 { config.metrics_collect_interval_seconds } else { 60 };
-            let new_upload_interval = if config.metrics_upload_interval_seconds > 0 { config.metrics_upload_interval_seconds } else { 60 };
-            let new_batch_size = if config.metrics_upload_batch_max_size > 0 { config.metrics_upload_batch_max_size } else { 10 };
+            let new_collect_interval = if config.metrics_collect_interval_seconds > 0 {
+                config.metrics_collect_interval_seconds
+            } else {
+                60
+            };
+            let new_upload_interval = if config.metrics_upload_interval_seconds > 0 {
+                config.metrics_upload_interval_seconds
+            } else {
+                60
+            };
+            let new_batch_size = if config.metrics_upload_batch_max_size > 0 {
+                config.metrics_upload_batch_max_size
+            } else {
+                10
+            };
 
             if new_collect_interval != collect_interval_duration {
-                info!(new_interval = new_collect_interval, "Updating metrics collect interval.");
+                info!(
+                    new_interval = new_collect_interval,
+                    "Updating metrics collect interval."
+                );
                 collect_interval_duration = new_collect_interval;
-                collect_interval = tokio::time::interval(Duration::from_secs(collect_interval_duration as u64));
+                collect_interval =
+                    tokio::time::interval(Duration::from_secs(collect_interval_duration as u64));
             }
             if new_upload_interval != upload_interval_duration {
-                info!(new_interval = new_upload_interval, "Updating metrics upload interval.");
+                info!(
+                    new_interval = new_upload_interval,
+                    "Updating metrics upload interval."
+                );
                 upload_interval_duration = new_upload_interval;
-                upload_interval = tokio::time::interval(Duration::from_secs(upload_interval_duration as u64));
+                upload_interval =
+                    tokio::time::interval(Duration::from_secs(upload_interval_duration as u64));
             }
             if new_batch_size != batch_max_size {
                 info!(new_size = new_batch_size, "Updating metrics batch size.");

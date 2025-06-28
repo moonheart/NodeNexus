@@ -1,17 +1,17 @@
 use axum::{
+    Extension, Json, Router,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
-    Extension, Json, Router,
 };
 use std::sync::Arc;
 
-use crate::web::{AppError, AppState, models::AuthenticatedUser}; // Import AuthenticatedUser
 use crate::notifications::{
     models::{CreateChannelRequest, TestChannelRequest, UpdateChannelRequest},
     service::NotificationError,
 };
+use crate::web::{AppError, AppState, models::AuthenticatedUser}; // Import AuthenticatedUser
 
 pub fn create_notification_router() -> Router<Arc<AppState>> {
     Router::new()
@@ -127,16 +127,18 @@ impl From<NotificationError> for AppError {
             NotificationError::SerializationError(e) => {
                 AppError::InvalidInput(format!("Failed to process configuration: {e}"))
             }
-            NotificationError::NotFound(_) => AppError::NotFound("Notification channel not found.".to_string()),
+            NotificationError::NotFound(_) => {
+                AppError::NotFound("Notification channel not found.".to_string())
+            }
             NotificationError::UnsupportedChannel(channel_type) => {
                 AppError::InvalidInput(format!("Unsupported channel type: {channel_type}"))
             }
             NotificationError::SenderError(e) => {
                 AppError::InternalServerError(format!("Failed to send notification: {e}"))
             }
-            NotificationError::PermissionDenied => {
-                AppError::Unauthorized("You do not have permission to access this resource.".to_string())
-            }
+            NotificationError::PermissionDenied => AppError::Unauthorized(
+                "You do not have permission to access this resource.".to_string(),
+            ),
             NotificationError::Generic(s) => AppError::InternalServerError(s),
         }
     }

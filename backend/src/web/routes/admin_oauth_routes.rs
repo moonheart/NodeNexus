@@ -1,19 +1,25 @@
 // backend/src/http_server/admin_oauth_routes.rs
 
-use std::sync::Arc;
+use crate::db::services::oauth_service::{self, ProviderUpsertPayload};
+use crate::web::{AppError, AppState};
 use axum::{
+    Json, Router,
     extract::{Path, State},
     response::IntoResponse,
     routing::{get, put},
-    Json, Router,
 };
-use crate::web::{AppState, AppError};
-use crate::db::services::oauth_service::{self, ProviderUpsertPayload};
+use std::sync::Arc;
 
 pub fn create_router() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/providers", get(list_providers_handler).post(create_provider_handler))
-        .route("/providers/{provider_name}", put(update_provider_handler).delete(delete_provider_handler))
+        .route(
+            "/providers",
+            get(list_providers_handler).post(create_provider_handler),
+        )
+        .route(
+            "/providers/{provider_name}",
+            put(update_provider_handler).delete(delete_provider_handler),
+        )
 }
 
 // TODO: Add admin authentication middleware to this router.
@@ -62,5 +68,7 @@ async fn delete_provider_handler(
     Path(provider_name): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     oauth_service::delete_provider(&app_state.db_pool, &provider_name).await?;
-    Ok(Json(serde_json::json!({"status": "ok", "message": "Provider deleted successfully"})))
+    Ok(Json(
+        serde_json::json!({"status": "ok", "message": "Provider deleted successfully"}),
+    ))
 }

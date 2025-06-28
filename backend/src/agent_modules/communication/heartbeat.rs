@@ -1,12 +1,12 @@
 use crate::agent_service::AgentConfig;
-use crate::agent_service::MessageToServer;
 use crate::agent_service::Heartbeat;
+use crate::agent_service::MessageToServer;
 use crate::agent_service::message_to_server::Payload as ServerPayload;
+use chrono::Utc;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, error};
-use chrono::Utc;
 
 pub async fn heartbeat_loop(
     tx_to_server: mpsc::Sender<MessageToServer>,
@@ -30,12 +30,15 @@ pub async fn heartbeat_loop(
             timestamp_unix_ms: Utc::now().timestamp_millis(),
         };
         let msg_id = id_provider();
-        if let Err(e) = tx_to_server.send(MessageToServer {
-            client_message_id: msg_id,
-            payload: Some(ServerPayload::Heartbeat(heartbeat_payload)),
-            vps_db_id,
-            agent_secret: agent_secret.clone(),
-        }).await {
+        if let Err(e) = tx_to_server
+            .send(MessageToServer {
+                client_message_id: msg_id,
+                payload: Some(ServerPayload::Heartbeat(heartbeat_payload)),
+                vps_db_id,
+                agent_secret: agent_secret.clone(),
+            })
+            .await
+        {
             error!(error = %e, "Failed to send heartbeat. Exiting heartbeat task.");
             break;
         }

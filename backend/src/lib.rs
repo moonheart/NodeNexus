@@ -9,12 +9,12 @@ pub mod agent_service {
 
 pub mod server;
 
-pub mod db;
-pub mod web;
-pub mod services;
 pub mod agent_modules;
 pub mod axum_embed;
+pub mod db;
+pub mod services;
+pub mod web;
 
-pub mod notifications;
 pub mod alerting; // Added alerting module
+pub mod notifications;
 pub mod version;

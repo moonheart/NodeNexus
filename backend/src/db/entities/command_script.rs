@@ -2,7 +2,11 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
-#[sea_orm(rs_type = "String", db_type = "Text", enum_name = "script_language_enum")]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Text",
+    enum_name = "script_language_enum"
+)]
 #[serde(rename_all = "lowercase")]
 pub enum ScriptLanguage {
     #[sea_orm(string_value = "shell")]

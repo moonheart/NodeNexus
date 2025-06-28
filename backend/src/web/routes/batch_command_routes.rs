@@ -1,30 +1,38 @@
 use axum::{
+    Json,
+    Router,
     extract::{Extension, Path, State}, // Added Extension
     routing::{get, post},
-    Json, Router,
 };
 use std::sync::Arc;
-use uuid::Uuid;
 use tracing::error;
+use uuid::Uuid;
 
 use crate::web::models::batch_command_models::{
-    CreateBatchCommandRequest,
     BatchCommandAcceptedResponse,
     BatchCommandTaskDetailResponse,
     // BatchCommandTaskListItem, // For listing, if implemented later
+    CreateBatchCommandRequest,
 };
 // use crate::http_server::auth_logic::Claims; // No longer directly extracting Claims
+use crate::agent_service::CommandType as GrpcCommandType;
 use crate::web::models::AuthenticatedUser; // Use AuthenticatedUser
-use crate::web::{AppState, error::AppError}; // Import AppState and AppError
-use crate::agent_service::CommandType as GrpcCommandType; // For dispatching
+use crate::web::{AppState, error::AppError}; // Import AppState and AppError // For dispatching
 
 // pub fn batch_command_routes(db: Arc<DatabaseConnection>) -> Router {
-pub fn batch_command_routes() -> Router<Arc<AppState>> { // Expects AppState
+pub fn batch_command_routes() -> Router<Arc<AppState>> {
+    // Expects AppState
     Router::<Arc<AppState>>::new() // Explicitly type Router::new()
         .route("/", post(create_batch_command))
         .route("/{batch_command_id}", get(get_batch_command_detail))
-        .route("/{batch_command_id}/terminate", post(terminate_batch_command))
-        .route("/{batch_id}/tasks/{child_id}/terminate", post(terminate_child_command)) // More granular control
+        .route(
+            "/{batch_command_id}/terminate",
+            post(terminate_batch_command),
+        )
+        .route(
+            "/{batch_id}/tasks/{child_id}/terminate",
+            post(terminate_child_command),
+        ) // More granular control
 }
 
 #[axum::debug_handler]
@@ -62,7 +70,8 @@ async fn create_batch_command(
                     // The CommandDispatcher expects the actual command string.
                     // For simplicity here, we'll pass the raw command_content or an empty string if it's a script.
                     // This needs refinement based on how script_id translates to executable content.
-                    let effective_command_content = if command_type == GrpcCommandType::SavedScript {
+                    let effective_command_content = if command_type == GrpcCommandType::SavedScript
+                    {
                         // Placeholder: In a real scenario, fetch script content using payload_clone.script_id
                         // For now, let's assume script_id itself or some related info is the "content"
                         // or that the agent knows how to interpret script_id.
@@ -77,14 +86,15 @@ async fn create_batch_command(
                         command_content
                     };
 
-
-                    let dispatch_result = dispatcher_clone.dispatch_command_to_agent(
-                        child_task.child_command_id,
-                        child_task.vps_id, // vps_id is String in ChildCommandTask model
-                        &effective_command_content,
-                        command_type,
-                        working_directory,
-                    ).await;
+                    let dispatch_result = dispatcher_clone
+                        .dispatch_command_to_agent(
+                            child_task.child_command_id,
+                            child_task.vps_id, // vps_id is String in ChildCommandTask model
+                            &effective_command_content,
+                            command_type,
+                            working_directory,
+                        )
+                        .await;
 
                     let (new_status, error_message) = if let Err(e) = dispatch_result {
                         error!(
@@ -92,17 +102,23 @@ async fn create_batch_command(
                             error = ?e,
                             "Failed to dispatch command."
                         );
-                        (crate::db::enums::ChildCommandStatus::AgentUnreachable, Some(e.to_string()))
+                        (
+                            crate::db::enums::ChildCommandStatus::AgentUnreachable,
+                            Some(e.to_string()),
+                        )
                     } else {
                         (crate::db::enums::ChildCommandStatus::SentToAgent, None)
                     };
 
-                    if let Err(update_err) = command_manager_clone.update_child_task_status(
-                        child_task.child_command_id,
-                        new_status,
-                        None, // No exit code at this stage
-                        error_message,
-                    ).await {
+                    if let Err(update_err) = command_manager_clone
+                        .update_child_task_status(
+                            child_task.child_command_id,
+                            new_status,
+                            None, // No exit code at this stage
+                            error_message,
+                        )
+                        .await
+                    {
                         error!(
                             child_task_id = %child_task.child_command_id,
                             error = ?update_err,
@@ -184,10 +200,13 @@ async fn terminate_batch_command(
             if !child_tasks_to_terminate.is_empty() {
                 tokio::spawn(async move {
                     for child_task in child_tasks_to_terminate {
-                        if let Err(e) = dispatcher.terminate_command_on_agent(
-                            child_task.child_command_id,
-                            child_task.vps_id,
-                        ).await {
+                        if let Err(e) = dispatcher
+                            .terminate_command_on_agent(
+                                child_task.child_command_id,
+                                child_task.vps_id,
+                            )
+                            .await
+                        {
                             error!(
                                 child_task_id = %child_task.child_command_id,
                                 error = ?e,
@@ -242,10 +261,13 @@ async fn terminate_child_command(
         Ok(child_task_to_terminate) => {
             // Spawn a task to send the termination signal without blocking the response
             tokio::spawn(async move {
-                if let Err(e) = dispatcher.terminate_command_on_agent(
-                    child_task_to_terminate.child_command_id,
-                    child_task_to_terminate.vps_id,
-                ).await {
+                if let Err(e) = dispatcher
+                    .terminate_command_on_agent(
+                        child_task_to_terminate.child_command_id,
+                        child_task_to_terminate.vps_id,
+                    )
+                    .await
+                {
                     error!(
                         child_task_id = %child_task_to_terminate.child_command_id,
                         error = ?e,

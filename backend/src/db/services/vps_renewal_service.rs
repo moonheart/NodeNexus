@@ -1,9 +1,18 @@
+use crate::db::entities::vps_renewal_info; // Changed
 use chrono::{DateTime, Duration, Months, Timelike, Utc}; // Removed Datelike, NaiveDate
 use sea_orm::{
-    prelude::Expr, ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel, QueryFilter, Set, TransactionTrait // Removed ActiveValue
+    ActiveModelTrait,
+    ColumnTrait,
+    DatabaseConnection,
+    DbErr,
+    EntityTrait,
+    IntoActiveModel,
+    QueryFilter,
+    Set,
+    TransactionTrait, // Removed ActiveValue
+    prelude::Expr,
 };
-use crate::db::entities::vps_renewal_info; // Changed
-use tracing::{info, error, warn};
+use tracing::{error, info, warn};
 
 // --- Vps Renewal Service Functions ---
 
@@ -36,12 +45,24 @@ fn calculate_next_renewal_date_internal(
         "annually" => naive_ref_date.checked_add_months(Months::new(12)),
         "biennially" => naive_ref_date.checked_add_months(Months::new(24)),
         "triennially" => naive_ref_date.checked_add_months(Months::new(36)),
-        "custom_days" => {
-            custom_days.and_then(|days| naive_ref_date.checked_add_signed(Duration::days(days as i64)))
-        }
+        "custom_days" => custom_days
+            .and_then(|days| naive_ref_date.checked_add_signed(Duration::days(days as i64))),
         _ => None, // Unknown cycle
     };
-    naive_next_date.map(|nd| DateTime::<Utc>::from_naive_utc_and_offset(nd.and_hms_opt(reference_date.hour(), reference_date.minute(), reference_date.second()).unwrap_or_else(|| nd.and_hms_opt(0,0,0).expect("Valid date should have valid time")), Utc))
+    naive_next_date.map(|nd| {
+        DateTime::<Utc>::from_naive_utc_and_offset(
+            nd.and_hms_opt(
+                reference_date.hour(),
+                reference_date.minute(),
+                reference_date.second(),
+            )
+            .unwrap_or_else(|| {
+                nd.and_hms_opt(0, 0, 0)
+                    .expect("Valid date should have valid time")
+            }),
+            Utc,
+        )
+    })
 }
 
 /// Creates or updates the renewal information for a VPS.
@@ -68,7 +89,9 @@ pub async fn create_or_update_vps_renewal_info(
         }
     }
 
-    let existing_info_model = vps_renewal_info::Entity::find_by_id(vps_id).one(txn).await?;
+    let existing_info_model = vps_renewal_info::Entity::find_by_id(vps_id)
+        .one(txn)
+        .await?;
 
     if let Some(existing) = existing_info_model {
         // --- UPDATE PATH ---
@@ -95,7 +118,7 @@ pub async fn create_or_update_vps_renewal_info(
         active_model.reminder_active = Set(Some(reminder_active));
         active_model.last_reminder_generated_at = Set(last_reminder_generated_at);
         active_model.updated_at = Set(now);
-        
+
         active_model.update(txn).await?;
     } else {
         // --- INSERT PATH ---
@@ -126,7 +149,8 @@ pub async fn create_or_update_vps_renewal_info(
 pub async fn get_vps_renewal_info_by_vps_id(
     db: &DatabaseConnection, // Changed
     vps_id: i32,
-) -> Result<Option<vps_renewal_info::Model>, DbErr> { // Changed
+) -> Result<Option<vps_renewal_info::Model>, DbErr> {
+    // Changed
     vps_renewal_info::Entity::find_by_id(vps_id).one(db).await
 }
 
@@ -137,11 +161,18 @@ pub async fn get_vps_renewal_info_by_vps_id(
 pub async fn dismiss_vps_renewal_reminder(
     db: &DatabaseConnection, // Changed
     vps_id: i32,
-) -> Result<u64, DbErr> { // Changed
+) -> Result<u64, DbErr> {
+    // Changed
     let now = Utc::now();
     let result = vps_renewal_info::Entity::update_many()
-        .col_expr(vps_renewal_info::Column::ReminderActive, Expr::value(sea_orm::Value::Bool(Some(false))))
-        .col_expr(vps_renewal_info::Column::UpdatedAt, Expr::value(sea_orm::Value::ChronoDateTimeUtc(Some(Box::new(now)))))
+        .col_expr(
+            vps_renewal_info::Column::ReminderActive,
+            Expr::value(sea_orm::Value::Bool(Some(false))),
+        )
+        .col_expr(
+            vps_renewal_info::Column::UpdatedAt,
+            Expr::value(sea_orm::Value::ChronoDateTimeUtc(Some(Box::new(now)))),
+        )
         .filter(vps_renewal_info::Column::VpsId.eq(vps_id))
         .filter(vps_renewal_info::Column::ReminderActive.eq(true))
         .exec(db)
@@ -157,10 +188,11 @@ pub async fn dismiss_vps_renewal_reminder(
 pub async fn check_and_generate_reminders(
     db: &DatabaseConnection, // Changed
     reminder_threshold_days: i64,
-) -> Result<u64, DbErr> { // Changed
+) -> Result<u64, DbErr> {
+    // Changed
     let now = Utc::now();
     let threshold_date = now + Duration::days(reminder_threshold_days);
-    
+
     let candidates = vps_renewal_info::Entity::find()
         .filter(vps_renewal_info::Column::NextRenewalDate.is_not_null())
         .filter(vps_renewal_info::Column::NextRenewalDate.lte(threshold_date))
@@ -192,7 +224,7 @@ pub async fn check_and_generate_reminders(
         active_model.reminder_active = Set(Some(true));
         active_model.last_reminder_generated_at = Set(Some(now));
         active_model.updated_at = Set(now);
-        
+
         match active_model.update(&txn).await {
             Ok(_) => updated_count += 1,
             Err(e) => {
@@ -206,12 +238,12 @@ pub async fn check_and_generate_reminders(
     Ok(updated_count)
 }
 
-
 /// Processes automatic renewals for all VPS that are due and have auto-renew enabled.
 /// Returns the number of VPS successfully auto-renewed.
 pub async fn process_all_automatic_renewals(
     db: &DatabaseConnection, // Changed
-) -> Result<u64, DbErr> { // Changed
+) -> Result<u64, DbErr> {
+    // Changed
     let now = Utc::now();
     let mut renewed_count: u64 = 0;
 
@@ -236,13 +268,16 @@ pub async fn process_all_automatic_renewals(
             );
             continue;
         }
-        
+
         // Ensure current_next_renewal_date is not None, which it shouldn't be due to filters
         let current_next_renewal_date = match candidate_model.next_renewal_date {
             Some(date) => date,
             None => {
-                 warn!(vps_id = candidate_model.vps_id, "Skipping auto-renewal: current_next_renewal_date is None unexpectedly.");
-                 continue;
+                warn!(
+                    vps_id = candidate_model.vps_id,
+                    "Skipping auto-renewal: current_next_renewal_date is None unexpectedly."
+                );
+                continue;
             }
         };
 
@@ -263,7 +298,7 @@ pub async fn process_all_automatic_renewals(
         let new_next_renewal_date = new_next_renewal_date_opt.unwrap();
 
         let txn = db.begin().await?;
-        
+
         let mut active_model = candidate_model.clone().into_active_model(); // Clone before moving into active model
         active_model.last_renewal_date = Set(Some(new_last_renewal_date));
         active_model.next_renewal_date = Set(Some(new_next_renewal_date));
@@ -290,7 +325,10 @@ pub async fn process_all_automatic_renewals(
                 match txn.commit().await {
                     Ok(_) => {
                         renewed_count += 1;
-                        info!(vps_id = updated_model.vps_id, "Successfully auto-renewed VPS.");
+                        info!(
+                            vps_id = updated_model.vps_id,
+                            "Successfully auto-renewed VPS."
+                        );
                     }
                     Err(commit_err) => {
                         error!(vps_id = candidate_model.vps_id, error = %commit_err, "Error committing transaction for auto-renewal.");

@@ -1,18 +1,18 @@
-use std::collections::HashMap;
-use crate::web::models::websocket_models::ServerWithDetails;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use crate::agent_service::{AgentConfig, MessageToAgent, TriggerUpdateCheckCommand};
-use tokio::sync::mpsc;
-use std::fmt;
-use tracing::{info, warn};
 use crate::agent_service::message_to_agent::Payload;
-use futures_util::{Sink, SinkExt};
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use axum::extract::ws::{WebSocket, Message};
+use crate::agent_service::{AgentConfig, MessageToAgent, TriggerUpdateCheckCommand};
+use crate::web::models::websocket_models::ServerWithDetails;
+use axum::extract::ws::{Message, WebSocket};
 use futures_util::stream::SplitSink;
+use futures_util::{Sink, SinkExt};
 use prost::Message as ProstMessage;
+use std::collections::HashMap;
+use std::fmt;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::task::{Context, Poll};
+use tokio::sync::Mutex;
+use tokio::sync::mpsc;
+use tracing::{info, warn};
 
 // 1. Define the AgentSender enum
 #[derive(Clone)]
@@ -35,22 +35,26 @@ impl Sink<MessageToAgent> for AgentSender {
             }
             AgentSender::WebSocket(sink) => {
                 let mut sink = sink.try_lock().unwrap();
-                Pin::new(&mut *sink).poll_ready(cx).map_err(|e| tonic::Status::internal(e.to_string()))
+                Pin::new(&mut *sink)
+                    .poll_ready(cx)
+                    .map_err(|e| tonic::Status::internal(e.to_string()))
             }
         }
     }
 
     fn start_send(self: Pin<&mut Self>, item: MessageToAgent) -> Result<(), Self::Error> {
         match self.get_mut() {
-            AgentSender::Grpc(sender) => {
-                sender.try_send(Ok(item)).map_err(|e| tonic::Status::internal(e.to_string()))
-            }
+            AgentSender::Grpc(sender) => sender
+                .try_send(Ok(item))
+                .map_err(|e| tonic::Status::internal(e.to_string())),
             AgentSender::WebSocket(sink) => {
                 let mut sink = sink.try_lock().unwrap();
                 let mut buf = Vec::new();
                 item.encode(&mut buf).unwrap();
                 // Corrected: Convert Vec<u8> to Bytes
-                Pin::new(&mut *sink).start_send(Message::Binary(buf.into())).map_err(|e| tonic::Status::internal(e.to_string()))
+                Pin::new(&mut *sink)
+                    .start_send(Message::Binary(buf.into()))
+                    .map_err(|e| tonic::Status::internal(e.to_string()))
             }
         }
     }
@@ -60,7 +64,9 @@ impl Sink<MessageToAgent> for AgentSender {
             AgentSender::Grpc(_) => Poll::Ready(Ok(())),
             AgentSender::WebSocket(sink) => {
                 let mut sink = sink.try_lock().unwrap();
-                Pin::new(&mut *sink).poll_flush(cx).map_err(|e| tonic::Status::internal(e.to_string()))
+                Pin::new(&mut *sink)
+                    .poll_flush(cx)
+                    .map_err(|e| tonic::Status::internal(e.to_string()))
             }
         }
     }
@@ -70,7 +76,9 @@ impl Sink<MessageToAgent> for AgentSender {
             AgentSender::Grpc(_) => Poll::Ready(Ok(())),
             AgentSender::WebSocket(sink) => {
                 let mut sink = sink.try_lock().unwrap();
-                Pin::new(&mut *sink).poll_close(cx).map_err(|e| tonic::Status::internal(e.to_string()))
+                Pin::new(&mut *sink)
+                    .poll_close(cx)
+                    .map_err(|e| tonic::Status::internal(e.to_string()))
             }
         }
     }
@@ -113,22 +121,27 @@ impl ConnectedAgents {
     }
 
     pub fn find_by_vps_id(&self, vps_id: i32) -> Option<AgentState> {
-        self.agents.values().find(|state| state.vps_db_id == vps_id).cloned()
+        self.agents
+            .values()
+            .find(|state| state.vps_db_id == vps_id)
+            .cloned()
     }
 
     // 4. Update send_update_check_command
     pub async fn send_update_check_command(&self, vps_id: i32) -> bool {
         if let Some(mut agent_state) = self.find_by_vps_id(vps_id) {
             let command = MessageToAgent {
-                server_message_id: chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default() as u64,
-                payload: Some(Payload::TriggerUpdateCheck(
-                    TriggerUpdateCheckCommand {},
-                )),
+                server_message_id: chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+                    as u64,
+                payload: Some(Payload::TriggerUpdateCheck(TriggerUpdateCheckCommand {})),
             };
 
             match agent_state.sender.send(command).await {
                 Ok(_) => {
-                    info!(vps_id, "Successfully sent TriggerUpdateCheckCommand to agent.");
+                    info!(
+                        vps_id,
+                        "Successfully sent TriggerUpdateCheckCommand to agent."
+                    );
                     true
                 }
                 Err(e) => {
@@ -137,7 +150,10 @@ impl ConnectedAgents {
                 }
             }
         } else {
-            warn!(vps_id, "Could not send TriggerUpdateCheckCommand: agent not found in connected list.");
+            warn!(
+                vps_id,
+                "Could not send TriggerUpdateCheckCommand: agent not found in connected list."
+            );
             false
         }
     }

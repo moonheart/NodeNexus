@@ -1,24 +1,25 @@
-use axum::{
-    extract::{State, Extension, Path, Query}, // Added Query
-    http::StatusCode,
-    routing::{get, post, put, delete},
-    Json, Router,
-};
-use serde::{Deserialize, Serialize}; // Added Serialize
-use std::sync::Arc;
-use chrono::{DateTime, Utc}; // Added for DateTime<Utc>
-use sea_orm::DbErr; // Added DbErr for error handling
-use tracing::error;
 use crate::db::{
-    entities::{tag, vps}, // Changed to use entities
-    models::{PerformanceMetric as DbPerformanceMetric}, // Keep DbPerformanceMetric for now
+    entities::{tag, vps},                             // Changed to use entities
+    models::PerformanceMetric as DbPerformanceMetric, // Keep DbPerformanceMetric for now
     services,
 };
-use crate::web::{AppState, AppError, config_routes};
-use crate::web::models::AuthenticatedUser;
 use crate::server::update_service;
+use crate::web::models::AuthenticatedUser;
 use crate::web::models::service_monitor_models::ServiceMonitorResultDetails;
 use crate::web::service_monitor_routes::MonitorResultsQuery;
+use crate::web::{AppError, AppState, config_routes};
+use axum::{
+    Json,
+    Router,
+    extract::{Extension, Path, Query, State}, // Added Query
+    http::StatusCode,
+    routing::{delete, get, post, put},
+};
+use chrono::{DateTime, Utc}; // Added for DateTime<Utc>
+use sea_orm::DbErr; // Added DbErr for error handling
+use serde::{Deserialize, Serialize}; // Added Serialize
+use std::sync::Arc;
+use tracing::error;
 
 // Frontend expects this structure for latest metrics
 #[derive(Serialize, Clone, Debug)]
@@ -34,8 +35,8 @@ pub struct LatestPerformanceMetricResponse {
     pub swap_total_bytes: i64,
     pub disk_io_read_bps: i64,
     pub disk_io_write_bps: i64,
-    pub network_rx_bps: i64,      // Cumulative
-    pub network_tx_bps: i64,      // Cumulative
+    pub network_rx_bps: i64, // Cumulative
+    pub network_tx_bps: i64, // Cumulative
     pub network_rx_instant_bps: i64,
     pub network_tx_instant_bps: i64,
     pub uptime_seconds: i64,
@@ -72,7 +73,6 @@ impl From<(DbPerformanceMetric, Option<(i64, i64)>)> for LatestPerformanceMetric
         }
     }
 }
-
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -116,7 +116,7 @@ pub struct VpsListItemResponse {
     pub renewal_notes: Option<String>,
     pub reminder_active: Option<bool>,
     // last_reminder_generated_at is likely not needed by list view, but can be added if detail view needs it
-    
+
     // Agent secret is only included in the detail view, not the list view.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_secret: Option<String>,
@@ -141,16 +141,25 @@ impl From<crate::web::models::websocket_models::ServerWithDetails> for VpsListIt
             tags: details.basic_info.tags,
             latest_metrics: details.latest_metrics,
             config_status: details.basic_info.config_status,
-            last_config_update_at: details.basic_info.last_config_update_at.map(|dt| dt.to_rfc3339()),
+            last_config_update_at: details
+                .basic_info
+                .last_config_update_at
+                .map(|dt| dt.to_rfc3339()),
             last_config_error: details.basic_info.last_config_error,
             traffic_limit_bytes: details.basic_info.traffic_limit_bytes,
             traffic_billing_rule: details.basic_info.traffic_billing_rule,
             traffic_current_cycle_rx_bytes: details.basic_info.traffic_current_cycle_rx_bytes,
             traffic_current_cycle_tx_bytes: details.basic_info.traffic_current_cycle_tx_bytes,
-            traffic_last_reset_at: details.basic_info.traffic_last_reset_at.map(|dt| dt.to_rfc3339()),
+            traffic_last_reset_at: details
+                .basic_info
+                .traffic_last_reset_at
+                .map(|dt| dt.to_rfc3339()),
             traffic_reset_config_type: details.basic_info.traffic_reset_config_type,
             traffic_reset_config_value: details.basic_info.traffic_reset_config_value,
-            next_traffic_reset_at: details.basic_info.next_traffic_reset_at.map(|dt| dt.to_rfc3339()),
+            next_traffic_reset_at: details
+                .basic_info
+                .next_traffic_reset_at
+                .map(|dt| dt.to_rfc3339()),
 
             // Map renewal fields (assuming they will be added to ServerWithDetails or a similar joined struct)
             // For now, these will default to None or false if not present in ServerWithDetails.
@@ -170,7 +179,6 @@ impl From<crate::web::models::websocket_models::ServerWithDetails> for VpsListIt
         }
     }
 }
-
 
 #[derive(Deserialize)]
 pub struct CreateVpsRequest {
@@ -208,7 +216,8 @@ async fn create_vps_handler(
     Extension(authenticated_user): Extension<AuthenticatedUser>,
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<CreateVpsRequest>,
-) -> Result<(StatusCode, Json<vps::Model>), AppError> { // Changed Vps to vps::Model
+) -> Result<(StatusCode, Json<vps::Model>), AppError> {
+    // Changed Vps to vps::Model
     let user_id = authenticated_user.id;
     match services::create_vps(&app_state.db_pool, user_id, &payload.name).await {
         Ok(vps_model) => {
@@ -217,9 +226,10 @@ async fn create_vps_handler(
                 &app_state.db_pool,
                 &app_state.live_server_data_cache,
                 &app_state.ws_data_broadcaster_tx,
-            ).await;
+            )
+            .await;
             Ok((StatusCode::CREATED, Json(vps_model)))
-        },
+        }
         Err(db_err) => {
             error!(error = ?db_err, "Failed to create VPS.");
             Err(AppError::DatabaseError(db_err.to_string()))
@@ -235,9 +245,10 @@ async fn get_all_vps_handler(
     // Use the unified query that fetches everything, including tags.
     // Use the unified query that fetches everything for the specific user, including tags.
     // Use the new, user-specific unified query that fetches everything, including tags.
-    let server_details_list = services::get_all_vps_with_details_for_user(&app_state.db_pool, user_id)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+    let server_details_list =
+        services::get_all_vps_with_details_for_user(&app_state.db_pool, user_id)
+            .await
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
     // Convert to the response type. Filtering is now correctly done in the database query.
     let response_list: Vec<VpsListItemResponse> = server_details_list
@@ -256,10 +267,11 @@ async fn get_vps_detail_handler(
     let user_id = authenticated_user.id;
 
     // Fetch the detailed view model, which has almost everything
-    let vps_details_for_view = services::get_vps_with_details_for_cache_by_id(&app_state.db_pool, vps_id)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?
-        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
+    let vps_details_for_view =
+        services::get_vps_with_details_for_cache_by_id(&app_state.db_pool, vps_id)
+            .await
+            .map_err(|e| AppError::DatabaseError(e.to_string()))?
+            .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
 
     // Authorize user based on the fetched details
     if vps_details_for_view.basic_info.user_id != user_id {
@@ -277,7 +289,7 @@ async fn get_vps_detail_handler(
 
     // Securely add the agent secret to the response
     response.agent_secret = Some(vps_model.agent_secret);
-    
+
     Ok(Json(response))
 }
 
@@ -332,8 +344,9 @@ async fn update_vps_handler(
 ) -> Result<StatusCode, AppError> {
     let user_id = authenticated_user.id;
 
-                            // First, verify the user owns this VPS
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await
+    // First, verify the user owns this VPS
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
+        .await
         .map_err(|e| AppError::DatabaseError(e.to_string()))?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
 
@@ -386,9 +399,11 @@ async fn update_vps_handler(
         payload.traffic_reset_config_value,
         payload.next_traffic_reset_at,
         renewal_input_opt, // Pass the constructed renewal input
-).await.map_err(|e| AppError::DatabaseError(e.to_string()))?;
+    )
+    .await
+    .map_err(|e| AppError::DatabaseError(e.to_string()))?;
 
-if change_detected {
+    if change_detected {
         // Call the centralized broadcast function
         update_service::broadcast_full_state_update(
             &app_state.db_pool,
@@ -402,7 +417,6 @@ if change_detected {
     }
 }
 
-
 // --- VPS Tag Handlers ---
 
 async fn add_tag_to_vps_handler(
@@ -413,9 +427,14 @@ async fn add_tag_to_vps_handler(
 ) -> Result<StatusCode, AppError> {
     let user_id = authenticated_user.id;
     // Authorize: Check if user owns the VPS
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await.map_err(|e| AppError::DatabaseError(e.to_string()))?.ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
+        .await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
     if vps.user_id != user_id {
-        return Err(AppError::Unauthorized("Permission denied to VPS".to_string()));
+        return Err(AppError::Unauthorized(
+            "Permission denied to VPS".to_string(),
+        ));
     }
 
     // TODO: Authorize: Check if user owns the Tag as well? For now, we assume if they can see it, they can use it.
@@ -434,7 +453,10 @@ async fn remove_tag_from_vps_handler(
 ) -> Result<StatusCode, AppError> {
     let user_id = authenticated_user.id;
     // Authorize: Check if user owns the VPS
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await.map_err(|e| AppError::DatabaseError(e.to_string()))?.ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
+        .await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
     if vps.user_id != user_id {
         return Err(AppError::Unauthorized("Permission denied".to_string()));
     }
@@ -455,10 +477,14 @@ async fn get_tags_for_vps_handler(
     Extension(authenticated_user): Extension<AuthenticatedUser>,
     State(app_state): State<Arc<AppState>>,
     Path(vps_id): Path<i32>,
-) -> Result<Json<Vec<tag::Model>>, AppError> { // Changed Tag to tag::Model
+) -> Result<Json<Vec<tag::Model>>, AppError> {
+    // Changed Tag to tag::Model
     let user_id = authenticated_user.id;
     // Authorize: Check if user owns the VPS
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await.map_err(|e| AppError::DatabaseError(e.to_string()))?.ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
+        .await
+        .map_err(|e| AppError::DatabaseError(e.to_string()))?
+        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
     if vps.user_id != user_id {
         return Err(AppError::Unauthorized("Permission denied".to_string()));
     }
@@ -466,14 +492,16 @@ async fn get_tags_for_vps_handler(
     let tags = services::get_tags_for_vps(&app_state.db_pool, vps_id)
         .await
         .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-    
+
     Ok(Json(tags))
 }
 
-
 pub fn vps_tags_router() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/", post(add_tag_to_vps_handler).get(get_tags_for_vps_handler))
+        .route(
+            "/",
+            post(add_tag_to_vps_handler).get(get_tags_for_vps_handler),
+        )
         .route("/{tag_id}", delete(remove_tag_from_vps_handler))
 }
 
@@ -507,11 +535,15 @@ async fn bulk_update_vps_tags_handler(
             .await;
             Ok(StatusCode::OK)
         }
-        Err(db_err) => { // Changed to handle DbErr
-            if let DbErr::RecordNotFound(_) = &db_err { // Directly match against &db_err
-                 // This specific mapping might need adjustment based on how `bulk_update_vps_tags` signals auth failure.
-                 // For now, assuming RecordNotFound might imply an issue with one of the VPS IDs not being found under user's ownership.
-                Err(AppError::Unauthorized("Permission denied to one or more VPS, or VPS not found.".to_string()))
+        Err(db_err) => {
+            // Changed to handle DbErr
+            if let DbErr::RecordNotFound(_) = &db_err {
+                // Directly match against &db_err
+                // This specific mapping might need adjustment based on how `bulk_update_vps_tags` signals auth failure.
+                // For now, assuming RecordNotFound might imply an issue with one of the VPS IDs not being found under user's ownership.
+                Err(AppError::Unauthorized(
+                    "Permission denied to one or more VPS, or VPS not found.".to_string(),
+                ))
             } else {
                 // db_err is still available here as it was only borrowed
                 Err(AppError::DatabaseError(db_err.to_string()))
@@ -536,7 +568,8 @@ async fn bulk_trigger_update_check_handler(
     }
 
     // Verify user owns all VPS IDs and get the valid models
-    let owned_vps_list = services::get_owned_vps_from_ids(&app_state.db_pool, user_id, &payload.vps_ids).await?;
+    let owned_vps_list =
+        services::get_owned_vps_from_ids(&app_state.db_pool, user_id, &payload.vps_ids).await?;
 
     if owned_vps_list.len() != payload.vps_ids.len() {
         // This indicates a partial ownership, which we treat as a potential issue.
@@ -565,7 +598,6 @@ async fn bulk_trigger_update_check_handler(
     let total_requested = payload.vps_ids.len() as u32;
     let not_owned_or_failed = total_requested - successful_sends;
 
-
     Ok(Json(BulkActionResponse {
         message: format!(
             "Update commands sent. Success: {successful_sends}, Failed/Not Found: {not_owned_or_failed}."
@@ -574,7 +606,6 @@ async fn bulk_trigger_update_check_handler(
         failed_count: not_owned_or_failed,
     }))
 }
-
 
 // --- Renewal Reminder Handler ---
 
@@ -586,12 +617,15 @@ async fn dismiss_renewal_reminder_handler(
     let user_id = authenticated_user.id;
 
     // Authorize: Check if user owns the VPS
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
+        .await
         .map_err(|e| AppError::DatabaseError(e.to_string()))?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
 
     if vps.user_id != user_id {
-        return Err(AppError::Unauthorized("Permission denied to VPS".to_string()));
+        return Err(AppError::Unauthorized(
+            "Permission denied to VPS".to_string(),
+        ));
     }
 
     // Attempt to dismiss the reminder
@@ -603,7 +637,8 @@ async fn dismiss_renewal_reminder_handler(
                     &app_state.db_pool,
                     &app_state.live_server_data_cache,
                     &app_state.ws_data_broadcaster_tx,
-                ).await;
+                )
+                .await;
                 Ok(StatusCode::OK)
             } else {
                 // No reminder was active, or VPS not found in renewal info (though ownership check should catch this)
@@ -613,7 +648,6 @@ async fn dismiss_renewal_reminder_handler(
         Err(e) => Err(AppError::DatabaseError(e.to_string())),
     }
 }
-
 
 async fn get_vps_monitor_results_handler(
     Extension(authenticated_user): Extension<AuthenticatedUser>,
@@ -626,7 +660,8 @@ async fn get_vps_monitor_results_handler(
     // Authorization: Verify the user owns the VPS.
     // This is implicitly handled by `get_monitor_results_by_vps_id` which filters by user_id.
     // An explicit check could be added here if desired for early exit.
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await?
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
+        .await?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
     if vps.user_id != user_id {
         return Err(AppError::Unauthorized("Access denied".to_string()));
@@ -649,14 +684,29 @@ pub fn vps_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", post(create_vps_handler))
         .route("/", get(get_all_vps_handler))
-        .route("/bulk-actions/update-tags", post(bulk_update_vps_tags_handler))
-        .route("/bulk-actions/trigger-update-check", post(bulk_trigger_update_check_handler))
+        .route(
+            "/bulk-actions/update-tags",
+            post(bulk_update_vps_tags_handler),
+        )
+        .route(
+            "/bulk-actions/trigger-update-check",
+            post(bulk_trigger_update_check_handler),
+        )
         .route("/{vps_id}", get(get_vps_detail_handler))
         .route("/{vps_id}", put(update_vps_handler))
         .route("/{vps_id}", delete(delete_vps_handler))
-        .route("/{vps_id}/renewal/dismiss-reminder", post(dismiss_renewal_reminder_handler)) // New route
-        .route("/{vps_id}/monitor-results", get(get_vps_monitor_results_handler)) // New route
-        .route("/{vps_id}/trigger-update-check", post(trigger_update_check_handler)) // New route for agent update
+        .route(
+            "/{vps_id}/renewal/dismiss-reminder",
+            post(dismiss_renewal_reminder_handler),
+        ) // New route
+        .route(
+            "/{vps_id}/monitor-results",
+            get(get_vps_monitor_results_handler),
+        ) // New route
+        .route(
+            "/{vps_id}/trigger-update-check",
+            post(trigger_update_check_handler),
+        ) // New route for agent update
         .nest("/{vps_id}/tags", vps_tags_router()) // Nest the tags router
         .merge(config_routes::create_vps_config_router())
 }
@@ -669,7 +719,8 @@ async fn trigger_update_check_handler(
     let user_id = authenticated_user.id;
 
     // Authorize: Check if user owns the VPS
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await?
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
+        .await?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
     if vps.user_id != user_id {
         return Err(AppError::Unauthorized("Access denied".to_string()));
@@ -682,7 +733,9 @@ async fn trigger_update_check_handler(
     if sent {
         Ok(StatusCode::ACCEPTED) // Accepted for processing
     } else {
-        Err(AppError::NotFound("Agent not connected or command could not be sent".to_string()))
+        Err(AppError::NotFound(
+            "Agent not connected or command could not be sent".to_string(),
+        ))
     }
 }
 
@@ -694,7 +747,8 @@ async fn delete_vps_handler(
     let user_id = authenticated_user.id;
 
     // Authorize: Check if user owns the VPS
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id).await?
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
+        .await?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
     if vps.user_id != user_id {
         return Err(AppError::Unauthorized("Access denied".to_string()));
@@ -708,7 +762,8 @@ async fn delete_vps_handler(
         &app_state.db_pool,
         &app_state.live_server_data_cache,
         &app_state.ws_data_broadcaster_tx,
-    ).await;
+    )
+    .await;
 
     Ok(StatusCode::NO_CONTENT)
 }

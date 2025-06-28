@@ -1,11 +1,11 @@
-use std::net::IpAddr;
-use sysinfo::System;
 use crate::agent_service::StaticSystemInfo;
-use reqwest::Client;
-use std::time::Duration;
 use once_cell::sync::Lazy;
+use reqwest::Client;
+use std::net::IpAddr;
 use std::str::FromStr; // For IpAddr::from_str
-use tracing::{info, error, warn, debug};
+use std::time::Duration;
+use sysinfo::System;
+use tracing::{debug, error, info, warn};
 
 const CF_TRACE_ENDPOINTS: &[&str] = &[
     "https://cloudflare.com/cdn-cgi/trace",
@@ -60,7 +60,9 @@ async fn fetch_ip_and_loc_from_endpoints(
                                 if line.starts_with("ip=") {
                                     let ip_str = line.trim_start_matches("ip=").trim();
                                     if let Ok(parsed_ip) = IpAddr::from_str(ip_str) {
-                                        if (ip_version_is_v6 && parsed_ip.is_ipv6()) || (!ip_version_is_v6 && parsed_ip.is_ipv4()) {
+                                        if (ip_version_is_v6 && parsed_ip.is_ipv6())
+                                            || (!ip_version_is_v6 && parsed_ip.is_ipv4())
+                                        {
                                             ip_address = Some(ip_str.to_string());
                                         } else {
                                             debug!(endpoint = %endpoint, ip = %ip_str, "Mismatched IP type from endpoint.");
@@ -114,7 +116,8 @@ pub async fn collect_public_ip_addresses() -> (Vec<String>, Option<String>) {
     if let Some((ip4, loc4)) = ipv4_data {
         info!(ip = %ip4, loc = ?loc4, "Collected IPv4 address.");
         public_ips.push(ip4);
-        if country_code.is_none() { // Prioritize loc from IPv4 if available
+        if country_code.is_none() {
+            // Prioritize loc from IPv4 if available
             country_code = loc4;
         }
     } else {
@@ -124,13 +127,14 @@ pub async fn collect_public_ip_addresses() -> (Vec<String>, Option<String>) {
     if let Some((ip6, loc6)) = ipv6_data {
         info!(ip = %ip6, loc = ?loc6, "Collected IPv6 address.");
         public_ips.push(ip6);
-        if country_code.is_none() { // If no loc from IPv4, use loc from IPv6
+        if country_code.is_none() {
+            // If no loc from IPv4, use loc from IPv6
             country_code = loc6;
         }
     } else {
         warn!("Failed to collect IPv6 address from all providers.");
     }
-    
+
     if public_ips.is_empty() {
         warn!("Failed to collect any public IP address.");
     }
@@ -156,8 +160,12 @@ pub fn collect_static_system_info() -> StaticSystemInfo {
         || "Unknown".to_string(),
         |cpu| {
             let brand = cpu.brand();
-            if brand.is_empty() { "Unknown".to_string() } else { brand.to_string() }
-        }
+            if brand.is_empty() {
+                "Unknown".to_string()
+            } else {
+                brand.to_string()
+            }
+        },
     );
     let os_family = System::name().unwrap_or_else(|| "Unknown".to_string());
     let os_version = System::os_version().unwrap_or_else(|| "Unknown".to_string());

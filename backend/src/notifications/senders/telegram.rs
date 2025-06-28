@@ -3,8 +3,8 @@ use reqwest::Client;
 use serde::Serialize;
 use std::collections::HashMap;
 
-use crate::notifications::models::ChannelConfig;
 use super::{NotificationSender, SenderError};
+use crate::notifications::models::ChannelConfig;
 
 /// A sender for pushing notifications via the Telegram Bot API.
 pub struct TelegramSender {
@@ -30,7 +30,8 @@ impl TelegramSender {
         let mut escaped_text = String::with_capacity(text.len());
         for char_to_escape in text.chars() {
             match char_to_escape {
-                '_' | '*' | '[' | ']' | '(' | ')' | '~' | '`' | '>' | '#' | '+' | '-' | '=' | '|' | '{' | '}' | '.' | '!' => {
+                '_' | '*' | '[' | ']' | '(' | ')' | '~' | '`' | '>' | '#' | '+' | '-' | '='
+                | '|' | '{' | '}' | '.' | '!' => {
                     escaped_text.push('\\');
                     escaped_text.push(char_to_escape);
                 }
@@ -80,7 +81,10 @@ impl NotificationSender for TelegramSender {
         let status = response.status();
 
         if !status.is_success() {
-            let error_body = response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Failed to read error body".to_string());
             return Err(SenderError::SendFailed(format!(
                 "Telegram API returned non-success status: {status}. Body: {error_body}"
             )));

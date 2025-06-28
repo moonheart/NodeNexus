@@ -18,8 +18,8 @@ pub struct Model {
     // We will treat `time` and `container_db_id` as simple columns for now and adjust if schema demands.
     // If there's no single primary key in the table, we might need to omit `#[sea_orm(primary_key)]`
     // or define a composite one. Let's assume `time` is the primary time dimension.
-
-    #[sea_orm(primary_key, auto_increment = false)] // Hypertables usually don't auto-increment PKs in the same way
+    #[sea_orm(primary_key, auto_increment = false)]
+    // Hypertables usually don't auto-increment PKs in the same way
     pub time: ChronoDateTimeUtc,
     #[sea_orm(primary_key, auto_increment = false)] // Part of composite PK
     pub container_db_id: i32, // Foreign key to docker_containers.id

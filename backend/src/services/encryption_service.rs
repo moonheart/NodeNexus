@@ -1,6 +1,6 @@
 use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Nonce,
+    aead::{Aead, AeadCore, KeyInit, OsRng},
 };
 use hex;
 
@@ -33,7 +33,8 @@ pub fn decrypt(cipher_hex: &str, key_hex: &str) -> Result<String, String> {
     let key = key_bytes.as_slice().into();
     let cipher = Aes256Gcm::new(key);
 
-    let encrypted_data = hex::decode(cipher_hex).map_err(|e| format!("Invalid hex ciphertext: {e}"))?;
+    let encrypted_data =
+        hex::decode(cipher_hex).map_err(|e| format!("Invalid hex ciphertext: {e}"))?;
     if encrypted_data.len() < NONCE_SIZE {
         return Err("Ciphertext is too short to contain a nonce".to_string());
     }
@@ -85,15 +86,24 @@ mod tests {
 
         let enc_result_short = encrypt(plain_text, short_key);
         assert!(enc_result_short.is_err());
-        assert_eq!(enc_result_short.unwrap_err(), "Encryption key must be 32 bytes (256 bits) long");
+        assert_eq!(
+            enc_result_short.unwrap_err(),
+            "Encryption key must be 32 bytes (256 bits) long"
+        );
 
         let enc_result_long = encrypt(plain_text, long_key);
         assert!(enc_result_long.is_err());
-         assert_eq!(enc_result_long.unwrap_err(), "Encryption key must be 32 bytes (256 bits) long");
+        assert_eq!(
+            enc_result_long.unwrap_err(),
+            "Encryption key must be 32 bytes (256 bits) long"
+        );
 
         let dec_result_short = decrypt("someciphertext", short_key);
         assert!(dec_result_short.is_err());
-        assert_eq!(dec_result_short.unwrap_err(), "Decryption key must be 32 bytes (256 bits) long");
+        assert_eq!(
+            dec_result_short.unwrap_err(),
+            "Decryption key must be 32 bytes (256 bits) long"
+        );
     }
 
     #[test]
@@ -112,6 +122,10 @@ mod tests {
 
         let result_dec_invalid_cipher = decrypt("not-a-hex-cipher", valid_key);
         assert!(result_dec_invalid_cipher.is_err());
-        assert!(result_dec_invalid_cipher.unwrap_err().contains("Invalid hex ciphertext"));
+        assert!(
+            result_dec_invalid_cipher
+                .unwrap_err()
+                .contains("Invalid hex ciphertext")
+        );
     }
 }

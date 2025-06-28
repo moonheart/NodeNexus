@@ -3,17 +3,15 @@ use crate::agent_modules::{
         service::{handle_batch_agent_command, handle_batch_terminate_command},
         tracker::RunningCommandsTracker,
     },
-    config,
-    updater,
+    config, updater,
 };
 use crate::agent_service::{
-    message_to_agent::Payload as AgentPayload,
+    AgentConfig, MessageToAgent, MessageToServer, message_to_agent::Payload as AgentPayload,
     message_to_server::Payload as ServerPayload,
-    AgentConfig, MessageToAgent, MessageToServer,
 };
-use std::pin::Pin;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
 use tonic::Status;
@@ -32,7 +30,7 @@ pub async fn server_message_handler_loop(
     update_lock: Arc<tokio::sync::Mutex<()>>,
 ) {
     info!("Listening for messages from server...");
-    
+
     while let Some(message_result) = in_stream.next().await {
         match message_result {
             Ok(message_to_agent) => {
@@ -60,7 +58,9 @@ pub async fn server_message_handler_loop(
                                     }
                                 }
                             } else {
-                                error_message = "Received UpdateConfigRequest with no config payload.".to_string();
+                                error_message =
+                                    "Received UpdateConfigRequest with no config payload."
+                                        .to_string();
                                 error!(error = %error_message);
                             }
 
@@ -71,31 +71,42 @@ pub async fn server_message_handler_loop(
                             };
 
                             let msg_id = id_provider();
-                            if let Err(e) = tx_to_server.send(MessageToServer {
-                                client_message_id: msg_id,
-                                payload: Some(ServerPayload::UpdateConfigResponse(response)),
-                                vps_db_id,
-                                agent_secret: agent_secret.clone(),
-                            }).await {
+                            if let Err(e) = tx_to_server
+                                .send(MessageToServer {
+                                    client_message_id: msg_id,
+                                    payload: Some(ServerPayload::UpdateConfigResponse(response)),
+                                    vps_db_id,
+                                    agent_secret: agent_secret.clone(),
+                                })
+                                .await
+                            {
                                 error!(error = %e, "Failed to send config update response.");
                             }
                         }
                         AgentPayload::CommandRequest(cmd_req) => {
                             warn!(request = ?cmd_req, "Received general CommandRequest. This is not currently handled for batch processing.");
-                             let error_result = crate::agent_service::CommandResponse {
+                            let error_result = crate::agent_service::CommandResponse {
                                 request_id: cmd_req.request_id.clone(),
                                 success: false,
-                                error_message: "General CommandRequest not implemented in batch context".to_string(),
+                                error_message:
+                                    "General CommandRequest not implemented in batch context"
+                                        .to_string(),
                                 result_payload: None,
                             };
                             let client_msg_id = id_provider();
-                            if tx_to_server.send(MessageToServer {
-                                client_message_id: client_msg_id,
-                                payload: Some(ServerPayload::CommandResponse(error_result)),
-                                vps_db_id,
-                                agent_secret: agent_secret.clone(),
-                            }).await.is_err() {
-                                error!("Failed to send error response for unhandled CommandRequest");
+                            if tx_to_server
+                                .send(MessageToServer {
+                                    client_message_id: client_msg_id,
+                                    payload: Some(ServerPayload::CommandResponse(error_result)),
+                                    vps_db_id,
+                                    agent_secret: agent_secret.clone(),
+                                })
+                                .await
+                                .is_err()
+                            {
+                                error!(
+                                    "Failed to send error response for unhandled CommandRequest"
+                                );
                             }
                         }
                         AgentPayload::BatchAgentCommandRequest(batch_cmd_req) => {
@@ -117,7 +128,8 @@ pub async fn server_message_handler_loop(
                                     vps_db_id_clone,
                                     agent_secret_clone,
                                     id_provider_clone,
-                                ).await;
+                                )
+                                .await;
                             });
                         }
                         AgentPayload::BatchTerminateCommandRequest(batch_term_req) => {
@@ -139,26 +151,35 @@ pub async fn server_message_handler_loop(
                                     vps_db_id_clone,
                                     agent_secret_clone,
                                     id_provider_clone,
-                                ).await;
+                                )
+                                .await;
                             });
                         }
                         AgentPayload::TriggerUpdateCheck(_cmd) => {
-                            info!("Received TriggerUpdateCheck command from server. Spawning update task.");
+                            info!(
+                                "Received TriggerUpdateCheck command from server. Spawning update task."
+                            );
                             let lock_clone = update_lock.clone();
                             tokio::spawn(async move {
                                 updater::handle_update_check(lock_clone).await;
                             });
                         }
                         _ => {
-                             warn!(?payload, "Received unhandled payload type from server.");
+                            warn!(?payload, "Received unhandled payload type from server.");
                         }
                     }
                 } else {
-                    warn!(server_msg_id = server_msg_id, "Received message from server with no payload.");
+                    warn!(
+                        server_msg_id = server_msg_id,
+                        "Received message from server with no payload."
+                    );
                 }
             }
             Err(status) => {
-                error!(?status, "Error receiving message from server. Stream broken.");
+                error!(
+                    ?status,
+                    "Error receiving message from server. Stream broken."
+                );
                 break;
             }
         }

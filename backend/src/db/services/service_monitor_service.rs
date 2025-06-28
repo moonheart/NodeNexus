@@ -3,68 +3,84 @@
 //! This service provides functions for CRUD operations on service monitors,
 //! assigning them to agents/tags, and recording check results.
 
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ModelTrait, QueryFilter, QueryOrder, Set, TransactionTrait};
-use crate::db::entities::{prelude::*, service_monitor, service_monitor_agent, service_monitor_tag, vps};
-use crate::web::models::service_monitor_models::{CreateMonitor, ServiceMonitorDetails, ServiceMonitorResultDetails, UpdateMonitor};
-use std::collections::HashMap;
+use crate::db::entities::{
+    prelude::*, service_monitor, service_monitor_agent, service_monitor_tag, vps,
+};
+use crate::web::models::service_monitor_models::{
+    CreateMonitor, ServiceMonitorDetails, ServiceMonitorResultDetails, UpdateMonitor,
+};
 use futures::try_join;
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ModelTrait, QueryFilter,
+    QueryOrder, Set, TransactionTrait,
+};
+use std::collections::HashMap;
 
 use crate::agent_service::{ServiceMonitorResult, ServiceMonitorTask};
 use crate::db::entities::{service_monitor_result, vps_tag};
-use sea_orm::QuerySelect;
 use chrono::{DateTime, TimeZone, Utc};
+use sea_orm::QuerySelect;
 pub async fn create_monitor(
     db: &DatabaseConnection,
     user_id: i32,
     monitor_data: CreateMonitor,
 ) -> Result<service_monitor::Model, DbErr> {
-        let new_monitor = service_monitor::ActiveModel {
-            user_id: Set(user_id),
-            name: Set(monitor_data.name),
-            monitor_type: Set(monitor_data.monitor_type),
-            target: Set(monitor_data.target),
-            frequency_seconds: Set(monitor_data.frequency_seconds.unwrap_or(60)),
-            timeout_seconds: Set(monitor_data.timeout_seconds.unwrap_or(10)),
-            is_active: Set(monitor_data.is_active.unwrap_or(true)),
-            monitor_config: Set(monitor_data.monitor_config),
-            assignment_type: Set(monitor_data.assignments.assignment_type.unwrap_or_else(|| "INCLUSIVE".to_string())),
-            ..Default::default()
-        };
+    let new_monitor = service_monitor::ActiveModel {
+        user_id: Set(user_id),
+        name: Set(monitor_data.name),
+        monitor_type: Set(monitor_data.monitor_type),
+        target: Set(monitor_data.target),
+        frequency_seconds: Set(monitor_data.frequency_seconds.unwrap_or(60)),
+        timeout_seconds: Set(monitor_data.timeout_seconds.unwrap_or(10)),
+        is_active: Set(monitor_data.is_active.unwrap_or(true)),
+        monitor_config: Set(monitor_data.monitor_config),
+        assignment_type: Set(monitor_data
+            .assignments
+            .assignment_type
+            .unwrap_or_else(|| "INCLUSIVE".to_string())),
+        ..Default::default()
+    };
 
-        let txn = db.begin().await?;
+    let txn = db.begin().await?;
 
-        let saved_monitor = new_monitor.insert(&txn).await?;
+    let saved_monitor = new_monitor.insert(&txn).await?;
 
-        // Handle agent assignments
-        if let Some(agent_ids) = monitor_data.assignments.agent_ids {
-            if !agent_ids.is_empty() {
-                let agent_assignments = agent_ids.into_iter().map(|vps_id| {
-                    service_monitor_agent::ActiveModel {
+    // Handle agent assignments
+    if let Some(agent_ids) = monitor_data.assignments.agent_ids {
+        if !agent_ids.is_empty() {
+            let agent_assignments =
+                agent_ids
+                    .into_iter()
+                    .map(|vps_id| service_monitor_agent::ActiveModel {
                         monitor_id: Set(saved_monitor.id),
                         vps_id: Set(vps_id),
-                    }
-                });
-                ServiceMonitorAgent::insert_many(agent_assignments).exec(&txn).await?;
-            }
+                    });
+            ServiceMonitorAgent::insert_many(agent_assignments)
+                .exec(&txn)
+                .await?;
         }
+    }
 
-        // Handle tag assignments
-        if let Some(tag_ids) = monitor_data.assignments.tag_ids {
-            if !tag_ids.is_empty() {
-                let tag_assignments = tag_ids.into_iter().map(|tag_id| {
-                    service_monitor_tag::ActiveModel {
+    // Handle tag assignments
+    if let Some(tag_ids) = monitor_data.assignments.tag_ids {
+        if !tag_ids.is_empty() {
+            let tag_assignments =
+                tag_ids
+                    .into_iter()
+                    .map(|tag_id| service_monitor_tag::ActiveModel {
                         monitor_id: Set(saved_monitor.id),
                         tag_id: Set(tag_id),
-                    }
-                });
-                ServiceMonitorTag::insert_many(tag_assignments).exec(&txn).await?;
-            }
+                    });
+            ServiceMonitorTag::insert_many(tag_assignments)
+                .exec(&txn)
+                .await?;
         }
-
-        txn.commit().await?;
-
-        Ok(saved_monitor)
     }
+
+    txn.commit().await?;
+
+    Ok(saved_monitor)
+}
 
 pub async fn get_monitors_with_details_by_user_id(
     db: &DatabaseConnection,
@@ -96,7 +112,10 @@ pub async fn get_monitors_with_details_by_user_id(
     // 3. Group assignments by monitor_id for efficient lookup
     let mut agent_map: HashMap<i32, Vec<i32>> = HashMap::new();
     for agent in agent_assignments {
-        agent_map.entry(agent.monitor_id).or_default().push(agent.vps_id);
+        agent_map
+            .entry(agent.monitor_id)
+            .or_default()
+            .push(agent.vps_id);
     }
 
     let mut tag_map: HashMap<i32, Vec<i32>> = HashMap::new();
@@ -193,7 +212,9 @@ pub async fn update_monitor(
         .filter(service_monitor::Column::UserId.eq(user_id))
         .one(&txn)
         .await?
-        .ok_or_else(|| DbErr::RecordNotFound("Monitor not found or permission denied".to_string()))?;
+        .ok_or_else(|| {
+            DbErr::RecordNotFound("Monitor not found or permission denied".to_string())
+        })?;
 
     let mut active_monitor: service_monitor::ActiveModel = monitor.into();
 
@@ -226,8 +247,12 @@ pub async fn update_monitor(
     // 4. Handle assignments if present
     if let Some(assignments) = payload.assignments {
         if let Some(assignment_type) = assignments.assignment_type {
-            let monitor_for_update = ServiceMonitor::find_by_id(monitor_id).one(&txn).await?.unwrap();
-            let mut active_monitor_for_update: service_monitor::ActiveModel = monitor_for_update.into();
+            let monitor_for_update = ServiceMonitor::find_by_id(monitor_id)
+                .one(&txn)
+                .await?
+                .unwrap();
+            let mut active_monitor_for_update: service_monitor::ActiveModel =
+                monitor_for_update.into();
             active_monitor_for_update.assignment_type = Set(assignment_type);
             active_monitor_for_update.update(&txn).await?;
         }
@@ -244,26 +269,32 @@ pub async fn update_monitor(
         // Add new agent assignments
         if let Some(agent_ids) = assignments.agent_ids {
             if !agent_ids.is_empty() {
-                let agent_assignments = agent_ids.into_iter().map(|vps_id| {
-                    service_monitor_agent::ActiveModel {
-                        monitor_id: Set(monitor_id),
-                        vps_id: Set(vps_id),
-                    }
-                });
-                ServiceMonitorAgent::insert_many(agent_assignments).exec(&txn).await?;
+                let agent_assignments =
+                    agent_ids
+                        .into_iter()
+                        .map(|vps_id| service_monitor_agent::ActiveModel {
+                            monitor_id: Set(monitor_id),
+                            vps_id: Set(vps_id),
+                        });
+                ServiceMonitorAgent::insert_many(agent_assignments)
+                    .exec(&txn)
+                    .await?;
             }
         }
 
         // Add new tag assignments
         if let Some(tag_ids) = assignments.tag_ids {
             if !tag_ids.is_empty() {
-                let tag_assignments = tag_ids.into_iter().map(|tag_id| {
-                    service_monitor_tag::ActiveModel {
-                        monitor_id: Set(monitor_id),
-                        tag_id: Set(tag_id),
-                    }
-                });
-                ServiceMonitorTag::insert_many(tag_assignments).exec(&txn).await?;
+                let tag_assignments =
+                    tag_ids
+                        .into_iter()
+                        .map(|tag_id| service_monitor_tag::ActiveModel {
+                            monitor_id: Set(monitor_id),
+                            tag_id: Set(tag_id),
+                        });
+                ServiceMonitorTag::insert_many(tag_assignments)
+                    .exec(&txn)
+                    .await?;
             }
         }
     }
@@ -281,7 +312,9 @@ pub async fn update_monitor(
     // We call the existing get function to ensure consistency
     let details = get_monitor_details_by_id(db, monitor_id)
         .await?
-        .ok_or_else(|| DbErr::RecordNotFound("Failed to fetch updated monitor details.".to_string()))?;
+        .ok_or_else(|| {
+            DbErr::RecordNotFound("Failed to fetch updated monitor details.".to_string())
+        })?;
 
     Ok((details, affected_vps_ids))
 }
@@ -450,7 +483,7 @@ pub async fn get_vps_ids_for_monitor(
     let assigned_tags_future = ServiceMonitorTag::find()
         .filter(service_monitor_tag::Column::MonitorId.eq(monitor_id))
         .all(db);
-    
+
     let (assigned_agents, assigned_tags) = try_join!(assigned_agents_future, assigned_tags_future)?;
 
     let assigned_agent_ids: Vec<i32> = assigned_agents.into_iter().map(|a| a.vps_id).collect();
@@ -480,14 +513,15 @@ pub async fn get_vps_ids_for_monitor(
             .into_tuple::<i32>()
             .all(db)
             .await?;
-        
-        let excluded_ids_set: std::collections::HashSet<i32> = combined_assigned_ids.into_iter().collect();
-        
+
+        let excluded_ids_set: std::collections::HashSet<i32> =
+            combined_assigned_ids.into_iter().collect();
+
         let final_agent_ids = all_agent_ids
             .into_iter()
             .filter(|id| !excluded_ids_set.contains(id))
             .collect();
-        
+
         Ok(final_agent_ids)
     } else {
         // INCLUSIVE mode (default)
@@ -520,7 +554,9 @@ pub async fn get_monitor_results_by_id(
     end_time: Option<DateTime<Utc>>,
     limit: Option<u64>,
 ) -> Result<Vec<ServiceMonitorResultDetails>, DbErr> {
-    let monitor = ServiceMonitor::find_by_id(monitor_id).one(db).await?
+    let monitor = ServiceMonitor::find_by_id(monitor_id)
+        .one(db)
+        .await?
         .ok_or_else(|| DbErr::RecordNotFound("Monitor not found".to_string()))?;
 
     let mut query = service_monitor_result::Entity::find()
@@ -546,7 +582,12 @@ pub async fn get_monitor_results_by_id(
         return Ok(Vec::new());
     }
 
-    let agent_ids: Vec<i32> = results.iter().map(|r| r.agent_id).collect::<std::collections::HashSet<_>>().into_iter().collect();
+    let agent_ids: Vec<i32> = results
+        .iter()
+        .map(|r| r.agent_id)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
     let agents = Vps::find()
         .filter(vps::Column::Id.is_in(agent_ids))
         .all(db)
@@ -556,7 +597,10 @@ pub async fn get_monitor_results_by_id(
     let result_details = results
         .into_iter()
         .map(|result| {
-            let agent_name = agent_name_map.get(&result.agent_id).cloned().unwrap_or_else(|| "Unknown Agent".to_string());
+            let agent_name = agent_name_map
+                .get(&result.agent_id)
+                .cloned()
+                .unwrap_or_else(|| "Unknown Agent".to_string());
             ServiceMonitorResultDetails {
                 time: result.time.to_rfc3339(),
                 monitor_id: result.monitor_id,
@@ -588,7 +632,8 @@ pub async fn get_monitor_results_by_vps_id(
     }
 
     // Filter monitors by user_id to ensure authorization
-    let monitor_ids: Vec<i32> = monitors.into_iter()
+    let monitor_ids: Vec<i32> = monitors
+        .into_iter()
         .filter(|m| m.user_id == user_id)
         .map(|m| m.id)
         .collect();
@@ -599,7 +644,9 @@ pub async fn get_monitor_results_by_vps_id(
 
     // 2. Fetch results for these monitors
     // Create a map of monitor_id to monitor_name for easy lookup
-    let monitor_name_map: HashMap<i32, String> = get_monitors_for_vps(db, vps_id).await?.into_iter()
+    let monitor_name_map: HashMap<i32, String> = get_monitors_for_vps(db, vps_id)
+        .await?
+        .into_iter()
         .map(|m| (m.id, m.name))
         .collect();
 
@@ -615,7 +662,7 @@ pub async fn get_monitor_results_by_vps_id(
     }
 
     if let Some(limit_val) = limit_per_monitor {
-         query = query.limit(limit_val);
+        query = query.limit(limit_val);
     }
 
     let results = query
@@ -628,7 +675,12 @@ pub async fn get_monitor_results_by_vps_id(
     }
 
     // 3. Get agent names (which are VPS names)
-    let agent_ids: Vec<i32> = results.iter().map(|r| r.agent_id).collect::<std::collections::HashSet<_>>().into_iter().collect();
+    let agent_ids: Vec<i32> = results
+        .iter()
+        .map(|r| r.agent_id)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
     let agents = Vps::find()
         .filter(vps::Column::Id.is_in(agent_ids))
         .all(db)
@@ -639,8 +691,14 @@ pub async fn get_monitor_results_by_vps_id(
     let result_details = results
         .into_iter()
         .map(|result| {
-            let agent_name = agent_name_map.get(&result.agent_id).cloned().unwrap_or_else(|| "Unknown Agent".to_string());
-            let monitor_name = monitor_name_map.get(&result.monitor_id).cloned().unwrap_or_else(|| "Unknown Monitor".to_string());
+            let agent_name = agent_name_map
+                .get(&result.agent_id)
+                .cloned()
+                .unwrap_or_else(|| "Unknown Agent".to_string());
+            let monitor_name = monitor_name_map
+                .get(&result.monitor_id)
+                .cloned()
+                .unwrap_or_else(|| "Unknown Monitor".to_string());
             ServiceMonitorResultDetails {
                 time: result.time.to_rfc3339(),
                 monitor_id: result.monitor_id,

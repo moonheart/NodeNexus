@@ -1,15 +1,15 @@
 //! Agent-side module for managing and executing service monitoring tasks.
+use rand::random;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use rand::random;
-use tracing::{info, error};
+use tracing::{error, info};
 
 use crate::agent_service::{
-    message_to_server::Payload as ServerPayload, AgentConfig, MessageToServer,
-    ServiceMonitorResult, ServiceMonitorTask,
+    AgentConfig, MessageToServer, ServiceMonitorResult, ServiceMonitorTask,
+    message_to_server::Payload as ServerPayload,
 };
 
 /// Manages the lifecycle of all service monitoring tasks on the agent.
@@ -52,9 +52,13 @@ impl ServiceMonitorManager {
 
             let desired_tasks_map: HashMap<i32, ServiceMonitorTask> = {
                 let config_guard = shared_agent_config.read().unwrap();
-                config_guard.service_monitor_tasks.iter().map(|t| (t.monitor_id, t.clone())).collect()
+                config_guard
+                    .service_monitor_tasks
+                    .iter()
+                    .map(|t| (t.monitor_id, t.clone()))
+                    .collect()
             };
-            
+
             let running_ids: HashSet<i32> = self.running_tasks.keys().cloned().collect();
             let desired_ids: HashSet<i32> = desired_tasks_map.keys().cloned().collect();
 
@@ -68,16 +72,18 @@ impl ServiceMonitorManager {
 
             // 2. Check for new tasks and updates to existing tasks
             for (monitor_id, desired_task) in desired_tasks_map {
-                if let Some((existing_handle, existing_task)) = self.running_tasks.get_mut(&monitor_id) {
+                if let Some((existing_handle, existing_task)) =
+                    self.running_tasks.get_mut(&monitor_id)
+                {
                     // Task exists, check if it needs an update.
                     // The ServiceMonitorTask struct from protobuf doesn't derive PartialEq,
                     // so we compare relevant fields manually.
-                    if existing_task.monitor_type != desired_task.monitor_type ||
-                       existing_task.target != desired_task.target ||
-                       existing_task.frequency_seconds != desired_task.frequency_seconds ||
-                       existing_task.timeout_seconds != desired_task.timeout_seconds ||
-                       existing_task.monitor_config_json != desired_task.monitor_config_json {
-                        
+                    if existing_task.monitor_type != desired_task.monitor_type
+                        || existing_task.target != desired_task.target
+                        || existing_task.frequency_seconds != desired_task.frequency_seconds
+                        || existing_task.timeout_seconds != desired_task.timeout_seconds
+                        || existing_task.monitor_config_json != desired_task.monitor_config_json
+                    {
                         info!(monitor_id = monitor_id, "Updating task for monitor.");
                         existing_handle.abort(); // Stop the old task
 
@@ -90,7 +96,8 @@ impl ServiceMonitorManager {
                             id_provider.clone(),
                         );
                         // Replace the old entry
-                        self.running_tasks.insert(monitor_id, (new_handle, desired_task));
+                        self.running_tasks
+                            .insert(monitor_id, (new_handle, desired_task));
                     }
                 } else {
                     // Task is new, start it.
@@ -102,7 +109,8 @@ impl ServiceMonitorManager {
                         agent_secret.clone(),
                         id_provider.clone(),
                     );
-                    self.running_tasks.insert(monitor_id, (new_handle, desired_task));
+                    self.running_tasks
+                        .insert(monitor_id, (new_handle, desired_task));
                 }
             }
         }
@@ -126,13 +134,34 @@ where
         let id_provider_clone = id_provider.clone();
         match task.monitor_type.as_str() {
             "http" | "https" => {
-                run_http_check(task, tx_to_server, vps_db_id, agent_secret, id_provider_clone).await
+                run_http_check(
+                    task,
+                    tx_to_server,
+                    vps_db_id,
+                    agent_secret,
+                    id_provider_clone,
+                )
+                .await
             }
             "ping" => {
-                run_ping_check(task, tx_to_server, vps_db_id, agent_secret, id_provider_clone).await
+                run_ping_check(
+                    task,
+                    tx_to_server,
+                    vps_db_id,
+                    agent_secret,
+                    id_provider_clone,
+                )
+                .await
             }
             "tcp" => {
-                run_tcp_check(task, tx_to_server, vps_db_id, agent_secret, id_provider_clone).await
+                run_tcp_check(
+                    task,
+                    tx_to_server,
+                    vps_db_id,
+                    agent_secret,
+                    id_provider_clone,
+                )
+                .await
             }
             _ => {
                 error!("Unknown monitor type. Task will not run.");
@@ -218,7 +247,8 @@ async fn run_ping_check<F: Fn() -> u64 + Send + Sync + 'static>(
         use std::net::ToSocketAddrs;
         let host_with_port = format!("{target_clone}:0");
         host_with_port.to_socket_addrs()
-    }).await;
+    })
+    .await;
 
     let target_addr = match resolved_addr_result {
         Ok(Ok(mut addrs)) => {
@@ -228,7 +258,7 @@ async fn run_ping_check<F: Fn() -> u64 + Send + Sync + 'static>(
                 error!("DNS resolution returned no addresses. Terminating task.");
                 return;
             }
-        },
+        }
         _ => {
             error!("Failed to resolve target host. Terminating task.");
             return;
@@ -238,15 +268,18 @@ async fn run_ping_check<F: Fn() -> u64 + Send + Sync + 'static>(
     let client = surge_ping::Client::new(&surge_ping::Config::default()).unwrap();
 
     loop {
-        let mut pinger = client.pinger(target_addr, surge_ping::PingIdentifier(random())).await;
+        let mut pinger = client
+            .pinger(target_addr, surge_ping::PingIdentifier(random()))
+            .await;
         let start_time = Instant::now();
-        let (successful, details, latency) = match pinger.ping(surge_ping::PingSequence(0), &[]).await {
-            Ok((_reply, duration)) => {
-                let rtt = duration.as_millis() as i32;
-                (true, format!("{rtt} ms"), Some(rtt))
-            }
-            Err(e) => (false, format!("Error: {e}"), None),
-        };
+        let (successful, details, latency) =
+            match pinger.ping(surge_ping::PingSequence(0), &[]).await {
+                Ok((_reply, duration)) => {
+                    let rtt = duration.as_millis() as i32;
+                    (true, format!("{rtt} ms"), Some(rtt))
+                }
+                Err(e) => (false, format!("Error: {e}"), None),
+            };
 
         let monitor_result = ServiceMonitorResult {
             monitor_id: task.monitor_id,
@@ -284,13 +317,19 @@ async fn run_tcp_check<F: Fn() -> u64 + Send + Sync + 'static>(
 
     loop {
         let start_time = Instant::now();
-        let result =
-            tokio::time::timeout(timeout_duration, tokio::net::TcpStream::connect(&task.target))
-                .await;
+        let result = tokio::time::timeout(
+            timeout_duration,
+            tokio::net::TcpStream::connect(&task.target),
+        )
+        .await;
         let response_time_ms = start_time.elapsed().as_millis() as i32;
 
         let (successful, details, latency) = match result {
-            Ok(Ok(_stream)) => (true, "Connection successful".to_string(), Some(response_time_ms)),
+            Ok(Ok(_stream)) => (
+                true,
+                "Connection successful".to_string(),
+                Some(response_time_ms),
+            ),
             Ok(Err(e)) => (false, format!("Error: {e}"), None),
             Err(_) => (false, "Error: Connection timed out".to_string(), None),
         };

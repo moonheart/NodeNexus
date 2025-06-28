@@ -1,31 +1,31 @@
 // 主入口文件
+use backend::agent_service::agent_communication_service_server::AgentCommunicationServiceServer;
+use backend::alerting::evaluation_service::EvaluationService; // Added EvaluationService
+use backend::db::services as db_services;
+use backend::db::services::{AlertService, BatchCommandManager}; // Added BatchCommandManager
+use backend::notifications::{encryption::EncryptionService, service::NotificationService};
 use backend::server::agent_state::{ConnectedAgents, LiveServerDataCache}; // Added LiveServerDataCache
 use backend::server::config::ServerConfig;
+use backend::server::result_broadcaster::{BatchCommandUpdateMsg, ResultBroadcaster}; // Added ResultBroadcaster
 use backend::server::service::MyAgentCommService;
-use backend::web::models::websocket_models::{ServerWithDetails, WsMessage};
-use backend::db::services as db_services;
 use backend::server::update_service; // Added for cache population
-use backend::notifications::{encryption::EncryptionService, service::NotificationService};
-use backend::db::services::{AlertService, BatchCommandManager}; // Added BatchCommandManager
-use backend::alerting::evaluation_service::EvaluationService; // Added EvaluationService
-use backend::server::result_broadcaster::{ResultBroadcaster, BatchCommandUpdateMsg}; // Added ResultBroadcaster
-use backend::agent_service::agent_communication_service_server::AgentCommunicationServiceServer;
 use backend::version::VERSION;
+use backend::web::models::websocket_models::{ServerWithDetails, WsMessage};
 
-use sea_orm::{Database, DatabaseConnection, ConnectOptions};
-use std::net::SocketAddr;
-use dotenv::dotenv;
-use std::env;
-use std::sync::Arc;
-use std::collections::HashMap; // For initializing LiveServerDataCache
-use tokio::sync::{broadcast, Mutex}; // Added Mutex for LiveServerDataCache and broadcast
-use tokio::time::{interval, Duration}; // For the periodic push task
 use chrono::Utc;
-use tokio::sync::mpsc;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, fmt};
-use tracing_appender::rolling;
-use tracing::{info, error, warn, debug};
 use clap::Parser;
+use dotenv::dotenv;
+use sea_orm::{ConnectOptions, Database, DatabaseConnection};
+use std::collections::HashMap; // For initializing LiveServerDataCache
+use std::env;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio::sync::{Mutex, broadcast}; // Added Mutex for LiveServerDataCache and broadcast
+use tokio::time::{Duration, interval}; // For the periodic push task
+use tracing::{debug, error, info, warn};
+use tracing_appender::rolling;
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use tower::Service;
 
@@ -37,7 +37,6 @@ struct Args {
     config: Option<String>,
 }
 
-
 fn init_logging() {
     // Log to a file: JSON format, daily rotation
     let file_appender = rolling::daily("logs", "server.log");
@@ -47,8 +46,7 @@ fn init_logging() {
         .json(); // Log as JSON
 
     // Log to stdout: human-readable format
-    let stdout_layer = fmt::layer()
-        .with_writer(std::io::stdout);
+    let stdout_layer = fmt::layer().with_writer(std::io::stdout);
 
     // Combine layers and filter based on RUST_LOG
     // Default to `info,sea_orm=warn` level if RUST_LOG is not set.
@@ -60,13 +58,14 @@ fn init_logging() {
         .with(file_layer)
         .with(stdout_layer)
         .init();
-    
+
     // This allows libraries using the `log` crate to work with `tracing`
     // tracing_log::LogTracer::init().expect("Failed to set logger");
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Added Send + Sync for tokio::spawn
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Added Send + Sync for tokio::spawn
     // Manually check for --version before full parsing to keep the original simple output.
     if std::env::args().any(|arg| arg == "--version") {
         println!("Server version: {VERSION}");
@@ -92,10 +91,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         }
     };
 
-
     // --- Database Pool Setup ---
-    let database_url = env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set in .env file");
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set in .env file");
     let mut opt = ConnectOptions::new(database_url.to_owned());
     opt.max_connections(10)
        // .sqlx_logging(true) // 您可以根据需要启用日志记录
@@ -105,7 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     let db_pool: DatabaseConnection = Database::connect(opt)
         .await
         .expect("Failed to create database connection.");
-    
+
     // --- gRPC Server Setup ---
     let addr: SocketAddr = "0.0.0.0:8080".parse()?;
     let connected_agents = ConnectedAgents::new();
@@ -120,7 +117,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     let initial_cache_data_result = db_services::get_all_vps_with_details_for_cache(&db_pool).await;
     let initial_cache_map: HashMap<i32, ServerWithDetails> = match initial_cache_data_result {
         Ok(servers) => {
-            info!(server_count = servers.len(), "Successfully fetched servers for initial cache.");
+            info!(
+                server_count = servers.len(),
+                "Successfully fetched servers for initial cache."
+            );
             servers.into_iter().map(|s| (s.basic_info.id, s)).collect()
         }
         Err(e) => {
@@ -135,11 +135,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         .expect("NOTIFICATION_ENCRYPTION_KEY must be set as a 32-byte hex-encoded string.");
     // The hex crate will be added in the next step.
     let key_bytes = hex::decode(encryption_key).expect("Failed to decode encryption key.");
-    let encryption_service = Arc::new(EncryptionService::new(&key_bytes).expect("Failed to create encryption service."));
-    let notification_service = Arc::new(NotificationService::new(db_pool.clone(), encryption_service.clone()));
+    let encryption_service =
+        Arc::new(EncryptionService::new(&key_bytes).expect("Failed to create encryption service."));
+    let notification_service = Arc::new(NotificationService::new(
+        db_pool.clone(),
+        encryption_service.clone(),
+    ));
     let alert_service = Arc::new(AlertService::new(Arc::new(db_pool.clone()))); // Initialize AlertService
     let result_broadcaster = Arc::new(ResultBroadcaster::new(batch_command_updates_tx.clone())); // Create ResultBroadcaster
-    let batch_command_manager = Arc::new(BatchCommandManager::new(Arc::new(db_pool.clone()), result_broadcaster.clone())); // Create BatchCommandManager
+    let batch_command_manager = Arc::new(BatchCommandManager::new(
+        Arc::new(db_pool.clone()),
+        result_broadcaster.clone(),
+    )); // Create BatchCommandManager
 
     // --- gRPC Server Setup (continued) ---
     let agent_comm_service = MyAgentCommService::new(
@@ -152,7 +159,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     );
 
     let grpc_service = AgentCommunicationServiceServer::new(agent_comm_service);
-    
+
     // --- Agent Heartbeat Check Task ---
     let connected_agents_for_check = connected_agents.clone();
     let pool_for_check = Arc::new(db_pool.clone());
@@ -171,7 +178,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
             agents_guard.agents.retain(|_agent_id, state| {
                 let is_alive = (Utc::now().timestamp_millis() - state.last_heartbeat_ms) < 90_000; // 90-second threshold
                 if !is_alive {
-                    warn!(vps_id = state.vps_db_id, "Agent is considered disconnected due to heartbeat timeout.");
+                    warn!(
+                        vps_id = state.vps_db_id,
+                        "Agent is considered disconnected due to heartbeat timeout."
+                    );
                     disconnected_vps_ids.push(state.vps_db_id);
                 }
                 is_alive
@@ -180,10 +190,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
             drop(agents_guard); // Release the lock before async operations
 
             if !disconnected_vps_ids.is_empty() {
-                warn!(count = disconnected_vps_ids.len(), "Found disconnected agents. Updating status to 'offline'.");
+                warn!(
+                    count = disconnected_vps_ids.len(),
+                    "Found disconnected agents. Updating status to 'offline'."
+                );
                 let mut needs_broadcast = false;
                 for vps_id in disconnected_vps_ids {
-                    match db_services::update_vps_status(&pool_for_check, vps_id, "offline").await { // Dereference Arc
+                    match db_services::update_vps_status(&pool_for_check, vps_id, "offline").await {
+                        // Dereference Arc
                         Ok(rows_affected) if rows_affected > 0 => {
                             needs_broadcast = true;
                         }
@@ -226,7 +240,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     let private_broadcaster_for_debounce = ws_data_broadcaster_tx.clone();
     let public_broadcaster_for_debounce = public_ws_data_broadcaster_tx.clone();
     let debouncer_task = tokio::spawn(async move {
-        use tokio::time::{sleep, Duration};
+        use tokio::time::{Duration, sleep};
         const DEBOUNCE_DURATION: Duration = Duration::from_millis(2000);
 
         loop {
@@ -288,13 +302,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
                     info!(count = vps_ids.len(), vps_ids = ?vps_ids, "Found VPS(s) due for traffic reset.");
                     let mut reset_performed_for_any_vps = false;
                     for vps_id in vps_ids {
-                        match db_services::process_vps_traffic_reset(&pool_for_traffic_reset, vps_id).await {
+                        match db_services::process_vps_traffic_reset(
+                            &pool_for_traffic_reset,
+                            vps_id,
+                        )
+                        .await
+                        {
                             Ok(reset_performed) => {
                                 if reset_performed {
                                     info!(vps_id = vps_id, "Traffic reset successfully processed.");
                                     reset_performed_for_any_vps = true;
                                 } else {
-                                    debug!(vps_id = vps_id, "Traffic reset not performed (either not due or already handled).");
+                                    debug!(
+                                        vps_id = vps_id,
+                                        "Traffic reset not performed (either not due or already handled)."
+                                    );
                                 }
                             }
                             Err(e) => {
@@ -303,7 +325,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
                         }
                     }
                     if reset_performed_for_any_vps {
-                        info!("Traffic reset performed for one or more VPS. Triggering state update broadcast.");
+                        info!(
+                            "Traffic reset performed for one or more VPS. Triggering state update broadcast."
+                        );
                         if trigger_for_traffic_reset.send(()).await.is_err() {
                             error!("Failed to send update trigger from traffic reset task.");
                         }
@@ -333,10 +357,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
         loop {
             interval.tick().await;
             info!("Performing scheduled renewal reminder check...");
-            match db_services::check_and_generate_reminders(&pool_for_renewal_reminder, REMINDER_THRESHOLD_DAYS).await {
+            match db_services::check_and_generate_reminders(
+                &pool_for_renewal_reminder,
+                REMINDER_THRESHOLD_DAYS,
+            )
+            .await
+            {
                 Ok(reminders_generated) => {
                     if reminders_generated > 0 {
-                        info!(count = reminders_generated, "Renewal reminders were generated/updated. Triggering state update.");
+                        info!(
+                            count = reminders_generated,
+                            "Renewal reminders were generated/updated. Triggering state update."
+                        );
                         if trigger_for_renewal_reminder.send(()).await.is_err() {
                             error!("Failed to send update trigger from renewal reminder task.");
                         }
@@ -350,7 +382,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
             }
         }
     });
- 
+
     // --- Automatic Renewal Processing Task ---
     let pool_for_auto_renewal = db_pool.clone();
     let trigger_for_auto_renewal = update_trigger_tx.clone();
@@ -369,7 +401,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
             match db_services::process_all_automatic_renewals(&pool_for_auto_renewal).await {
                 Ok(renewed_count) => {
                     if renewed_count > 0 {
-                        info!(count = renewed_count, "VPS were automatically renewed. Triggering state update.");
+                        info!(
+                            count = renewed_count,
+                            "VPS were automatically renewed. Triggering state update."
+                        );
                         if trigger_for_auto_renewal.send(()).await.is_err() {
                             error!("Failed to send update trigger from automatic renewal task.");
                         }
@@ -383,7 +418,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
             }
         }
     });
-
 
     // --- Run all servers and tasks concurrently ---
     let socket = if addr.is_ipv4() {
@@ -399,28 +433,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
 
     let static_file_service = backend::web::create_static_file_service();
 
-    let app = http_router.fallback_service(
-        tower::service_fn(move |req: axum::http::Request<axum::body::Body>| {
+    let app = http_router.fallback_service(tower::service_fn(
+        move |req: axum::http::Request<axum::body::Body>| {
             let mut grpc_service = grpc_service.clone();
             let mut static_file_service = static_file_service.clone();
 
             info!("Received request: {} {}", req.method(), req.uri());
 
             async move {
-                if req.headers().get("content-type").map(|v| v.as_bytes().starts_with(b"application/grpc")).unwrap_or(false) {
-                    grpc_service.call(req).await
+                if req
+                    .headers()
+                    .get("content-type")
+                    .map(|v| v.as_bytes().starts_with(b"application/grpc"))
+                    .unwrap_or(false)
+                {
+                    grpc_service
+                        .call(req)
+                        .await
                         .map(|res| res.map(axum::body::Body::new))
                         .map_err(|err| match err {})
                 } else {
-                    static_file_service.call(req).await
+                    static_file_service
+                        .call(req)
+                        .await
                         .map(|res| res.map(axum::body::Body::new))
                         .map_err(|err| match err {})
                 }
             }
-        })
-    );
+        },
+    ));
 
-    axum::serve(listener, app.into_make_service()).await.map_err(Box::new)?;
+    axum::serve(listener, app.into_make_service())
+        .await
+        .map_err(Box::new)?;
 
     // The debouncer_task will be aborted when main exits. For a graceful shutdown,
     // a cancellation token would be needed, but this is sufficient for now.

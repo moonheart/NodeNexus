@@ -1,23 +1,25 @@
-use sea_orm::{DatabaseConnection, Set, ActiveModelTrait, TransactionTrait, DbErr, ColumnTrait}; // Ensure ColumnTrait is here
-use std::sync::Arc;
 use crate::server::result_broadcaster::ResultBroadcaster; // Added import
+use chrono::Utc;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, Set, TransactionTrait}; // Ensure ColumnTrait is here
 use std::fmt; // Added for Display trait
 use std::path::PathBuf; // For constructing paths
+use std::sync::Arc;
 use tokio::fs; // For async file operations (creating directory)
-use uuid::Uuid;
-use chrono::Utc;
 use tracing::error;
+use uuid::Uuid;
 
+use crate::agent_service::OutputType as GrpcOutputType;
 use crate::db::entities::{
     batch_command_task,
-    child_command_task,
     batch_command_task::Entity as BatchTaskEntity, // Alias for clarity
+    child_command_task,
     child_command_task::Entity as ChildTaskEntity, // Alias for clarity
 };
 use crate::db::enums::{BatchCommandStatus, ChildCommandStatus}; // Added import
-use crate::web::models::batch_command_models::{CreateBatchCommandRequest, BatchCommandTaskDetailResponse, ChildCommandTaskDetail}; // API DTOs
-use sea_orm::{EntityTrait, QueryFilter, ModelTrait}; // Removed ColumnTrait from here
-use crate::agent_service::OutputType as GrpcOutputType; // For record_child_task_output
+use crate::web::models::batch_command_models::{
+    BatchCommandTaskDetailResponse, ChildCommandTaskDetail, CreateBatchCommandRequest,
+}; // API DTOs
+use sea_orm::{EntityTrait, ModelTrait, QueryFilter}; // Removed ColumnTrait from here // For record_child_task_output
 
 // Wrapper for GrpcOutputType to implement Display
 struct DisplayableGrpcOutputType(GrpcOutputType);
@@ -60,14 +62,18 @@ pub struct BatchCommandManager {
 
 impl BatchCommandManager {
     pub fn new(db: Arc<DatabaseConnection>, result_broadcaster: Arc<ResultBroadcaster>) -> Self {
-        Self { db, result_broadcaster }
+        Self {
+            db,
+            result_broadcaster,
+        }
     }
 
     pub async fn create_batch_command(
         &self,
         user_id: i32, // Change to i32
         request: CreateBatchCommandRequest,
-    ) -> Result<(batch_command_task::Model, Vec<child_command_task::Model>), BatchCommandServiceError> {
+    ) -> Result<(batch_command_task::Model, Vec<child_command_task::Model>), BatchCommandServiceError>
+    {
         // Validate request
         if request.command_content.is_none() && request.script_id.is_none() {
             return Err(BatchCommandServiceError::ValidationError(
@@ -92,8 +98,11 @@ impl BatchCommandManager {
 
         let batch_task = batch_command_task::ActiveModel {
             batch_command_id: Set(batch_command_id),
-            original_request_payload: Set(serde_json::to_value(&request)
-                .map_err(|e| BatchCommandServiceError::CreationFailed(format!("Failed to serialize request: {e}")))?),
+            original_request_payload: Set(serde_json::to_value(&request).map_err(|e| {
+                BatchCommandServiceError::CreationFailed(format!(
+                    "Failed to serialize request: {e}"
+                ))
+            })?),
             status: Set(BatchCommandStatus::Pending), // Initial status
             execution_alias: Set(request.execution_alias.clone()),
             user_id: Set(user_id),
@@ -139,10 +148,10 @@ impl BatchCommandManager {
             .filter(child_command_task::Column::BatchCommandId.eq(batch_command_id))
             .all(self.db.as_ref()) // Use self.db directly as it's Arc<DatabaseConnection>
             .await?;
- 
+
         Ok((saved_batch_task, created_child_tasks))
     }
- 
+
     pub async fn get_batch_command_detail_dto(
         &self,
         batch_command_id: Uuid,
@@ -213,7 +222,10 @@ impl BatchCommandManager {
                     return Err(BatchCommandServiceError::Unauthorized);
                 }
                 // Check if already completed or terminated
-                if task.status == BatchCommandStatus::CompletedSuccessfully || task.status == BatchCommandStatus::CompletedWithErrors || task.status == BatchCommandStatus::Terminated {
+                if task.status == BatchCommandStatus::CompletedSuccessfully
+                    || task.status == BatchCommandStatus::CompletedWithErrors
+                    || task.status == BatchCommandStatus::Terminated
+                {
                     // Optionally return Ok if already in a final state, or an error/specific status
                     // If already terminated, we might still want to return the child tasks if the caller expects them.
                     // For now, if parent is already terminated, return empty list, assuming no further action needed.
@@ -254,8 +266,14 @@ impl BatchCommandManager {
 
             // Step 2: Update their status to Terminating.
             ChildTaskEntity::update_many()
-                .col_expr(child_command_task::Column::Status, sea_orm::sea_query::Expr::value(ChildCommandStatus::Terminating))
-                .col_expr(child_command_task::Column::UpdatedAt, sea_orm::sea_query::Expr::value(Utc::now()))
+                .col_expr(
+                    child_command_task::Column::Status,
+                    sea_orm::sea_query::Expr::value(ChildCommandStatus::Terminating),
+                )
+                .col_expr(
+                    child_command_task::Column::UpdatedAt,
+                    sea_orm::sea_query::Expr::value(Utc::now()),
+                )
                 .filter(child_command_task::Column::ChildCommandId.is_in(child_task_ids_to_update))
                 .exec(&txn)
                 .await?;
@@ -279,7 +297,8 @@ impl BatchCommandManager {
             .await?
             .ok_or_else(|| BatchCommandServiceError::NotFound(child_command_id))?;
 
-        let parent_batch_task = child_task.find_related(BatchTaskEntity)
+        let parent_batch_task = child_task
+            .find_related(BatchTaskEntity)
             .one(&txn)
             .await?
             .ok_or_else(|| BatchCommandServiceError::NotFound(child_task.batch_command_id))?;
@@ -288,10 +307,12 @@ impl BatchCommandManager {
             return Err(BatchCommandServiceError::Unauthorized);
         }
 
-        let active_child_statuses = [ChildCommandStatus::Pending,
+        let active_child_statuses = [
+            ChildCommandStatus::Pending,
             ChildCommandStatus::SentToAgent,
             ChildCommandStatus::AgentAccepted,
-            ChildCommandStatus::Executing];
+            ChildCommandStatus::Executing,
+        ];
 
         if !active_child_statuses.contains(&child_task.status) {
             return Err(BatchCommandServiceError::TaskNotTerminable);
@@ -348,19 +369,21 @@ impl BatchCommandManager {
         }
 
         let updated_task = active_child_task.update(self.db.as_ref()).await?;
-        
-        // Broadcast child task update
-        self.result_broadcaster.broadcast_child_task_update(
-            updated_task.batch_command_id,
-            updated_task.child_command_id,
-            updated_task.vps_id, // Assuming vps_id is String or can be cloned
-            updated_task.status.to_string(),
-            updated_task.exit_code,
-        ).await;
 
+        // Broadcast child task update
+        self.result_broadcaster
+            .broadcast_child_task_update(
+                updated_task.batch_command_id,
+                updated_task.child_command_id,
+                updated_task.vps_id, // Assuming vps_id is String or can be cloned
+                updated_task.status.to_string(),
+                updated_task.exit_code,
+            )
+            .await;
 
         // Check if the parent batch task needs its status updated
-        self.check_and_update_batch_task_status(updated_task.batch_command_id).await?;
+        self.check_and_update_batch_task_status(updated_task.batch_command_id)
+            .await?;
 
         Ok(updated_task)
     }
@@ -369,7 +392,7 @@ impl BatchCommandManager {
         &self,
         child_task_id: Uuid,
         stream_type: GrpcOutputType,
-        chunk: Vec<u8>, // We'll use this later for writing
+        chunk: Vec<u8>,          // We'll use this later for writing
         _timestamp: Option<i64>, // Underscore for now
     ) -> Result<(), BatchCommandServiceError> {
         let child_task = ChildTaskEntity::find_by_id(child_task_id)
@@ -438,12 +461,10 @@ impl BatchCommandManager {
             }
         }
 
-
         // Always update timestamps if we received output
         active_child_task.last_output_at = Set(Some(Utc::now()));
         active_child_task.updated_at = Set(Utc::now());
         needs_db_update = true; // Timestamps updated, so DB update is needed.
-
 
         if needs_db_update {
             active_child_task.update(self.db.as_ref()).await?;
@@ -452,14 +473,16 @@ impl BatchCommandManager {
         // Broadcast new log output
         // Convert chunk to String - assuming UTF-8. Handle potential errors if not valid UTF-8.
         let log_line = String::from_utf8_lossy(&chunk).to_string();
-        self.result_broadcaster.broadcast_new_log_output(
-            child_task.batch_command_id,
-            child_task.child_command_id,
-            child_task.vps_id, // Assuming vps_id is String or can be cloned
-            log_line,
-            DisplayableGrpcOutputType(stream_type).to_string(), // Use the wrapper
-            Utc::now().to_rfc3339(), // Current timestamp as string
-        ).await;
+        self.result_broadcaster
+            .broadcast_new_log_output(
+                child_task.batch_command_id,
+                child_task.child_command_id,
+                child_task.vps_id, // Assuming vps_id is String or can be cloned
+                log_line,
+                DisplayableGrpcOutputType(stream_type).to_string(), // Use the wrapper
+                Utc::now().to_rfc3339(),                            // Current timestamp as string
+            )
+            .await;
 
         Ok(())
     }
@@ -496,11 +519,11 @@ impl BatchCommandManager {
                     any_failed = true; // Treat as failure for parent task aggregation
                 }
                 // If any child is still in a non-final state, the parent is not yet fully completed.
-                ChildCommandStatus::Pending |
-                ChildCommandStatus::SentToAgent |
-                ChildCommandStatus::AgentAccepted |
-                ChildCommandStatus::Executing |
-                ChildCommandStatus::Terminating => {
+                ChildCommandStatus::Pending
+                | ChildCommandStatus::SentToAgent
+                | ChildCommandStatus::AgentAccepted
+                | ChildCommandStatus::Executing
+                | ChildCommandStatus::Terminating => {
                     all_completed = false;
                     break; // No need to check further if one is still running
                 }
@@ -514,33 +537,39 @@ impl BatchCommandManager {
                 .ok_or_else(|| BatchCommandServiceError::NotFound(batch_command_id))?; // Should exist
 
             // Avoid re-updating if already in a final state, unless it's a more specific final state
-            if parent_task.status == BatchCommandStatus::CompletedSuccessfully ||
-               parent_task.status == BatchCommandStatus::CompletedWithErrors ||
-               parent_task.status == BatchCommandStatus::Terminated {
+            if parent_task.status == BatchCommandStatus::CompletedSuccessfully
+                || parent_task.status == BatchCommandStatus::CompletedWithErrors
+                || parent_task.status == BatchCommandStatus::Terminated
+            {
                 return Ok(());
             }
 
             let mut active_parent_task: batch_command_task::ActiveModel = parent_task.into();
-            
-            let new_status = if any_terminated && !any_failed { // If termination was requested and no other failures
+
+            let new_status = if any_terminated && !any_failed {
+                // If termination was requested and no other failures
                 BatchCommandStatus::Terminated
             } else if any_failed {
                 BatchCommandStatus::CompletedWithErrors
             } else {
                 BatchCommandStatus::CompletedSuccessfully
             };
-            
+
             active_parent_task.status = Set(new_status);
             active_parent_task.completed_at = Set(Some(Utc::now()));
             active_parent_task.updated_at = Set(Utc::now());
             let updated_parent_task_model = active_parent_task.update(self.db.as_ref()).await?;
 
             // Broadcast batch task update
-            self.result_broadcaster.broadcast_batch_task_update(
-                batch_command_id,
-                updated_parent_task_model.status.to_string(), // Use status from the updated model
-                updated_parent_task_model.completed_at.map(|dt| dt.to_rfc3339()), // Use completed_at from updated model
-            ).await;
+            self.result_broadcaster
+                .broadcast_batch_task_update(
+                    batch_command_id,
+                    updated_parent_task_model.status.to_string(), // Use status from the updated model
+                    updated_parent_task_model
+                        .completed_at
+                        .map(|dt| dt.to_rfc3339()), // Use completed_at from updated model
+                )
+                .await;
         }
         // If not all completed, the parent task remains in its current state (e.g., Executing, Terminating)
         // until all children reach a final state.

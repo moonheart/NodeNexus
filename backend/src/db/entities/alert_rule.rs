@@ -39,7 +39,7 @@ pub enum Relation {
     )]
     Vps,
     #[sea_orm(has_many = "super::alert_event::Entity")]
-    AlertEvent
+    AlertEvent,
 }
 
 impl Related<super::user::Entity> for Entity {

@@ -1,19 +1,19 @@
-use axum::{
-    extract::{State, Extension, Path},
-    http::StatusCode,
-    routing::{get, put},
-    Json, Router,
-};
-use serde::Deserialize;
-use std::sync::Arc;
-use sea_orm::{DbErr}; // Removed DeleteResult
 use crate::db::{
     entities::tag,
     models::Tag as DtoTag, // Use DtoTag for the DTO
     services,
 };
-use crate::web::{AppState, AppError};
 use crate::web::models::AuthenticatedUser;
+use crate::web::{AppError, AppState};
+use axum::{
+    Json, Router,
+    extract::{Extension, Path, State},
+    http::StatusCode,
+    routing::{get, put},
+};
+use sea_orm::DbErr; // Removed DeleteResult
+use serde::Deserialize;
+use std::sync::Arc;
 
 // --- Request/Response Structs ---
 
@@ -41,7 +41,8 @@ async fn create_tag_handler(
     Extension(authenticated_user): Extension<AuthenticatedUser>,
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<CreateTagRequest>,
-) -> Result<(StatusCode, Json<DtoTag>), AppError> { // Return DtoTag
+) -> Result<(StatusCode, Json<DtoTag>), AppError> {
+    // Return DtoTag
     let user_id = authenticated_user.id;
     let tag_model: tag::Model = services::create_tag(
         &app_state.db_pool,
@@ -58,7 +59,9 @@ async fn create_tag_handler(
             DbErr::Query(sea_orm::RuntimeErr::SqlxError(sqlx_error_value)) => {
                 if let sqlx::Error::Database(database_error) = sqlx_error_value {
                     if database_error.is_unique_violation() {
-                        return AppError::Conflict("A tag with this name already exists.".to_string());
+                        return AppError::Conflict(
+                            "A tag with this name already exists.".to_string(),
+                        );
                     }
                 }
                 // If not a unique violation, or a different kind of SqlxError
@@ -99,7 +102,8 @@ async fn update_tag_handler(
     State(app_state): State<Arc<AppState>>,
     Path(tag_id): Path<i32>,
     Json(payload): Json<UpdateTagRequest>,
-) -> Result<Json<DtoTag>, AppError> { // Changed return type to Json<DtoTag>
+) -> Result<Json<DtoTag>, AppError> {
+    // Changed return type to Json<DtoTag>
     let user_id = authenticated_user.id;
     // Assuming services::update_tag now returns Result<tag::Model, DbErr>
     let updated_tag_model: tag::Model = services::update_tag(
@@ -115,11 +119,15 @@ async fn update_tag_handler(
     .await
     .map_err(|db_err: DbErr| {
         match &db_err {
-            DbErr::RecordNotUpdated => AppError::NotFound("Tag not found, permission denied, or no changes needed.".to_string()),
+            DbErr::RecordNotUpdated => AppError::NotFound(
+                "Tag not found, permission denied, or no changes needed.".to_string(),
+            ),
             DbErr::Query(sea_orm::RuntimeErr::SqlxError(sqlx_error_value)) => {
                 if let sqlx::Error::Database(database_error) = sqlx_error_value {
                     if database_error.is_unique_violation() {
-                        return AppError::Conflict("A tag with this name already exists.".to_string());
+                        return AppError::Conflict(
+                            "A tag with this name already exists.".to_string(),
+                        );
                     }
                 }
                 AppError::DatabaseError(sqlx_error_value.to_string())
@@ -154,10 +162,13 @@ async fn delete_tag_handler(
         .await
         .map_err(|db_err| AppError::DatabaseError(db_err.to_string()))?; // Changed e to db_err
 
-    if delete_result.rows_affected > 0 { // Changed to use delete_result.rows_affected
+    if delete_result.rows_affected > 0 {
+        // Changed to use delete_result.rows_affected
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(AppError::NotFound("Tag not found or permission denied".to_string()))
+        Err(AppError::NotFound(
+            "Tag not found or permission denied".to_string(),
+        ))
     }
 }
 
@@ -166,5 +177,8 @@ async fn delete_tag_handler(
 pub fn create_tags_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", get(get_user_tags_handler).post(create_tag_handler))
-        .route("/{tag_id}", put(update_tag_handler).delete(delete_tag_handler))
+        .route(
+            "/{tag_id}",
+            put(update_tag_handler).delete(delete_tag_handler),
+        )
 }

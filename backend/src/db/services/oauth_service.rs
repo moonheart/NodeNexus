@@ -1,12 +1,12 @@
 // backend/src/db/services/oauth_service.rs
 
-use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, ActiveModelTrait, Set};
 use crate::db::entities::{oauth2_provider, prelude::Oauth2Provider, user, user_identity_provider};
-use crate::web::error::AppError;
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
-use crate::services::auth_service;
 use crate::server::config::ServerConfig;
+use crate::services::auth_service;
+use crate::web::error::AppError;
+use reqwest::Client;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct ProviderUpsertPayload {
@@ -62,7 +62,8 @@ pub async fn exchange_code_for_token(
         ("grant_type", &"authorization_code".to_string()),
     ];
 
-    let response = client.post(&provider.token_url)
+    let response = client
+        .post(&provider.token_url)
         .form(&params)
         .header("Accept", "application/json")
         .send()
@@ -70,11 +71,17 @@ pub async fn exchange_code_for_token(
         .map_err(|e| AppError::InternalServerError(format!("Failed to send token request: {e}")))?;
 
     if !response.status().is_success() {
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-        return Err(AppError::InternalServerError(format!("Failed to get token: {error_text}")));
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(AppError::InternalServerError(format!(
+            "Failed to get token: {error_text}"
+        )));
     }
 
-    response.json::<TokenResponse>()
+    response
+        .json::<TokenResponse>()
         .await
         .map_err(|e| AppError::InternalServerError(format!("Failed to parse token response: {e}")))
 }
@@ -84,15 +91,20 @@ pub async fn get_user_info(
     access_token: &str,
 ) -> Result<serde_json::Value, AppError> {
     let client = Client::new();
-    client.get(&provider.user_info_url)
+    client
+        .get(&provider.user_info_url)
         .bearer_auth(access_token)
         .header("User-Agent", "mjjer-agent") // Some providers require a User-Agent
         .send()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to send user info request: {e}")))?
+        .map_err(|e| {
+            AppError::InternalServerError(format!("Failed to send user info request: {e}"))
+        })?
         .json::<serde_json::Value>()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to parse user info response: {e}")))
+        .map_err(|e| {
+            AppError::InternalServerError(format!("Failed to parse user info response: {e}"))
+        })
 }
 
 // This struct will be used in the route handler
@@ -116,37 +128,68 @@ pub async fn handle_oauth_callback(
     code: &str,
     state: &OAuthState,
 ) -> Result<OAuthCallbackResult, AppError> {
-    let provider_config = get_provider_config(db, provider_name, &config.notification_encryption_key).await?;
-    
-    let redirect_uri = format!("{}/api/auth/{}/callback", &config.frontend_url, provider_name);
+    let provider_config =
+        get_provider_config(db, provider_name, &config.notification_encryption_key).await?;
+
+    let redirect_uri = format!(
+        "{}/api/auth/{}/callback",
+        &config.frontend_url, provider_name
+    );
 
     let token_response = exchange_code_for_token(&provider_config, code, &redirect_uri).await?;
 
     let user_info = get_user_info(&provider_config, &token_response.access_token).await?;
 
-    let mapping = provider_config.user_info_mapping.as_ref()
+    let mapping = provider_config
+        .user_info_mapping
+        .as_ref()
         .and_then(|v| v.as_object())
-        .ok_or_else(|| AppError::InternalServerError("User info mapping is missing or invalid.".to_string()))?;
+        .ok_or_else(|| {
+            AppError::InternalServerError("User info mapping is missing or invalid.".to_string())
+        })?;
 
-    let provider_user_id = user_info.get(mapping.get("id_field").and_then(|v| v.as_str()).unwrap_or("id"))
-        .and_then(|v| v.as_str().map(ToString::to_string).or_else(|| v.as_i64().map(|n| n.to_string())))
-        .ok_or_else(|| AppError::InternalServerError("Could not extract provider user ID.".to_string()))?;
+    let provider_user_id = user_info
+        .get(
+            mapping
+                .get("id_field")
+                .and_then(|v| v.as_str())
+                .unwrap_or("id"),
+        )
+        .and_then(|v| {
+            v.as_str()
+                .map(ToString::to_string)
+                .or_else(|| v.as_i64().map(|n| n.to_string()))
+        })
+        .ok_or_else(|| {
+            AppError::InternalServerError("Could not extract provider user ID.".to_string())
+        })?;
 
-    let username = user_info.get(mapping.get("username_field").and_then(|v| v.as_str()).unwrap_or("login"))
+    let username = user_info
+        .get(
+            mapping
+                .get("username_field")
+                .and_then(|v| v.as_str())
+                .unwrap_or("login"),
+        )
         .and_then(|v| v.as_str().map(ToString::to_string))
         .ok_or_else(|| AppError::InternalServerError("Could not extract username.".to_string()))?;
 
     if state.action == "link" {
-        let user_id = state.user_id.ok_or(AppError::InvalidInput("User ID missing for link action".to_string()))?;
+        let user_id = state.user_id.ok_or(AppError::InvalidInput(
+            "User ID missing for link action".to_string(),
+        ))?;
 
         let existing_link = user_identity_provider::Entity::find()
             .filter(user_identity_provider::Column::ProviderName.eq(provider_name))
             .filter(user_identity_provider::Column::ProviderUserId.eq(&provider_user_id))
-            .one(db).await?;
+            .one(db)
+            .await?;
 
         if let Some(link) = existing_link {
             if link.user_id != user_id {
-                return Err(AppError::Conflict("This external account is already linked to another user.".to_string()));
+                return Err(AppError::Conflict(
+                    "This external account is already linked to another user.".to_string(),
+                ));
             }
         } else {
             let new_identity = user_identity_provider::ActiveModel {
@@ -158,25 +201,32 @@ pub async fn handle_oauth_callback(
             new_identity.insert(db).await?;
         }
         Ok(OAuthCallbackResult::LinkSuccess)
-    } else { // "login" action
+    } else {
+        // "login" action
         let identity = user_identity_provider::Entity::find()
             .filter(user_identity_provider::Column::ProviderName.eq(provider_name))
             .filter(user_identity_provider::Column::ProviderUserId.eq(&provider_user_id))
-            .one(db).await?;
+            .one(db)
+            .await?;
 
         let user_model = if let Some(identity) = identity {
-            user::Entity::find_by_id(identity.user_id).one(db).await?
+            user::Entity::find_by_id(identity.user_id)
+                .one(db)
+                .await?
                 .ok_or(AppError::UserNotFound)?
         } else {
             // Don't create a new user on login. The account must be linked first.
-            return Err(AppError::Unauthorized("该外部帐户未关联。请先使用您的用户名和密码登录以关联您的帐户。".to_string()));
+            return Err(AppError::Unauthorized(
+                "该外部帐户未关联。请先使用您的用户名和密码登录以关联您的帐户。".to_string(),
+            ));
         };
 
         let login_response = auth_service::create_jwt_for_user(&user_model, &config.jwt_secret)?;
-        Ok(OAuthCallbackResult::Login { token: login_response.token })
+        Ok(OAuthCallbackResult::Login {
+            token: login_response.token,
+        })
     }
 }
-
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -275,7 +325,8 @@ pub async fn create_provider(
         ..Default::default()
     };
 
-    new_provider.encrypt_client_secret(encryption_key)
+    new_provider
+        .encrypt_client_secret(encryption_key)
         .map_err(AppError::InternalServerError)?;
 
     let provider_model = new_provider.insert(db).await?;
@@ -307,24 +358,24 @@ pub async fn update_provider(
     // Only update and encrypt the secret if it's provided and not empty
     if !payload.client_secret.is_empty() {
         active_provider.client_secret = Set(payload.client_secret);
-        active_provider.encrypt_client_secret(encryption_key)
+        active_provider
+            .encrypt_client_secret(encryption_key)
             .map_err(AppError::InternalServerError)?;
     }
 
     let updated_provider = active_provider.update(db).await?;
     Ok(updated_provider)
 }
-pub async fn delete_provider(
-    db: &DatabaseConnection,
-    provider_name: &str,
-) -> Result<(), AppError> {
+pub async fn delete_provider(db: &DatabaseConnection, provider_name: &str) -> Result<(), AppError> {
     let delete_result = Oauth2Provider::delete_many()
         .filter(oauth2_provider::Column::ProviderName.eq(provider_name))
         .exec(db)
         .await?;
 
     if delete_result.rows_affected == 0 {
-        Err(AppError::NotFound(format!("OAuth provider '{provider_name}' not found")))
+        Err(AppError::NotFound(format!(
+            "OAuth provider '{provider_name}' not found"
+        )))
     } else {
         Ok(())
     }

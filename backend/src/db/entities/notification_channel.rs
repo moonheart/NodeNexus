@@ -44,7 +44,11 @@ impl Related<super::alert_rule::Entity> for Entity {
 
     fn via() -> Option<RelationDef> {
         // Path: NotificationChannel -> AlertRuleChannel (AlertRuleChannels)
-        Some(super::alert_rule_channel::Relation::NotificationChannel.def().rev())
+        Some(
+            super::alert_rule_channel::Relation::NotificationChannel
+                .def()
+                .rev(),
+        )
     }
 }
 

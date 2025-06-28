@@ -1,17 +1,25 @@
 use chrono::{DateTime, Utc};
 use sea_orm::TransactionError;
 use sea_orm::{
-    prelude::Expr, ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, Set, TransactionTrait, // Removed ModelTrait
+    ActiveModelTrait,
+    ColumnTrait,
+    DatabaseConnection,
+    DbErr,
+    EntityTrait,
+    IntoActiveModel,
+    QueryFilter,
+    QueryOrder,
+    Set,
+    TransactionTrait, // Removed ModelTrait
+    prelude::Expr,
 };
 use serde_json::json;
-use uuid::Uuid;
 use tracing::warn;
+use uuid::Uuid;
 
 use crate::db::entities::{vps, vps_tag};
 use crate::db::services::vps_renewal_service::{
-    create_or_update_vps_renewal_info,
-    VpsRenewalDataInput,
+    VpsRenewalDataInput, create_or_update_vps_renewal_info,
 };
 
 // --- Vps Core Service Functions ---
@@ -21,7 +29,8 @@ pub async fn create_vps(
     db: &DatabaseConnection, // Changed
     user_id: i32,
     name: &str,
-) -> Result<vps::Model, DbErr> { // Changed
+) -> Result<vps::Model, DbErr> {
+    // Changed
     let now = Utc::now();
     let generated_agent_secret = Uuid::new_v4().to_string();
 
@@ -45,8 +54,8 @@ pub async fn create_vps(
         traffic_billing_rule: Set(None),
         traffic_current_cycle_rx_bytes: Set(Some(0)), // Default to 0
         traffic_current_cycle_tx_bytes: Set(Some(0)), // Default to 0
-        last_processed_cumulative_rx: Set(Some(0)), // Default to 0
-        last_processed_cumulative_tx: Set(Some(0)), // Default to 0
+        last_processed_cumulative_rx: Set(Some(0)),   // Default to 0
+        last_processed_cumulative_tx: Set(Some(0)),   // Default to 0
         traffic_last_reset_at: Set(None),
         traffic_reset_config_type: Set(None),
         traffic_reset_config_value: Set(None),
@@ -60,7 +69,8 @@ pub async fn create_vps(
 pub async fn get_vps_by_id(
     db: &DatabaseConnection, // Changed
     vps_id: i32,
-) -> Result<Option<vps::Model>, DbErr> { // Changed
+) -> Result<Option<vps::Model>, DbErr> {
+    // Changed
     vps::Entity::find_by_id(vps_id).one(db).await
 }
 
@@ -68,7 +78,8 @@ pub async fn get_vps_by_id(
 pub async fn get_vps_by_user_id(
     db: &DatabaseConnection, // Changed
     user_id: i32,
-) -> Result<Vec<vps::Model>, DbErr> { // Changed
+) -> Result<Vec<vps::Model>, DbErr> {
+    // Changed
     vps::Entity::find()
         .filter(vps::Column::UserId.eq(user_id))
         .order_by(vps::Column::CreatedAt, sea_orm::Order::Desc)
@@ -81,7 +92,8 @@ pub async fn get_vps_by_user_id(
 pub async fn get_all_vps_for_user(
     db: &DatabaseConnection, // Changed
     user_id: i32,
-) -> Result<Vec<vps::Model>, DbErr> { // Changed
+) -> Result<Vec<vps::Model>, DbErr> {
+    // Changed
     get_vps_by_user_id(db, user_id).await
 }
 
@@ -89,19 +101,20 @@ pub async fn get_all_vps_for_user(
 pub async fn update_vps(
     db: &DatabaseConnection, // Changed
     vps_id: i32,
-    user_id: i32, // To ensure ownership
-    name_opt: Option<String>, // Renamed to avoid conflict with vps::Column::Name
+    user_id: i32,              // To ensure ownership
+    name_opt: Option<String>,  // Renamed to avoid conflict with vps::Column::Name
     group_opt: Option<String>, // Renamed
     tag_ids: Option<Vec<i32>>,
     // Traffic monitoring config fields
-    traffic_limit_bytes_opt: Option<i64>, // Renamed
-    traffic_billing_rule_opt: Option<String>, // Renamed
-    traffic_reset_config_type_opt: Option<String>, // Renamed
-    traffic_reset_config_value_opt: Option<String>, // Renamed
+    traffic_limit_bytes_opt: Option<i64>,             // Renamed
+    traffic_billing_rule_opt: Option<String>,         // Renamed
+    traffic_reset_config_type_opt: Option<String>,    // Renamed
+    traffic_reset_config_value_opt: Option<String>,   // Renamed
     next_traffic_reset_at_opt: Option<DateTime<Utc>>, // Renamed
     // Renewal Information
     renewal_info_input: Option<VpsRenewalDataInput>,
-) -> Result<bool, TransactionError<DbErr>> { // Changed
+) -> Result<bool, TransactionError<DbErr>> {
+    // Changed
     let now = Utc::now();
     let mut vps_table_changed = false;
     let mut tags_changed = false;
@@ -141,19 +154,33 @@ pub async fn update_vps(
                     // For simplicity, if group_opt is Some(val), we set it. If it's None, no change.
                     // To clear, the API would need to explicitly pass Some("".to_string()) or handle None as clear.
                     // SeaORM Set(None) will set the DB field to NULL.
-                    if let Some(val) = group_opt { active_model.group = Set(Some(val)); }
-                    if let Some(val) = traffic_limit_bytes_opt { active_model.traffic_limit_bytes = Set(Some(val)); }
-                    if let Some(val) = traffic_billing_rule_opt { active_model.traffic_billing_rule = Set(Some(val)); }
-                    if let Some(val) = traffic_reset_config_type_opt { active_model.traffic_reset_config_type = Set(Some(val)); }
-                    if let Some(val) = traffic_reset_config_value_opt { active_model.traffic_reset_config_value = Set(Some(val)); }
-                    if let Some(val) = next_traffic_reset_at_opt { active_model.next_traffic_reset_at = Set(Some(val)); }
-                    
+                    if let Some(val) = group_opt {
+                        active_model.group = Set(Some(val));
+                    }
+                    if let Some(val) = traffic_limit_bytes_opt {
+                        active_model.traffic_limit_bytes = Set(Some(val));
+                    }
+                    if let Some(val) = traffic_billing_rule_opt {
+                        active_model.traffic_billing_rule = Set(Some(val));
+                    }
+                    if let Some(val) = traffic_reset_config_type_opt {
+                        active_model.traffic_reset_config_type = Set(Some(val));
+                    }
+                    if let Some(val) = traffic_reset_config_value_opt {
+                        active_model.traffic_reset_config_value = Set(Some(val));
+                    }
+                    if let Some(val) = next_traffic_reset_at_opt {
+                        active_model.next_traffic_reset_at = Set(Some(val));
+                    }
+
                     active_model.updated_at = Set(now);
                     active_model.update(txn).await?;
                     vps_table_changed = true;
                 } else {
                     // VPS not found or not owned by user
-                    return Err(DbErr::RecordNotFound("VPS not found or access denied".to_string()));
+                    return Err(DbErr::RecordNotFound(
+                        "VPS not found or access denied".to_string(),
+                    ));
                 }
             }
 
@@ -192,17 +219,23 @@ pub async fn update_vps(
     .await
 }
 
-
 /// Updates the status of a VPS.
 pub async fn update_vps_status(
     db: &DatabaseConnection, // Changed
     vps_id: i32,
     status: &str,
-) -> Result<u64, DbErr> { // Changed
+) -> Result<u64, DbErr> {
+    // Changed
     let now = Utc::now();
     let result = vps::Entity::update_many()
-        .col_expr(vps::Column::Status, Expr::value(sea_orm::Value::String(Some(Box::new(status.to_owned())))))
-        .col_expr(vps::Column::UpdatedAt, Expr::value(sea_orm::Value::ChronoDateTimeUtc(Some(Box::new(now)))))
+        .col_expr(
+            vps::Column::Status,
+            Expr::value(sea_orm::Value::String(Some(Box::new(status.to_owned())))),
+        )
+        .col_expr(
+            vps::Column::UpdatedAt,
+            Expr::value(sea_orm::Value::ChronoDateTimeUtc(Some(Box::new(now)))),
+        )
         .filter(vps::Column::Id.eq(vps_id))
         .exec(db)
         .await?;
@@ -214,15 +247,22 @@ pub async fn update_vps_info_on_handshake(
     db: &DatabaseConnection, // Changed
     vps_id: i32,
     handshake_info: &crate::agent_service::AgentHandshake,
-) -> Result<u64, DbErr> { // Changed
+) -> Result<u64, DbErr> {
+    // Changed
     let now = Utc::now();
 
-    let first_ipv4 = handshake_info.public_ip_addresses.iter().find_map(|ip_str| {
-        ip_str
-            .parse::<std::net::IpAddr>()
-            .ok()
-            .and_then(|ip_addr| if ip_addr.is_ipv4() { Some(ip_str.clone()) } else { None })
-    });
+    let first_ipv4 = handshake_info
+        .public_ip_addresses
+        .iter()
+        .find_map(|ip_str| {
+            ip_str.parse::<std::net::IpAddr>().ok().and_then(|ip_addr| {
+                if ip_addr.is_ipv4() {
+                    Some(ip_str.clone())
+                } else {
+                    None
+                }
+            })
+        });
 
     let os_type_str = crate::agent_service::OsType::try_from(handshake_info.os_type)
         .map(|os_enum| format!("{os_enum:?}"))
@@ -232,11 +272,26 @@ pub async fn update_vps_info_on_handshake(
     agent_info_metadata_map.insert("os_name".to_string(), json!(handshake_info.os_name));
     agent_info_metadata_map.insert("arch".to_string(), json!(handshake_info.arch));
     agent_info_metadata_map.insert("hostname".to_string(), json!(handshake_info.hostname));
-    agent_info_metadata_map.insert("public_ip_addresses".to_string(), json!(handshake_info.public_ip_addresses));
-    agent_info_metadata_map.insert("kernel_version".to_string(), json!(handshake_info.kernel_version));
-    agent_info_metadata_map.insert("os_version_detail".to_string(), json!(handshake_info.os_version_detail));
-    agent_info_metadata_map.insert("long_os_version".to_string(), json!(handshake_info.long_os_version));
-    agent_info_metadata_map.insert("distribution_id".to_string(), json!(handshake_info.distribution_id));
+    agent_info_metadata_map.insert(
+        "public_ip_addresses".to_string(),
+        json!(handshake_info.public_ip_addresses),
+    );
+    agent_info_metadata_map.insert(
+        "kernel_version".to_string(),
+        json!(handshake_info.kernel_version),
+    );
+    agent_info_metadata_map.insert(
+        "os_version_detail".to_string(),
+        json!(handshake_info.os_version_detail),
+    );
+    agent_info_metadata_map.insert(
+        "long_os_version".to_string(),
+        json!(handshake_info.long_os_version),
+    );
+    agent_info_metadata_map.insert(
+        "distribution_id".to_string(),
+        json!(handshake_info.distribution_id),
+    );
     if let Some(p_cores) = handshake_info.physical_core_count {
         agent_info_metadata_map.insert("physical_core_count".to_string(), json!(p_cores));
     }
@@ -247,10 +302,13 @@ pub async fn update_vps_info_on_handshake(
         agent_info_metadata_map.insert("total_swap_bytes".to_string(), json!(total_swap));
     }
     if let Some(cpu_info) = &handshake_info.cpu_static_info {
-        agent_info_metadata_map.insert("cpu_static_info".to_string(), json!({
-            "name": cpu_info.name, "frequency": cpu_info.frequency,
-            "vendor_id": cpu_info.vendor_id, "brand": cpu_info.brand,
-        }));
+        agent_info_metadata_map.insert(
+            "cpu_static_info".to_string(),
+            json!({
+                "name": cpu_info.name, "frequency": cpu_info.frequency,
+                "vendor_id": cpu_info.vendor_id, "brand": cpu_info.brand,
+            }),
+        );
     }
     if let Some(cc) = &handshake_info.country_code {
         if !cc.is_empty() {
@@ -261,8 +319,10 @@ pub async fn update_vps_info_on_handshake(
 
     // Fetch current metadata to merge
     let vps_model = vps::Entity::find_by_id(vps_id).one(db).await?;
-    let current_metadata = vps_model.and_then(|m| m.metadata).unwrap_or_else(|| json!({}));
-    
+    let current_metadata = vps_model
+        .and_then(|m| m.metadata)
+        .unwrap_or_else(|| json!({}));
+
     let merged_metadata = match current_metadata {
         serde_json::Value::Object(mut current_map) => {
             if let serde_json::Value::Object(new_map) = agent_info_metadata {
@@ -272,20 +332,43 @@ pub async fn update_vps_info_on_handshake(
         }
         _ => agent_info_metadata, // If current is not an object, overwrite
     };
-    
+
     let result = vps::Entity::update_many()
-        .col_expr(vps::Column::OsType, Expr::value(sea_orm::Value::String(Some(Box::new(os_type_str)))))
-        .col_expr(vps::Column::IpAddress, Expr::value(sea_orm::Value::String(first_ipv4.map(Box::new))))
-        .col_expr(vps::Column::AgentVersion, Expr::value(sea_orm::Value::String(Some(Box::new(handshake_info.agent_version.clone())))))
-        .col_expr(vps::Column::Metadata, Expr::value(sea_orm::Value::Json(Some(Box::new(merged_metadata)))))
-        .col_expr(vps::Column::Status, Expr::value(sea_orm::Value::String(Some(Box::new("online".to_string())))))
-        .col_expr(vps::Column::UpdatedAt, Expr::value(sea_orm::Value::ChronoDateTimeUtc(Some(Box::new(now)))))
+        .col_expr(
+            vps::Column::OsType,
+            Expr::value(sea_orm::Value::String(Some(Box::new(os_type_str)))),
+        )
+        .col_expr(
+            vps::Column::IpAddress,
+            Expr::value(sea_orm::Value::String(first_ipv4.map(Box::new))),
+        )
+        .col_expr(
+            vps::Column::AgentVersion,
+            Expr::value(sea_orm::Value::String(Some(Box::new(
+                handshake_info.agent_version.clone(),
+            )))),
+        )
+        .col_expr(
+            vps::Column::Metadata,
+            Expr::value(sea_orm::Value::Json(Some(Box::new(merged_metadata)))),
+        )
+        .col_expr(
+            vps::Column::Status,
+            Expr::value(sea_orm::Value::String(Some(Box::new("online".to_string())))),
+        )
+        .col_expr(
+            vps::Column::UpdatedAt,
+            Expr::value(sea_orm::Value::ChronoDateTimeUtc(Some(Box::new(now)))),
+        )
         .filter(vps::Column::Id.eq(vps_id))
         .exec(db)
         .await?;
 
     if result.rows_affected == 0 {
-        warn!(vps_id = vps_id, "VPS info update on handshake affected 0 rows. This might indicate the VPS ID was not found for update.");
+        warn!(
+            vps_id = vps_id,
+            "VPS info update on handshake affected 0 rows. This might indicate the VPS ID was not found for update."
+        );
     }
     Ok(result.rows_affected)
 }
@@ -309,10 +392,7 @@ pub async fn get_owned_vps_from_ids(
 
 /// Deletes a VPS by its ID.
 /// Note: This performs a hard delete. Associated data should be handled via database constraints (e.g., CASCADE) or manually.
-pub async fn delete_vps(
-    db: &DatabaseConnection,
-    vps_id: i32,
-) -> Result<u64, DbErr> {
+pub async fn delete_vps(db: &DatabaseConnection, vps_id: i32) -> Result<u64, DbErr> {
     let result = vps::Entity::delete_by_id(vps_id).exec(db).await?;
     Ok(result.rows_affected)
 }

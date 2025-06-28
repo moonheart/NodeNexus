@@ -1,9 +1,8 @@
-use sea_orm::{
-    ActiveModelTrait, DbConn, DbErr, EntityTrait, Set, ModelTrait,
-    ColumnTrait, QueryFilter,
-};
-use crate::db::entities::{command_script, prelude::CommandScript};
 use crate::db::entities::command_script::ScriptLanguage;
+use crate::db::entities::{command_script, prelude::CommandScript};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DbConn, DbErr, EntityTrait, ModelTrait, QueryFilter, Set,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CommandScriptError {

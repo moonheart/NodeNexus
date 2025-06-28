@@ -11,7 +11,13 @@ use tracing::{info, warn};
 
 #[derive(Clone)]
 pub struct WebSocketStreamAdapter {
-    pub ws_stream: Arc<Mutex<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>>,
+    pub ws_stream: Arc<
+        Mutex<
+            tokio_tungstenite::WebSocketStream<
+                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+            >,
+        >,
+    >,
 }
 
 impl Stream for WebSocketStreamAdapter {
@@ -54,14 +60,22 @@ impl Sink<MessageToServer> for WebSocketStreamAdapter {
             Ok(s) => s,
             Err(_) => return Poll::Pending,
         };
-        Pin::new(&mut *stream).poll_ready(cx).map_err(|e| Status::internal(e.to_string()))
+        Pin::new(&mut *stream)
+            .poll_ready(cx)
+            .map_err(|e| Status::internal(e.to_string()))
     }
 
     fn start_send(self: Pin<&mut Self>, item: MessageToServer) -> Result<(), Self::Error> {
         let mut buf = Vec::new();
-        item.encode(&mut buf).map_err(|e| Status::internal(format!("Protobuf encode error: {e}")))?;
-        let mut stream = self.ws_stream.try_lock().map_err(|_| Status::unavailable("WebSocket stream is busy, could not send"))?;
-        Pin::new(&mut *stream).start_send(WsMessage::Binary(buf.into())).map_err(|e| Status::internal(e.to_string()))
+        item.encode(&mut buf)
+            .map_err(|e| Status::internal(format!("Protobuf encode error: {e}")))?;
+        let mut stream = self
+            .ws_stream
+            .try_lock()
+            .map_err(|_| Status::unavailable("WebSocket stream is busy, could not send"))?;
+        Pin::new(&mut *stream)
+            .start_send(WsMessage::Binary(buf.into()))
+            .map_err(|e| Status::internal(e.to_string()))
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -69,7 +83,9 @@ impl Sink<MessageToServer> for WebSocketStreamAdapter {
             Ok(s) => s,
             Err(_) => return Poll::Pending,
         };
-        Pin::new(&mut *stream).poll_flush(cx).map_err(|e| Status::internal(e.to_string()))
+        Pin::new(&mut *stream)
+            .poll_flush(cx)
+            .map_err(|e| Status::internal(e.to_string()))
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -77,6 +93,8 @@ impl Sink<MessageToServer> for WebSocketStreamAdapter {
             Ok(s) => s,
             Err(_) => return Poll::Pending,
         };
-        Pin::new(&mut *stream).poll_close(cx).map_err(|e| Status::internal(e.to_string()))
+        Pin::new(&mut *stream)
+            .poll_close(cx)
+            .map_err(|e| Status::internal(e.to_string()))
     }
 }

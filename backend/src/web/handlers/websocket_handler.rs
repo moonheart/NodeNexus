@@ -1,19 +1,22 @@
 use axum::{
-    debug_handler, extract::{
-        ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade}, Query, State
-    }, response::IntoResponse
+    debug_handler,
+    extract::{
+        Query, State,
+        ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade},
+    },
+    response::IntoResponse,
 };
 use axum_extra::extract::cookie::CookieJar;
 use futures_util::stream::StreamExt;
-use std::sync::Arc;
+use jsonwebtoken::{DecodingKey, Validation, decode}; // Added for JWT decoding
 use serde::Deserialize;
-use jsonwebtoken::{decode, DecodingKey, Validation}; // Added for JWT decoding
-use tracing::{info, error, warn, debug};
+use std::sync::Arc;
+use tracing::{debug, error, info, warn};
 
-use crate::web::models::{AuthenticatedUser, Claims}; // Import Claims
+use crate::web::AppError;
 use crate::web::AppState;
 use crate::web::models::websocket_models::{FullServerListPush, WsMessage};
-use crate::web::AppError; // For error handling
+use crate::web::models::{AuthenticatedUser, Claims}; // Import Claims // For error handling
 
 #[derive(Deserialize, Debug)]
 pub struct WebSocketAuthQuery {
@@ -32,7 +35,7 @@ async fn authenticate_ws_connection(
 
     let jwt_secret = &app_state.config.jwt_secret;
     let decoding_key = DecodingKey::from_secret(jwt_secret.as_ref());
-    
+
     // Use default validation for now. Consider adding audience/issuer checks if needed.
     let validation = Validation::default();
 
@@ -52,10 +55,18 @@ async fn authenticate_ws_connection(
             // Map jsonwebtoken::errors::Error to AppError
             // Consider more specific error mapping based on e.kind()
             match e.kind() {
-                jsonwebtoken::errors::ErrorKind::InvalidToken => Err(AppError::Unauthorized("Invalid token".to_string())),
-                jsonwebtoken::errors::ErrorKind::InvalidSignature => Err(AppError::Unauthorized("Invalid token signature".to_string())),
-                jsonwebtoken::errors::ErrorKind::ExpiredSignature => Err(AppError::Unauthorized("Token has expired".to_string())),
-                _ => Err(AppError::Unauthorized(format!("Token validation failed: {e}"))),
+                jsonwebtoken::errors::ErrorKind::InvalidToken => {
+                    Err(AppError::Unauthorized("Invalid token".to_string()))
+                }
+                jsonwebtoken::errors::ErrorKind::InvalidSignature => Err(AppError::Unauthorized(
+                    "Invalid token signature".to_string(),
+                )),
+                jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
+                    Err(AppError::Unauthorized("Token has expired".to_string()))
+                }
+                _ => Err(AppError::Unauthorized(format!(
+                    "Token validation failed: {e}"
+                ))),
             }
         }
     }
@@ -66,34 +77,45 @@ pub async fn websocket_handler(
     ws: WebSocketUpgrade,
     State(app_state): State<Arc<AppState>>,
     Query(query): Query<WebSocketAuthQuery>, // Get token from query params
-    jar: CookieJar, // Get cookies
+    jar: CookieJar,                          // Get cookies
 ) -> impl IntoResponse {
     // Try to get token from cookie first, fallback to query param
-    let token = jar.get("token").map(|c| c.value().to_string()).or(query.token);
-    
+    let token = jar
+        .get("token")
+        .map(|c| c.value().to_string())
+        .or(query.token);
+
     // Authenticate the connection
     let user = match authenticate_ws_connection(app_state.clone(), token).await {
         Ok(usr) => usr,
         Err(e) => return e.into_response(), // Return error if authentication fails
     };
-    
+
     info!(user_id = user.id, username = %user.username, "User authenticated for WebSocket connection.");
 
     ws.on_upgrade(move |socket| handle_socket(socket, app_state, user))
 }
 
-async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, user: AuthenticatedUser) { // Changed parameter type
+async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, user: AuthenticatedUser) {
+    // Changed parameter type
     info!("WebSocket connection established.");
 
     // 1. Send initial data snapshot
     let initial_data_message = {
         let cache_guard = app_state.live_server_data_cache.lock().await;
-        let servers_list: Vec<crate::web::models::websocket_models::ServerWithDetails> = cache_guard.values().cloned().collect();
-        WsMessage::FullServerList(FullServerListPush { servers: servers_list })
+        let servers_list: Vec<crate::web::models::websocket_models::ServerWithDetails> =
+            cache_guard.values().cloned().collect();
+        WsMessage::FullServerList(FullServerListPush {
+            servers: servers_list,
+        })
     };
 
     if let Ok(json_data) = serde_json::to_string(&initial_data_message) {
-        if socket.send(Message::Text(Utf8Bytes::from(json_data))).await.is_err() {
+        if socket
+            .send(Message::Text(Utf8Bytes::from(json_data)))
+            .await
+            .is_err()
+        {
             error!("Error sending initial WebSocket data. Closing connection.");
             return;
         }
@@ -164,7 +186,6 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, user: Au
     info!("WebSocket connection closed.");
 }
 
-
 // --- Public WebSocket Handler ---
 
 #[debug_handler]
@@ -182,11 +203,12 @@ async fn handle_public_socket(mut socket: WebSocket, app_state: Arc<AppState>) {
     // 1. Send initial data snapshot (desensitized)
     let initial_data_message = {
         let cache_guard = app_state.live_server_data_cache.lock().await;
-        let public_servers_list: Vec<crate::web::models::websocket_models::ServerWithDetails> = cache_guard
-            .values()
-            .map(|s| s.desensitize()) // Use the new desensitize method
-            .collect();
-        
+        let public_servers_list: Vec<crate::web::models::websocket_models::ServerWithDetails> =
+            cache_guard
+                .values()
+                .map(|s| s.desensitize()) // Use the new desensitize method
+                .collect();
+
         WsMessage::FullServerList(FullServerListPush {
             servers: public_servers_list,
         })

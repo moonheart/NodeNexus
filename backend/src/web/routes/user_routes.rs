@@ -1,10 +1,10 @@
 // backend/src/http_server/user_routes.rs
 
 use axum::{
-    extract::{Extension, State, Path},
-    response::IntoResponse,
-    routing::{get, put, delete},
     Json, Router,
+    extract::{Extension, Path, State},
+    response::IntoResponse,
+    routing::{delete, get, put},
 };
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use crate::{
     db::entities::{user, user_identity_provider},
-    web::{models::AuthenticatedUser, AppError, AppState},
+    web::{AppError, AppState, models::AuthenticatedUser},
 };
 
 pub fn create_user_router() -> Router<Arc<AppState>> {
@@ -90,7 +90,9 @@ async fn update_password(
     user_active_model.password_hash = Set(Some(new_password_hash));
     user_active_model.update(&app_state.db_pool).await?;
 
-    Ok(Json(serde_json::json!({ "message": "Password updated successfully" })))
+    Ok(Json(
+        serde_json::json!({ "message": "Password updated successfully" }),
+    ))
 }
 
 #[derive(Serialize)]
@@ -131,5 +133,7 @@ async fn unlink_provider(
         .exec(&app_state.db_pool)
         .await?;
 
-    Ok(Json(serde_json::json!({ "message": "Account unlinked successfully" })))
+    Ok(Json(
+        serde_json::json!({ "message": "Account unlinked successfully" }),
+    ))
 }

@@ -2,21 +2,19 @@
 
 // Re-export structs and functions from the core VPS operations module
 pub use super::vps_core_service::{
-    create_vps, get_all_vps_for_user, get_vps_by_id, get_vps_by_user_id, update_vps,
-    update_vps_info_on_handshake, update_vps_status, delete_vps,
+    create_vps, delete_vps, get_all_vps_for_user, get_vps_by_id, get_vps_by_user_id, update_vps,
+    update_vps_info_on_handshake, update_vps_status,
 };
 
 // Re-export structs and functions from the VPS renewal operations module
 pub use super::vps_renewal_service::{
-    check_and_generate_reminders, create_or_update_vps_renewal_info,
-    dismiss_vps_renewal_reminder, get_vps_renewal_info_by_vps_id,
-    process_all_automatic_renewals, VpsRenewalDataInput,
+    VpsRenewalDataInput, check_and_generate_reminders, create_or_update_vps_renewal_info,
+    dismiss_vps_renewal_reminder, get_vps_renewal_info_by_vps_id, process_all_automatic_renewals,
 };
 
 // Re-export functions from the VPS traffic operations module
 pub use super::vps_traffic_service::{
-    get_vps_due_for_traffic_reset, process_vps_traffic_reset,
-    update_vps_traffic_stats_after_metric,
+    get_vps_due_for_traffic_reset, process_vps_traffic_reset, update_vps_traffic_stats_after_metric,
 };
 
 // Re-export functions from the VPS detail retrieval module

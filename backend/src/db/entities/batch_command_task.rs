@@ -1,6 +1,6 @@
+use crate::db::enums::BatchCommandStatus;
 use sea_orm::entity::prelude::*;
-use serde::{Deserialize, Serialize};
-use crate::db::enums::BatchCommandStatus; // Added import
+use serde::{Deserialize, Serialize}; // Added import
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "batch_command_tasks")]

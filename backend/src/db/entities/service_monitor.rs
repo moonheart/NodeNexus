@@ -52,7 +52,11 @@ impl Related<super::vps::Entity> for Entity {
         super::service_monitor_agent::Relation::Vps.def()
     }
     fn via() -> Option<RelationDef> {
-        Some(super::service_monitor_agent::Relation::ServiceMonitor.def().rev())
+        Some(
+            super::service_monitor_agent::Relation::ServiceMonitor
+                .def()
+                .rev(),
+        )
     }
 }
 
@@ -62,7 +66,11 @@ impl Related<super::tag::Entity> for Entity {
         super::service_monitor_tag::Relation::Tag.def()
     }
     fn via() -> Option<RelationDef> {
-        Some(super::service_monitor_tag::Relation::ServiceMonitor.def().rev())
+        Some(
+            super::service_monitor_tag::Relation::ServiceMonitor
+                .def()
+                .rev(),
+        )
     }
 }
 

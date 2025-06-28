@@ -1,7 +1,7 @@
-use tokio::sync::broadcast;
-use uuid::Uuid;
 use serde_json::json; // For creating JSON payloads easily
-use tracing::{error, info, debug};
+use tokio::sync::broadcast;
+use tracing::{debug, error, info};
+use uuid::Uuid;
 
 // Placeholder for the actual WebSocket message types for batch commands.
 // For now, we'll assume String messages (JSON serialized).
@@ -16,7 +16,7 @@ impl ResultBroadcaster {
     pub fn new(batch_updates_tx: broadcast::Sender<BatchCommandUpdateMsg>) -> Self {
         Self { batch_updates_tx }
     }
-pub fn subscribe(&self) -> broadcast::Receiver<BatchCommandUpdateMsg> {
+    pub fn subscribe(&self) -> broadcast::Receiver<BatchCommandUpdateMsg> {
         self.batch_updates_tx.subscribe()
     }
 
@@ -35,7 +35,10 @@ pub fn subscribe(&self) -> broadcast::Receiver<BatchCommandUpdateMsg> {
                         "Failed to broadcast batch command update."
                     );
                 } else {
-                    debug!(message_type = message_type, "Successfully broadcasted batch command update.");
+                    debug!(
+                        message_type = message_type,
+                        "Successfully broadcasted batch command update."
+                    );
                 }
             }
             Err(e) => {
@@ -84,7 +87,7 @@ pub fn subscribe(&self) -> broadcast::Receiver<BatchCommandUpdateMsg> {
             completed_at = ?completed_at,
             "Broadcasting batch task update."
         );
-         let payload = json!({
+        let payload = json!({
             "batch_command_id": batch_command_id.to_string(),
             "overall_status": overall_status,
             "completed_at": completed_at,
@@ -99,7 +102,7 @@ pub fn subscribe(&self) -> broadcast::Receiver<BatchCommandUpdateMsg> {
         vps_id: i32,
         log_line: String,
         stream_type: String, // "stdout" or "stderr"
-        timestamp: String, // Assuming DateTimeUtc to string
+        timestamp: String,   // Assuming DateTimeUtc to string
     ) {
         debug!(
             child_task_id = %child_task_id,

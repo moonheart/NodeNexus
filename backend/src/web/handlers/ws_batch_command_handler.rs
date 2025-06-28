@@ -1,15 +1,15 @@
 use axum::{
     extract::{
-        ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade},
         Path, State,
+        ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
 };
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde::Deserialize;
 use std::sync::Arc;
+use tracing::{debug, info, warn};
 use uuid::Uuid;
-use tracing::{info, warn, debug};
 
 use crate::web::AppState;
 

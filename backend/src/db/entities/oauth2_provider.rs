@@ -1,5 +1,5 @@
-use sea_orm::entity::prelude::*;
 use crate::services::encryption_service::{decrypt, encrypt};
+use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]

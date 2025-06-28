@@ -1,18 +1,18 @@
+use futures_util::{Sink, Stream, StreamExt};
+use sea_orm::DatabaseConnection;
+use std::pin::Pin;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use std::task::{Context, Poll};
+use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Status};
-use sea_orm::DatabaseConnection;
 use tracing::info;
-use futures_util::{Stream, Sink, StreamExt};
-use std::pin::Pin;
-use std::task::{Context, Poll};
 
+use super::core_services::{self, AgentStream};
 use crate::agent_service::{MessageToAgent, MessageToServer};
 use crate::server::agent_state::{AgentSender, ConnectedAgents, LiveServerDataCache};
 use crate::web::models::websocket_models::WsMessage;
 use tokio::sync::broadcast;
-use super::core_services::{self, AgentStream};
 
 // 1. Define the GrpcStreamAdapter
 pub struct GrpcStreamAdapter {
@@ -42,10 +42,12 @@ impl Sink<MessageToAgent> for GrpcStreamAdapter {
 
     fn start_send(self: Pin<&mut Self>, item: MessageToAgent) -> Result<(), Self::Error> {
         // Use `try_send` which is synchronous and returns an error if the channel is full or closed.
-        self.get_mut().tx.try_send(Ok(item)).map_err(|e| {
-            match e {
-                mpsc::error::TrySendError::Full(_) => Status::unavailable("gRPC stream channel is full."),
-                mpsc::error::TrySendError::Closed(_) => Status::unavailable("gRPC stream channel is closed."),
+        self.get_mut().tx.try_send(Ok(item)).map_err(|e| match e {
+            mpsc::error::TrySendError::Full(_) => {
+                Status::unavailable("gRPC stream channel is full.")
+            }
+            mpsc::error::TrySendError::Closed(_) => {
+                Status::unavailable("gRPC stream channel is closed.")
             }
         })
     }
@@ -93,7 +95,8 @@ pub async fn handle_connection(
             ws_data_broadcaster_tx,
             update_trigger_tx,
             batch_command_manager,
-        ).await;
+        )
+        .await;
     });
 
     Ok(Response::new(ReceiverStream::from(rx_from_server)))

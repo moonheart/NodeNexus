@@ -3,25 +3,27 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::task::JoinHandle; // For task handles
- // Added for gRPC server
+// Added for gRPC server
 
 // Correct approach:
 // 1. In backend/src/lib.rs, add `pub mod agent_modules;`
 // 2. Here, use `use backend::agent_modules::config::{load_cli_config, AgentCliConfig};` etc.
 
 // Let's proceed assuming agent_modules are part of the backend crate library.
-use backend::agent_modules::config::{load_cli_config, AgentCliConfig};
-use backend::agent_modules::communication::{ConnectionHandler, heartbeat_loop, server_message_handler_loop};
-use backend::agent_modules::metrics::metrics_collection_loop;
 use backend::agent_modules::command::tracker::RunningCommandsTracker;
+use backend::agent_modules::communication::{
+    ConnectionHandler, heartbeat_loop, server_message_handler_loop,
+};
+use backend::agent_modules::config::{AgentCliConfig, load_cli_config};
+use backend::agent_modules::metrics::metrics_collection_loop;
 use backend::agent_modules::service_monitor::ServiceMonitorManager;
 // Removed: use backend::agent_modules::agent_command_service_impl::create_agent_command_service;
 use backend::agent_service::AgentConfig;
 use backend::version::VERSION;
-use clap::{arg, command, Parser};
+use clap::{Parser, arg, command};
 use tracing::{error, info, warn};
 use tracing_appender::rolling;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[cfg(windows)]
 use windows_service::{
@@ -76,14 +78,17 @@ async fn spawn_and_monitor_core_tasks(
     let metrics_vps_id = agent_cli_config.vps_id;
     let metrics_agent_secret = agent_cli_config.agent_secret.clone();
     // Get the closure for ID generation
-    let metrics_id_provider = backend::agent_modules::communication::ConnectionHandler::get_id_provider_closure(metrics_id_provider_counter);
+    let metrics_id_provider =
+        backend::agent_modules::communication::ConnectionHandler::get_id_provider_closure(
+            metrics_id_provider_counter,
+        );
 
     tasks.push(tokio::spawn(async move {
         let agent_id_for_log = metrics_agent_id.clone(); // Clone for logging
         metrics_collection_loop(
             metrics_tx,
             metrics_agent_config,
-            metrics_agent_id, // Ownership moved here
+            metrics_agent_id,    // Ownership moved here
             metrics_id_provider, // Pass the closure
             metrics_vps_id,
             metrics_agent_secret,
@@ -99,14 +104,17 @@ async fn spawn_and_monitor_core_tasks(
     let heartbeat_id_provider_counter = client_message_id_counter.clone();
     let heartbeat_vps_id = agent_cli_config.vps_id;
     let heartbeat_agent_secret = agent_cli_config.agent_secret.clone();
-    let heartbeat_id_provider = backend::agent_modules::communication::ConnectionHandler::get_id_provider_closure(heartbeat_id_provider_counter);
+    let heartbeat_id_provider =
+        backend::agent_modules::communication::ConnectionHandler::get_id_provider_closure(
+            heartbeat_id_provider_counter,
+        );
 
     tasks.push(tokio::spawn(async move {
         let agent_id_for_log = heartbeat_agent_id.clone(); // Clone for logging
         heartbeat_loop(
             heartbeat_tx,
             heartbeat_agent_config,
-            heartbeat_agent_id, // Ownership moved here
+            heartbeat_agent_id,    // Ownership moved here
             heartbeat_id_provider, // Pass the closure
             heartbeat_vps_id,
             heartbeat_agent_secret,
@@ -121,7 +129,10 @@ async fn spawn_and_monitor_core_tasks(
     let listener_id_provider_counter = client_message_id_counter.clone();
     let listener_vps_id = agent_cli_config.vps_id;
     let listener_agent_secret = agent_cli_config.agent_secret.clone();
-    let listener_id_provider = backend::agent_modules::communication::ConnectionHandler::get_id_provider_closure(listener_id_provider_counter);
+    let listener_id_provider =
+        backend::agent_modules::communication::ConnectionHandler::get_id_provider_closure(
+            listener_id_provider_counter,
+        );
     let listener_agent_config = Arc::clone(&shared_agent_config);
     let listener_config_path = agent_cli_config.config_path.clone();
     let listener_command_tracker = command_tracker.clone(); // Clone command_tracker for the listener task
@@ -176,7 +187,9 @@ async fn spawn_and_monitor_core_tasks(
 fn init_logging() {
     // Get the directory of the executable
     let exe_path = std::env::current_exe().expect("Failed to get current exe path");
-    let exe_dir = exe_path.parent().expect("Failed to get parent directory of exe");
+    let exe_dir = exe_path
+        .parent()
+        .expect("Failed to get parent directory of exe");
     let log_dir = exe_dir.join("logs");
 
     // Log to a file: JSON format, daily rotation
@@ -191,8 +204,7 @@ fn init_logging() {
 
     // Combine layers and filter based on RUST_LOG
     // Default to `info` level if RUST_LOG is not set.
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     tracing_subscriber::registry()
         .with(env_filter)
@@ -230,8 +242,7 @@ fn run_service() {
     };
 
     // Register the handler with the service control manager.
-    let status_handle =
-        service_control_handler::register(SERVICE_NAME, event_handler).unwrap();
+    let status_handle = service_control_handler::register(SERVICE_NAME, event_handler).unwrap();
 
     // Tell the SCM that the service is starting
     status_handle
@@ -352,7 +363,6 @@ fn run_console_mode() {
             }
         });
 }
-
 
 async fn run_agent_logic() -> Result<(), Box<dyn Error + Send + Sync>> {
     let args: Vec<String> = std::env::args().collect();

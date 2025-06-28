@@ -1,8 +1,16 @@
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set,
-    TransactionTrait, IntoActiveModel, QuerySelect, // Added QuerySelect
-    // Removed commented out Select and sea_query::LockType
+    ActiveModelTrait,
+    ColumnTrait,
+    DatabaseConnection,
+    DbErr,
+    EntityTrait,
+    IntoActiveModel,
+    QueryFilter,
+    QuerySelect, // Added QuerySelect
+                 // Removed commented out Select and sea_query::LockType
+    Set,
+    TransactionTrait,
 };
 use tracing::error;
 
@@ -17,7 +25,8 @@ pub async fn update_vps_traffic_stats_after_metric(
     vps_id: i32,
     new_cumulative_rx: i64,
     new_cumulative_tx: i64,
-) -> Result<(), DbErr> { // Changed
+) -> Result<(), DbErr> {
+    // Changed
     // 1. Get the current Vps traffic stats with exclusive lock
     let vps_model = vps::Entity::find_by_id(vps_id)
         .lock_exclusive() // Equivalent to FOR UPDATE
@@ -66,7 +75,8 @@ pub async fn update_vps_traffic_stats_after_metric(
 pub async fn process_vps_traffic_reset(
     db: &DatabaseConnection, // Changed
     vps_id: i32,
-) -> Result<bool, DbErr> { // Changed
+) -> Result<bool, DbErr> {
+    // Changed
     let now = Utc::now();
 
     // Transaction for the whole process
@@ -120,7 +130,8 @@ pub async fn process_vps_traffic_reset(
                     next_month_year += 1;
                 }
 
-                let first_day_of_next_month = NaiveDate::from_ymd_opt(next_month_year, next_month_month, 1).unwrap();
+                let first_day_of_next_month =
+                    NaiveDate::from_ymd_opt(next_month_year, next_month_month, 1).unwrap();
                 let days_in_next_month = if next_month_month == 12 {
                     NaiveDate::from_ymd_opt(next_month_year + 1, 1, 1).unwrap()
                 } else {
@@ -131,16 +142,34 @@ pub async fn process_vps_traffic_reset(
 
                 let actual_day = std::cmp::min(day, days_in_next_month);
 
-                if let Some(naive_date_next) = NaiveDate::from_ymd_opt(next_month_year, next_month_month, actual_day) {
-                    let naive_datetime_next = naive_date_next.and_hms_opt(0,0,0).unwrap_or(naive_date_next.and_hms_opt(0,0,0).expect("Should be valid time")) + Duration::seconds(time_offset_seconds);
-                    new_next_reset_at = Some(DateTime::<Utc>::from_naive_utc_and_offset(naive_datetime_next, Utc));
+                if let Some(naive_date_next) =
+                    NaiveDate::from_ymd_opt(next_month_year, next_month_month, actual_day)
+                {
+                    let naive_datetime_next = naive_date_next.and_hms_opt(0, 0, 0).unwrap_or(
+                        naive_date_next
+                            .and_hms_opt(0, 0, 0)
+                            .expect("Should be valid time"),
+                    ) + Duration::seconds(time_offset_seconds);
+                    new_next_reset_at = Some(DateTime::<Utc>::from_naive_utc_and_offset(
+                        naive_datetime_next,
+                        Utc,
+                    ));
                 } else {
                     new_next_reset_at = None;
-                    error!(vps_id = vps_id, year = next_month_year, month = next_month_month, day = actual_day, "Error calculating next reset date for monthly_day_of_month: Could not form NaiveDate");
+                    error!(
+                        vps_id = vps_id,
+                        year = next_month_year,
+                        month = next_month_month,
+                        day = actual_day,
+                        "Error calculating next reset date for monthly_day_of_month: Could not form NaiveDate"
+                    );
                 }
             } else {
                 new_next_reset_at = None;
-                error!(vps_id = vps_id, "Invalid traffic_reset_config_value (missing day) for monthly_day_of_month");
+                error!(
+                    vps_id = vps_id,
+                    "Invalid traffic_reset_config_value (missing day) for monthly_day_of_month"
+                );
             }
         }
         (Some("fixed_days"), Some(value_str)) => {
@@ -149,16 +178,25 @@ pub async fn process_vps_traffic_reset(
                     new_next_reset_at = Some(last_reset_time + Duration::days(days));
                 } else {
                     new_next_reset_at = None;
-                    error!(vps_id = vps_id, "Invalid traffic_reset_config_value (days <= 0) for fixed_days");
+                    error!(
+                        vps_id = vps_id,
+                        "Invalid traffic_reset_config_value (days <= 0) for fixed_days"
+                    );
                 }
             } else {
                 new_next_reset_at = None;
-                error!(vps_id = vps_id, "Invalid traffic_reset_config_value (not a number) for fixed_days");
+                error!(
+                    vps_id = vps_id,
+                    "Invalid traffic_reset_config_value (not a number) for fixed_days"
+                );
             }
         }
         _ => {
             new_next_reset_at = None;
-            error!(vps_id = vps_id, "Missing or unknown traffic_reset_config_type or _value. Cannot calculate next reset.");
+            error!(
+                vps_id = vps_id,
+                "Missing or unknown traffic_reset_config_type or _value. Cannot calculate next reset."
+            );
         }
     }
 
@@ -178,7 +216,8 @@ pub async fn process_vps_traffic_reset(
 /// Retrieves IDs of VPS that are due for a traffic reset check.
 pub async fn get_vps_due_for_traffic_reset(
     db: &DatabaseConnection, // Changed
-) -> Result<Vec<i32>, DbErr> { // Changed
+) -> Result<Vec<i32>, DbErr> {
+    // Changed
     let now = Utc::now();
     let vps_ids: Vec<i32> = vps::Entity::find()
         .select_only()

@@ -44,7 +44,7 @@ pub struct ChannelTemplate {
 #[serde(rename_all = "camelCase")]
 pub struct CreateChannelRequest {
     pub name: String,
-    pub channel_type: String, // "telegram" or "webhook"
+    pub channel_type: String,      // "telegram" or "webhook"
     pub config: serde_json::Value, // The raw config JSON from the frontend
 }
 

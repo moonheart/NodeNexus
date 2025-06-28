@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 pub mod alert_models;
+pub mod batch_command_models;
 pub mod service_monitor_models;
 pub mod websocket_models;
-pub mod batch_command_models;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RegisterRequest {
@@ -35,7 +35,7 @@ pub struct LoginResponse {
 pub struct Claims {
     pub sub: String, // Subject (user_id or username)
     pub user_id: i32,
-    pub exp: usize,  // Expiration time (timestamp)
+    pub exp: usize, // Expiration time (timestamp)
 }
 
 /// Struct to hold authenticated user details, to be passed as a request extension.

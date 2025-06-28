@@ -1,7 +1,7 @@
 use chrono::Utc;
 use sea_orm::{
-    prelude::Expr, ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait,
-    IntoActiveModel, QueryFilter, Set, UpdateResult,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel,
+    QueryFilter, Set, UpdateResult, prelude::Expr,
 };
 
 use crate::db::entities::{prelude::Vps, setting, vps}; // Assuming prelude exports Vps entity
@@ -41,8 +41,16 @@ pub async fn update_vps_config_override(
 ) -> Result<UpdateResult, DbErr> {
     let now = Utc::now();
     Vps::update_many()
-        .col_expr(vps::Column::AgentConfigOverride, Expr::value(sea_orm::Value::Json(Some(Box::new(config_override.clone())))))
-        .col_expr(vps::Column::UpdatedAt, Expr::value(sea_orm::Value::ChronoDateTimeUtc(Some(Box::new(now)))))
+        .col_expr(
+            vps::Column::AgentConfigOverride,
+            Expr::value(sea_orm::Value::Json(Some(Box::new(
+                config_override.clone(),
+            )))),
+        )
+        .col_expr(
+            vps::Column::UpdatedAt,
+            Expr::value(sea_orm::Value::ChronoDateTimeUtc(Some(Box::new(now)))),
+        )
         .filter(vps::Column::Id.eq(vps_id))
         .filter(vps::Column::UserId.eq(user_id))
         .exec(db)
@@ -65,16 +73,11 @@ pub async fn update_vps_config_status(
         active_vps.last_config_error = Set(error.map(|e| e.to_owned()));
         active_vps.last_config_update_at = Set(Some(now));
         active_vps.updated_at = Set(now);
-        active_vps.update(db).await
-        .map_err(|e| {
-            DbErr::Custom(format!("Failed to update VPS config status: {e}"))
-        })
-        .map(|_res| {
-            UpdateResult {
-                rows_affected: 1
-            }
-        })
-        
+        active_vps
+            .update(db)
+            .await
+            .map_err(|e| DbErr::Custom(format!("Failed to update VPS config status: {e}")))
+            .map(|_res| UpdateResult { rows_affected: 1 })
     } else {
         // Or handle as an error: Err(DbErr::RecordNotFound(format!("VPS with id {} not found", vps_id)))
         Ok(UpdateResult { rows_affected: 0 })

@@ -1,14 +1,14 @@
 use sea_orm::DatabaseConnection; // Replaced PgPool
-use tonic::{Request, Response, Status, Streaming};
-use tokio::sync::{mpsc, Mutex};
-use tokio_stream::wrappers::ReceiverStream;
 use std::sync::Arc;
+use tokio::sync::{Mutex, mpsc};
+use tokio_stream::wrappers::ReceiverStream;
+use tonic::{Request, Response, Status, Streaming};
 
 use super::agent_state::{ConnectedAgents, LiveServerDataCache};
-use crate::web::models::websocket_models::WsMessage;
-use tokio::sync::broadcast;
 use super::handlers::handle_connection;
-use crate::db::services::BatchCommandManager; // Added BatchCommandManager
+use crate::db::services::BatchCommandManager;
+use crate::web::models::websocket_models::WsMessage;
+use tokio::sync::broadcast; // Added BatchCommandManager
 
 #[derive(Debug)]
 pub struct MyAgentCommService {
@@ -41,8 +41,11 @@ impl MyAgentCommService {
 }
 
 #[tonic::async_trait]
-impl crate::agent_service::agent_communication_service_server::AgentCommunicationService for MyAgentCommService {
-    type EstablishCommunicationStreamStream = ReceiverStream<Result<crate::agent_service::MessageToAgent, Status>>;
+impl crate::agent_service::agent_communication_service_server::AgentCommunicationService
+    for MyAgentCommService
+{
+    type EstablishCommunicationStreamStream =
+        ReceiverStream<Result<crate::agent_service::MessageToAgent, Status>>;
 
     async fn establish_communication_stream(
         &self,
