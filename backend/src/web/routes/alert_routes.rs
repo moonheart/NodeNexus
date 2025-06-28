@@ -4,11 +4,12 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
-use crate::http_server::{
+use crate::web::{
     AppState, AppError,
-    auth_logic::AuthenticatedUser,
+    models::AuthenticatedUser,
     models::alert_models::{CreateAlertRuleRequest, UpdateAlertRuleRequest, UpdateAlertRuleStatusRequest}, // Added UpdateAlertRuleStatusRequest
 };
+
 use crate::db::models::AlertRule;
 
 pub fn create_alert_router() -> Router<Arc<AppState>> {

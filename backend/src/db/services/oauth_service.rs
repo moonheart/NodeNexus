@@ -2,10 +2,10 @@
 
 use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, ActiveModelTrait, Set};
 use crate::db::entities::{oauth2_provider, prelude::Oauth2Provider, user, user_identity_provider};
-use crate::http_server::AppError;
+use crate::web::error::AppError;
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
-use crate::http_server::auth_logic;
+use crate::services::auth_service;
 use crate::server::config::ServerConfig;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -172,7 +172,7 @@ pub async fn handle_oauth_callback(
             return Err(AppError::Unauthorized("该外部帐户未关联。请先使用您的用户名和密码登录以关联您的帐户。".to_string()));
         };
 
-        let login_response = auth_logic::create_jwt_for_user(&user_model, &config.jwt_secret)?;
+        let login_response = auth_service::create_jwt_for_user(&user_model, &config.jwt_secret)?;
         Ok(OAuthCallbackResult::Login { token: login_response.token })
     }
 }

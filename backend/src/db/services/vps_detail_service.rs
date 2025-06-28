@@ -5,7 +5,7 @@ use sea_orm::{DatabaseConnection, DbErr, EntityTrait, ModelTrait, QueryFilter, Q
 use crate::db::entities::{
     performance_disk_usage, performance_metric, tag, vps, vps_renewal_info, // Removed vps_tag
 };
-use crate::websocket_models::{ServerBasicInfo, ServerMetricsSnapshot, ServerWithDetails, Tag as WebsocketTag};
+use crate::web::models::websocket_models::{ServerBasicInfo, ServerMetricsSnapshot, ServerWithDetails, Tag as WebsocketTag};
 
 // --- Vps Detail Service Functions ---
 

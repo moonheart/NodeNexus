@@ -4,7 +4,7 @@ use tracing::{error, debug};
 
 use crate::db::services;
 use crate::server::agent_state::LiveServerDataCache;
-use crate::websocket_models::{FullServerListPush, WsMessage, ServerWithDetails};
+use crate::web::models::websocket_models::{FullServerListPush, WsMessage, ServerWithDetails};
 
 /// The centralized function to trigger a full state update and broadcast to all WebSocket clients.
 ///
@@ -36,7 +36,7 @@ pub async fn broadcast_full_state_update(
             } // Lock is released here
 
             // 3. Broadcast the entire updated list to all clients.
-            let servers_list_for_broadcast: Vec<crate::websocket_models::ServerWithDetails> = all_servers;
+            let servers_list_for_broadcast: Vec<crate::web::models::websocket_models::ServerWithDetails> = all_servers;
             let full_list_push = FullServerListPush {
                 servers: servers_list_for_broadcast,
             };

@@ -12,8 +12,8 @@ use crate::db::{
     models::Tag as DtoTag, // Use DtoTag for the DTO
     services,
 };
-use super::{AppState, AppError};
-use crate::http_server::auth_logic::AuthenticatedUser;
+use crate::web::{AppState, AppError};
+use crate::web::models::AuthenticatedUser;
 
 // --- Request/Response Structs ---
 

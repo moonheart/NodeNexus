@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use crate::{
     db::entities::{user, user_identity_provider},
-    http_server::{auth_logic::AuthenticatedUser, AppError, AppState},
+    web::{models::AuthenticatedUser, AppError, AppState},
 };
 
 pub fn create_user_router() -> Router<Arc<AppState>> {

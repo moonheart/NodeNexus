@@ -10,7 +10,7 @@ use std::task::{Context, Poll};
 
 use crate::agent_service::{MessageToAgent, MessageToServer};
 use crate::server::agent_state::{AgentSender, ConnectedAgents, LiveServerDataCache};
-use crate::websocket_models::WsMessage;
+use crate::web::models::websocket_models::WsMessage;
 use tokio::sync::broadcast;
 use super::core_services::{self, AgentStream};
 

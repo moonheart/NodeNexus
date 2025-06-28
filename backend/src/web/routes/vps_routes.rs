@@ -14,11 +14,11 @@ use crate::db::{
     models::{PerformanceMetric as DbPerformanceMetric}, // Keep DbPerformanceMetric for now
     services,
 };
-use super::{AppState, AppError, config_routes};
-use crate::http_server::auth_logic::AuthenticatedUser;
+use crate::web::{AppState, AppError, config_routes};
+use crate::web::models::AuthenticatedUser;
 use crate::server::update_service;
-use crate::http_server::models::service_monitor_models::ServiceMonitorResultDetails;
-use crate::http_server::service_monitor_routes::MonitorResultsQuery;
+use crate::web::models::service_monitor_models::ServiceMonitorResultDetails;
+use crate::web::service_monitor_routes::MonitorResultsQuery;
 
 // Frontend expects this structure for latest metrics
 #[derive(Serialize, Clone, Debug)]
@@ -87,8 +87,8 @@ pub struct VpsListItemResponse {
     pub created_at: String,
     #[serde(rename = "group")]
     pub group: Option<String>,
-    pub tags: Option<Vec<crate::websocket_models::Tag>>,
-    pub latest_metrics: Option<crate::websocket_models::ServerMetricsSnapshot>,
+    pub tags: Option<Vec<crate::web::models::websocket_models::Tag>>,
+    pub latest_metrics: Option<crate::web::models::websocket_models::ServerMetricsSnapshot>,
     pub config_status: String,
     pub last_config_update_at: Option<String>,
     pub last_config_error: Option<String>,
@@ -126,8 +126,8 @@ pub struct VpsListItemResponse {
 // into the `VpsListItemResponse` model (used by the REST API).
 // This ensures data consistency between initial load (REST) and updates (WS).
 // NOTE: This will require `ServerWithDetails` to be updated to include renewal fields.
-impl From<crate::websocket_models::ServerWithDetails> for VpsListItemResponse {
-    fn from(details: crate::websocket_models::ServerWithDetails) -> Self {
+impl From<crate::web::models::websocket_models::ServerWithDetails> for VpsListItemResponse {
+    fn from(details: crate::web::models::websocket_models::ServerWithDetails) -> Self {
         Self {
             id: details.basic_info.id,
             user_id: details.basic_info.user_id,

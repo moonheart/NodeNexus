@@ -1,57 +1,12 @@
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RegisterRequest {
-    pub username: String,
-    pub password: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LoginRequest {
-    pub username: String,
-    pub password: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UserResponse {
-    pub id: i32,
-    pub username: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LoginResponse {
-    pub token: String,
-    pub user_id: i32,
-    pub username: String,
-}
-
-
-use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, ActiveModelTrait, Set, DbErr}; // Added SeaORM imports, removed ActiveValue
-use crate::db::entities::user; // Changed to use user entity
+use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, ActiveModelTrait, Set, DbErr};
+use crate::db::entities::user;
 use bcrypt::{hash, verify, DEFAULT_COST};
-use jsonwebtoken::{decode, encode, EncodingKey, Header, Validation, DecodingKey};
+use jsonwebtoken::{encode, EncodingKey, Header};
 use chrono::{Utc, Duration};
-use crate::http_server::AppError;
-use axum::{http::{Request, header}, Extension};
-use tracing::warn;
-use axum::middleware::Next;
-use axum::{response::Response, body::Body as AxumBody}; // Import AxumBody
+use axum::Extension;
 
-// JWT Claims structure
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Claims { // Made public
-    pub sub: String, // Subject (user_id or username)
-    pub user_id: i32,
-    pub exp: usize,  // Expiration time (timestamp)
-}
-
-/// Struct to hold authenticated user details, to be passed as a request extension.
-#[derive(Debug, Clone)]
-pub struct AuthenticatedUser {
-    pub id: i32,
-    pub username: String,
-}
-
+use crate::web::error::AppError;
+use crate::web::models::{RegisterRequest, LoginRequest, UserResponse, LoginResponse, Claims, AuthenticatedUser};
 
 pub async fn register_user(pool: &DatabaseConnection, req: RegisterRequest) -> Result<UserResponse, AppError> {
     if req.username.is_empty() || req.password.len() < 8 {
@@ -141,46 +96,6 @@ pub fn create_jwt_for_user(user: &user::Model, jwt_secret: &str) -> Result<Login
         user_id: user.id,
         username: user.username.clone(),
     })
-}
-
-use axum::extract::State;
-use std::sync::Arc;
-use crate::http_server::AppState;
-
-use axum_extra::extract::cookie::CookieJar;
-
-pub async fn auth(
-    State(state): State<Arc<AppState>>,
-    jar: CookieJar,
-    mut req: Request<AxumBody>,
-    next: Next,
-) -> Result<Response, AppError> {
-    let jwt_secret = &state.config.jwt_secret;
-
-    // Try to get token from Authorization header first, then fall back to cookie
-    let token = req.headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|header| header.to_str().ok())
-        .and_then(|header| header.strip_prefix("Bearer "))
-        .map(|s| s.to_string())
-        .or_else(|| jar.get("token").map(|c| c.value().to_string()))
-        .ok_or(AppError::InvalidCredentials)?;
-
-    let token_data = decode::<Claims>(
-        &token,
-        &DecodingKey::from_secret(jwt_secret.as_ref()),
-        &Validation::default(),
-    ).map_err(|e| {
-        warn!(error = ?e, "JWT decoding error during auth middleware.");
-        AppError::InvalidCredentials // Or "InvalidToken"
-    })?;
-
-    let authenticated_user = AuthenticatedUser {
-        id: token_data.claims.user_id,
-        username: token_data.claims.sub, // Assuming 'sub' is username
-    };
-    req.extensions_mut().insert(authenticated_user);
-    Ok(next.run(req).await)
 }
 
 pub async fn me(

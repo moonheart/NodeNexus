@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::websocket_models::ServerWithDetails;
+use crate::web::models::websocket_models::ServerWithDetails;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use crate::agent_service::{AgentConfig, MessageToAgent, TriggerUpdateCheckCommand};

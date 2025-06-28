@@ -7,15 +7,15 @@ use std::sync::Arc;
 use uuid::Uuid;
 use tracing::error;
 
-use super::models::{
+use crate::web::models::batch_command_models::{
     CreateBatchCommandRequest,
     BatchCommandAcceptedResponse,
     BatchCommandTaskDetailResponse,
     // BatchCommandTaskListItem, // For listing, if implemented later
 };
 // use crate::http_server::auth_logic::Claims; // No longer directly extracting Claims
-use crate::http_server::auth_logic::AuthenticatedUser; // Use AuthenticatedUser
-use crate::http_server::{AppState, AppError}; // Import AppState and AppError
+use crate::web::models::AuthenticatedUser; // Use AuthenticatedUser
+use crate::web::{AppState, error::AppError}; // Import AppState and AppError
 use crate::agent_service::CommandType as GrpcCommandType; // For dispatching
 
 // pub fn batch_command_routes(db: Arc<DatabaseConnection>) -> Router {

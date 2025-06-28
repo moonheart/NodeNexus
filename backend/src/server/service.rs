@@ -5,7 +5,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use std::sync::Arc;
 
 use super::agent_state::{ConnectedAgents, LiveServerDataCache};
-use crate::websocket_models::WsMessage;
+use crate::web::models::websocket_models::WsMessage;
 use tokio::sync::broadcast;
 use super::handlers::handle_connection;
 use crate::db::services::BatchCommandManager; // Added BatchCommandManager

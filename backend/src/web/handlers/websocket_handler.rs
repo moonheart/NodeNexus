@@ -10,10 +10,10 @@ use serde::Deserialize;
 use jsonwebtoken::{decode, DecodingKey, Validation}; // Added for JWT decoding
 use tracing::{info, error, warn, debug};
 
-use crate::http_server::auth_logic::{AuthenticatedUser, Claims}; // Import Claims
-use crate::http_server::AppState;
-use crate::websocket_models::{FullServerListPush, WsMessage};
-use crate::http_server::AppError; // For error handling
+use crate::web::models::{AuthenticatedUser, Claims}; // Import Claims
+use crate::web::AppState;
+use crate::web::models::websocket_models::{FullServerListPush, WsMessage};
+use crate::web::AppError; // For error handling
 
 #[derive(Deserialize, Debug)]
 pub struct WebSocketAuthQuery {
@@ -88,7 +88,7 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, user: Au
     // 1. Send initial data snapshot
     let initial_data_message = {
         let cache_guard = app_state.live_server_data_cache.lock().await;
-        let servers_list: Vec<crate::websocket_models::ServerWithDetails> = cache_guard.values().cloned().collect();
+        let servers_list: Vec<crate::web::models::websocket_models::ServerWithDetails> = cache_guard.values().cloned().collect();
         WsMessage::FullServerList(FullServerListPush { servers: servers_list })
     };
 
@@ -184,7 +184,7 @@ async fn handle_public_socket(mut socket: WebSocket, app_state: Arc<AppState>) {
     // 1. Send initial data snapshot (desensitized)
     let initial_data_message = {
         let cache_guard = app_state.live_server_data_cache.lock().await;
-        let public_servers_list: Vec<crate::websocket_models::ServerWithDetails> = cache_guard
+        let public_servers_list: Vec<crate::web::models::websocket_models::ServerWithDetails> = cache_guard
             .values()
             .map(|s| s.desensitize()) // Use the new desensitize method
             .collect();

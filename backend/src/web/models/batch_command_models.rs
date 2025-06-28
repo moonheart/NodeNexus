@@ -2,6 +2,22 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
+/// A summary item for listing multiple batch command tasks.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchCommandTaskListItem {
+    pub id: Uuid,
+    pub name: String,
+    pub status: String,
+    pub target_vps_count: usize,
+    pub success_count: usize,
+    pub failure_count: usize,
+    pub pending_or_executing_count: usize,
+    pub created_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CreateBatchCommandRequest {
     pub command_content: Option<String>,
@@ -43,22 +59,6 @@ pub struct BatchCommandTaskDetailResponse {
     pub user_id: String,
     pub original_request_payload: serde_json::Value, // Store the original request for audit/retry
     pub tasks: Vec<ChildCommandTaskDetail>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub completed_at: Option<DateTime<Utc>>,
-}
-
-// You might also want a simpler list item response for a GET /api/batch_commands (list all) endpoint
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BatchCommandTaskListItem {
-    pub batch_command_id: Uuid,
-    pub overall_status: String,
-    pub execution_alias: Option<String>,
-    pub user_id: String,
-    pub target_vps_count: usize,
-    pub success_count: usize,
-    pub failure_count: usize,
-    pub pending_or_executing_count: usize,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,

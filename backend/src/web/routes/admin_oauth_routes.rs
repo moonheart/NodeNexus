@@ -7,7 +7,7 @@ use axum::{
     routing::{get, put},
     Json, Router,
 };
-use crate::http_server::{AppState, AppError};
+use crate::web::{AppState, AppError};
 use crate::db::services::oauth_service::{self, ProviderUpsertPayload};
 
 pub fn create_router() -> Router<Arc<AppState>> {

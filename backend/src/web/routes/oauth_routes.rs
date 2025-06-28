@@ -7,7 +7,7 @@ use axum::{
     Router,
 };
 use std::sync::Arc;
-use crate::http_server::{AppState, AppError, auth_logic::AuthenticatedUser};
+use crate::web::{AppState, AppError, models::AuthenticatedUser};
 use crate::db::services::oauth_service::{self, OAuthState, OAuthCallbackResult};
 use uuid::Uuid;
 use axum_extra::extract::cookie::{Cookie, SameSite, CookieJar};

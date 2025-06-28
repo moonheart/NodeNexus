@@ -7,8 +7,8 @@ use std::sync::Arc;
 // AlertRule DTO is still used from models.rs for API responses
 use crate::db::models::AlertRule;
 use crate::db::entities::{alert_rule, alert_rule_channel}; // Removed prelude::*
-use crate::http_server::models::alert_models::{CreateAlertRuleRequest, UpdateAlertRuleRequest};
-use crate::http_server::AppError;
+use crate::web::models::alert_models::{CreateAlertRuleRequest, UpdateAlertRuleRequest};
+use crate::web::error::AppError;
 
 #[derive(Clone)]
 pub struct AlertService {

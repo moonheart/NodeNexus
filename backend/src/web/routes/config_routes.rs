@@ -5,7 +5,7 @@ use axum::{
 };
 use std::sync::Arc;
 // Removed: use sea_orm::DbErr; // Added DbErr
-use crate::http_server::{AppState, AppError}; // Added AppError
+use crate::web::{AppState, AppError}; // Added AppError
 use crate::agent_service::{AgentConfig, MessageToAgent, message_to_agent::Payload as AgentPayload, UpdateConfigRequest};
 use crate::db::services as db_services;
 use crate::db::entities::{setting, vps}; // Added setting and vps entities

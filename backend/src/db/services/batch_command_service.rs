@@ -15,7 +15,7 @@ use crate::db::entities::{
     child_command_task::Entity as ChildTaskEntity, // Alias for clarity
 };
 use crate::db::enums::{BatchCommandStatus, ChildCommandStatus}; // Added import
-use crate::http_server::models::{CreateBatchCommandRequest, BatchCommandTaskDetailResponse, ChildCommandTaskDetail}; // API DTOs
+use crate::web::models::batch_command_models::{CreateBatchCommandRequest, BatchCommandTaskDetailResponse, ChildCommandTaskDetail}; // API DTOs
 use sea_orm::{EntityTrait, QueryFilter, ModelTrait}; // Removed ColumnTrait from here
 use crate::agent_service::OutputType as GrpcOutputType; // For record_child_task_output
 

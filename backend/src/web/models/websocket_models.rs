@@ -135,7 +135,7 @@ impl ServerWithDetails {
 }
 
 
-use crate::http_server::models::service_monitor_models::ServiceMonitorResultDetails;
+use crate::web::models::service_monitor_models::ServiceMonitorResultDetails;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]

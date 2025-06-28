@@ -2,7 +2,7 @@
 use backend::server::agent_state::{ConnectedAgents, LiveServerDataCache}; // Added LiveServerDataCache
 use backend::server::config::ServerConfig;
 use backend::server::service::MyAgentCommService;
-use backend::websocket_models::{ServerWithDetails, WsMessage};
+use backend::web::models::websocket_models::{ServerWithDetails, WsMessage};
 use backend::db::services as db_services;
 use backend::server::update_service; // Added for cache population
 use backend::notifications::{encryption::EncryptionService, service::NotificationService};
@@ -10,7 +10,6 @@ use backend::db::services::{AlertService, BatchCommandManager}; // Added BatchCo
 use backend::alerting::evaluation_service::EvaluationService; // Added EvaluationService
 use backend::server::result_broadcaster::{ResultBroadcaster, BatchCommandUpdateMsg}; // Added ResultBroadcaster
 use backend::agent_service::agent_communication_service_server::AgentCommunicationServiceServer;
-use backend::http_server;
 use backend::version::VERSION;
 
 use sea_orm::{Database, DatabaseConnection, ConnectOptions};
@@ -206,7 +205,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     });
 
     // --- Axum HTTP Server Setup ---
-    let http_router = http_server::create_axum_router(
+    let http_router = backend::web::create_axum_router(
         db_pool.clone(),
         live_server_data_cache.clone(),
         ws_data_broadcaster_tx.clone(),
@@ -398,7 +397,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Add
     let listener = socket.listen(1024)?;
     info!(address = %addr, "HTTP and gRPC server listening with TCP Keepalive");
 
-    let static_file_service = http_server::create_static_file_service();
+    let static_file_service = backend::web::create_static_file_service();
 
     let app = http_router.fallback_service(
         tower::service_fn(move |req: axum::http::Request<axum::body::Body>| {

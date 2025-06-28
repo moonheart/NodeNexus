@@ -5,7 +5,7 @@
 
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ModelTrait, QueryFilter, QueryOrder, Set, TransactionTrait};
 use crate::db::entities::{prelude::*, service_monitor, service_monitor_agent, service_monitor_tag, vps};
-use crate::http_server::models::service_monitor_models::{CreateMonitor, ServiceMonitorDetails, ServiceMonitorResultDetails, UpdateMonitor};
+use crate::web::models::service_monitor_models::{CreateMonitor, ServiceMonitorDetails, ServiceMonitorResultDetails, UpdateMonitor};
 use std::collections::HashMap;
 use futures::try_join;
 

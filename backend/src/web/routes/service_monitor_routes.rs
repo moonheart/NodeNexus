@@ -8,10 +8,10 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use tracing::error;
 
-use crate::http_server::{AppState, AppError};
+use crate::web::{AppState, AppError};
 use crate::db::services::service_monitor_service;
-use crate::http_server::models::service_monitor_models::{CreateMonitor, UpdateMonitor};
-use crate::http_server::config_routes::push_config_to_vps;
+use crate::web::models::service_monitor_models::{CreateMonitor, UpdateMonitor};
+use crate::web::config_routes::push_config_to_vps;
 
 pub fn create_service_monitor_router() -> Router<Arc<AppState>> {
     Router::new()
@@ -24,7 +24,7 @@ pub fn create_service_monitor_router() -> Router<Arc<AppState>> {
 async fn list_monitors(
     State(app_state): State<Arc<AppState>>,
     // TODO: Add user extraction
-) -> Result<Json<Vec<crate::http_server::models::service_monitor_models::ServiceMonitorDetails>>, AppError> {
+) -> Result<Json<Vec<crate::web::models::service_monitor_models::ServiceMonitorDetails>>, AppError> {
     let user_id = 1; // Hardcoded user_id
     let monitors = service_monitor_service::get_monitors_with_details_by_user_id(&app_state.db_pool, user_id).await?;
     Ok(Json(monitors))
@@ -58,7 +58,7 @@ async fn get_monitor(
     State(app_state): State<Arc<AppState>>,
     Path(id): Path<i32>,
     // TODO: Add user extraction and authorization
-) -> Result<Json<crate::http_server::models::service_monitor_models::ServiceMonitorDetails>, AppError> {
+) -> Result<Json<crate::web::models::service_monitor_models::ServiceMonitorDetails>, AppError> {
     let monitor = service_monitor_service::get_monitor_details_by_id(&app_state.db_pool, id)
         .await?
         .ok_or_else(|| AppError::NotFound("Monitor not found".to_string()))?;
@@ -71,7 +71,7 @@ async fn update_monitor(
     Path(id): Path<i32>,
     // TODO: Add user extraction
     Json(payload): Json<UpdateMonitor>,
-) -> Result<Json<crate::http_server::models::service_monitor_models::ServiceMonitorDetails>, AppError> {
+) -> Result<Json<crate::web::models::service_monitor_models::ServiceMonitorDetails>, AppError> {
     let user_id = 1; // Hardcoded user_id
     let (updated_details, affected_vps_ids) = service_monitor_service::update_monitor(&app_state.db_pool, id, user_id, payload).await?;
 
@@ -122,7 +122,7 @@ async fn get_monitor_results(
     Path(id): Path<i32>,
     Query(query): Query<MonitorResultsQuery>,
     // TODO: Add user extraction and authorization
-) -> Result<Json<Vec<crate::http_server::models::service_monitor_models::ServiceMonitorResultDetails>>, AppError> {
+) -> Result<Json<Vec<crate::web::models::service_monitor_models::ServiceMonitorResultDetails>>, AppError> {
     let results = service_monitor_service::get_monitor_results_by_id(
         &app_state.db_pool,
         id,

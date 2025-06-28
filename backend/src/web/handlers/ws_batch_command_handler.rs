@@ -11,7 +11,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 use tracing::{info, warn, debug};
 
-use crate::http_server::AppState;
+use crate::web::AppState;
 
 // A struct to deserialize the payload part of the WebSocket message for filtering.
 #[derive(Deserialize, Debug)]

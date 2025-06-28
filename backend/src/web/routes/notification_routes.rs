@@ -7,7 +7,7 @@ use axum::{
 };
 use std::sync::Arc;
 
-use crate::http_server::{AppError, AppState, auth_logic::AuthenticatedUser}; // Import AuthenticatedUser
+use crate::web::{AppError, AppState, models::AuthenticatedUser}; // Import AuthenticatedUser
 use crate::notifications::{
     models::{CreateChannelRequest, TestChannelRequest, UpdateChannelRequest},
     service::NotificationError,

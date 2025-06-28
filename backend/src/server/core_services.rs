@@ -16,7 +16,7 @@ use crate::agent_service::{
 use crate::db::enums::ChildCommandStatus;
 use crate::server::agent_state::{AgentSender, AgentState, ConnectedAgents};
 use crate::db::services;
-use crate::websocket_models::WsMessage;
+use crate::web::models::websocket_models::WsMessage;
 use tokio::sync::broadcast;
 
 // 1. Define the generic AgentStream trait

@@ -20,7 +20,7 @@ use tracing::{info, warn};
 
 use crate::{
     agent_service::{MessageToAgent, MessageToServer},
-    http_server::AppState,
+    web::AppState,
     server::{
         agent_state::AgentSender,
         core_services::{self, AgentStream},

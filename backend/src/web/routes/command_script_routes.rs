@@ -8,8 +8,8 @@ use serde::Deserialize;
 
 use crate::db::entities::command_script::{self, ScriptLanguage};
 use crate::db::services::command_script_service::{CommandScriptService, CommandScriptError};
-use crate::http_server::{AppState, AppError};
-use crate::http_server::auth_logic::AuthenticatedUser;
+use crate::web::{AppState, AppError};
+use crate::web::models::AuthenticatedUser;
 
 #[derive(Deserialize)]
 pub struct ScriptPayload {
