@@ -69,7 +69,7 @@ fn init_logging() {
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Added Send + Sync for tokio::spawn
     // Manually check for --version before full parsing to keep the original simple output.
     if std::env::args().any(|arg| arg == "--version") {
-        println!("Server version: {}", VERSION);
+        println!("Server version: {VERSION}");
         return Ok(());
     }
 

@@ -61,11 +61,11 @@ pub async fn process_agent_stream<S>(
                         }
                     }
                     Ok(None) => {
-                        error_message_for_ack = format!("Authentication failed: VPS ID {} not found.", vps_db_id_from_msg);
+                        error_message_for_ack = format!("Authentication failed: VPS ID {vps_db_id_from_msg} not found.");
                         warn!("Authentication failed: VPS ID not found.");
                     }
                     Err(e) => {
-                        error_message_for_ack = format!("Authentication failed: Database error ({})", e);
+                        error_message_for_ack = format!("Authentication failed: Database error ({e})");
                         error!(error = %e, "Authentication failed: Database error.");
                     }
                 }

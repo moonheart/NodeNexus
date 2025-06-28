@@ -101,7 +101,7 @@ let message_to_agent = MessageToAgent {
                         child_task_id,
                         ChildCommandStatus::AgentUnreachable,
                         None,
-                        Some(format!("Failed to send command to agent via mpsc: {}", e)),
+                        Some(format!("Failed to send command to agent via mpsc: {e}")),
                     ).await.map_err(|db_err| DispatcherError::DbUpdateError(db_err.to_string()))?;
                     return Err(DispatcherError::MpscSendError(e.to_string()));
                 }

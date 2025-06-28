@@ -61,7 +61,7 @@ async fn login_handler(
     );
 
     if let Some(scopes) = provider_config.scopes {
-        auth_url.push_str(&format!("&scope={}", scopes));
+        auth_url.push_str(&format!("&scope={scopes}"));
     }
 
     let cookie = Cookie::build(("oauth_state", state_str))
@@ -110,7 +110,7 @@ async fn link_handler(
     );
 
     if let Some(scopes) = provider_config.scopes {
-        auth_url.push_str(&format!("&scope={}", scopes));
+        auth_url.push_str(&format!("&scope={scopes}"));
     }
 
     let cookie = Cookie::build(("oauth_state", state_str))

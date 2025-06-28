@@ -23,7 +23,7 @@ pub async fn update_vps_traffic_stats_after_metric(
         .lock_exclusive() // Equivalent to FOR UPDATE
         .one(txn)
         .await?
-        .ok_or_else(|| DbErr::RecordNotFound(format!("VPS with id {} not found", vps_id)))?;
+        .ok_or_else(|| DbErr::RecordNotFound(format!("VPS with id {vps_id} not found")))?;
 
     let last_rx = vps_model.last_processed_cumulative_rx.unwrap_or(0);
     let last_tx = vps_model.last_processed_cumulative_tx.unwrap_or(0);

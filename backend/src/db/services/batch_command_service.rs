@@ -93,7 +93,7 @@ impl BatchCommandManager {
         let batch_task = batch_command_task::ActiveModel {
             batch_command_id: Set(batch_command_id),
             original_request_payload: Set(serde_json::to_value(&request)
-                .map_err(|e| BatchCommandServiceError::CreationFailed(format!("Failed to serialize request: {}", e)))?),
+                .map_err(|e| BatchCommandServiceError::CreationFailed(format!("Failed to serialize request: {e}")))?),
             status: Set(BatchCommandStatus::Pending), // Initial status
             execution_alias: Set(request.execution_alias.clone()),
             user_id: Set(user_id),

@@ -49,7 +49,7 @@ pub(super) async fn manage_command_lifecycle(
     let temp_file = match tempfile::Builder::new().suffix(script_extension).tempfile() {
         Ok(file) => file,
         Err(e) => {
-            let error_msg = format!("Failed to create temporary script file: {}", e);
+            let error_msg = format!("Failed to create temporary script file: {e}");
             send_error_result(
                 &error_msg,
                 &child_command_id,
@@ -75,7 +75,7 @@ pub(super) async fn manage_command_lifecycle(
     let content_to_write = command_to_run.as_bytes().to_vec();
 
     if let Err(e) = fs::write(temp_file.path(), &content_to_write).await {
-        let error_msg = format!("Failed to write to temporary script file: {}", e);
+        let error_msg = format!("Failed to write to temporary script file: {e}");
         send_error_result(
             &error_msg,
             &child_command_id,
@@ -127,7 +127,7 @@ pub(super) async fn manage_command_lifecycle(
     let mut child_process = match command.spawn() {
         Ok(child) => child,
         Err(e) => {
-            let error_msg = format!("Failed to spawn command: {}", e);
+            let error_msg = format!("Failed to spawn command: {e}");
             send_error_result(
                 &error_msg,
                 &child_command_id,
@@ -163,7 +163,7 @@ pub(super) async fn manage_command_lifecycle(
                 }
             }
             Err(e) => {
-                let error_msg = format!("Failed to send kill signal: {}", e);
+                let error_msg = format!("Failed to send kill signal: {e}");
                 error!(error = %error_msg);
                 BatchCommandResult {
                     command_id: child_command_id.clone(),
@@ -192,11 +192,11 @@ pub(super) async fn manage_command_lifecycle(
                         command_id: child_command_id.clone(),
                         status: final_status_enum.into(),
                         exit_code: status.code().unwrap_or(-1),
-                        error_message: if status.success() { String::new() } else { format!("Exited with status {}", status) },
+                        error_message: if status.success() { String::new() } else { format!("Exited with status {status}") },
                     }
                 }
                 Err(e) => {
-                    let error_msg = format!("Failed to wait for command: {}", e);
+                    let error_msg = format!("Failed to wait for command: {e}");
                     error!(error = %error_msg);
                     BatchCommandResult {
                         command_id: child_command_id.clone(),

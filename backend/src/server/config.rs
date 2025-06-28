@@ -18,9 +18,9 @@ impl ServerConfig {
         let mut file_config: PartialServerConfig = if let Some(path_str) = config_path {
             let path = Path::new(path_str);
             let contents = fs::read_to_string(path)
-                .map_err(|e| format!("Failed to read config file at {:?}: {}", path, e))?;
+                .map_err(|e| format!("Failed to read config file at {path:?}: {e}"))?;
             toml::from_str(&contents)
-                .map_err(|e| format!("Failed to parse TOML from config file at {:?}: {}", path, e))?
+                .map_err(|e| format!("Failed to parse TOML from config file at {path:?}: {e}"))?
         } else {
             PartialServerConfig::default()
         };

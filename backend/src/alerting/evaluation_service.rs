@@ -103,7 +103,7 @@ impl EvaluationService {
                 .one(&*self.pool)
                 .await?
                 .flatten()
-                .unwrap_or_else(|| format!("VPS_ID_{}", specific_vps_id));
+                .unwrap_or_else(|| format!("VPS_ID_{specific_vps_id}"));
             
             self.evaluate_rule_for_single_vps(rule, specific_vps_id, &vps_name).await
         } else {
@@ -225,7 +225,7 @@ impl EvaluationService {
                 }
             }
             if !rule.metric_type.eq("traffic_usage_percent") {
-                 last_metric_value_str = format!("{:.2}", current_value);
+                 last_metric_value_str = format!("{current_value:.2}");
             }
 
 
@@ -270,7 +270,7 @@ impl EvaluationService {
                          };
 
                          let usage_percent = (total_used as f64 / limit_bytes as f64) * 100.0;
-                         last_metric_value_str = format!("{:.2}", usage_percent); // Update for message
+                         last_metric_value_str = format!("{usage_percent:.2}"); // Update for message
 
                          let condition_met = match rule.comparison_operator.as_str() {
                              ">" => usage_percent > rule.threshold,

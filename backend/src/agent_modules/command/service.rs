@@ -71,8 +71,7 @@ pub async fn handle_batch_terminate_command(
             status: CommandStatus::Terminated.into(), // We can consider it "Terminated" as the end state is correct.
             exit_code: -1,
             error_message: format!(
-                "Termination signal sent, but command was already completed or terminated: {}",
-                e
+                "Termination signal sent, but command was already completed or terminated: {e}"
             ),
         };
         let client_msg_id = id_provider();

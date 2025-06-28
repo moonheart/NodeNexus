@@ -95,9 +95,9 @@ impl From<CommandScriptError> for AppError {
     fn from(err: CommandScriptError) -> Self {
         match err {
             CommandScriptError::DbErr(e) => AppError::InternalServerError(e.to_string()),
-            CommandScriptError::NotFound(id) => AppError::NotFound(format!("Script with ID {} not found", id)),
+            CommandScriptError::NotFound(id) => AppError::NotFound(format!("Script with ID {id} not found")),
             CommandScriptError::Unauthorized => AppError::Unauthorized("You are not authorized to perform this action.".to_string()),
-            CommandScriptError::DuplicateName(name) => AppError::Conflict(format!("A script with the name '{}' already exists.", name)),
+            CommandScriptError::DuplicateName(name) => AppError::Conflict(format!("A script with the name '{name}' already exists.")),
         }
     }
 }

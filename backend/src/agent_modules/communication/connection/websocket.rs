@@ -28,7 +28,7 @@ impl Stream for WebSocketStreamAdapter {
         match Pin::new(&mut *stream_guard).poll_next(cx) {
             Poll::Ready(Some(Ok(WsMessage::Binary(bin)))) => {
                 let msg = MessageToAgent::decode(bin.as_ref())
-                    .map_err(|e| Status::internal(format!("Protobuf decode error: {}", e)));
+                    .map_err(|e| Status::internal(format!("Protobuf decode error: {e}")));
                 Poll::Ready(Some(msg))
             }
             Poll::Ready(Some(Ok(WsMessage::Close(_)))) => {
@@ -37,7 +37,7 @@ impl Stream for WebSocketStreamAdapter {
             }
             Poll::Ready(Some(Err(e))) => {
                 warn!("WebSocket receive error: {}", e);
-                Poll::Ready(Some(Err(Status::internal(format!("WebSocket error: {}", e)))))
+                Poll::Ready(Some(Err(Status::internal(format!("WebSocket error: {e}")))))
             }
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
@@ -59,7 +59,7 @@ impl Sink<MessageToServer> for WebSocketStreamAdapter {
 
     fn start_send(self: Pin<&mut Self>, item: MessageToServer) -> Result<(), Self::Error> {
         let mut buf = Vec::new();
-        item.encode(&mut buf).map_err(|e| Status::internal(format!("Protobuf encode error: {}", e)))?;
+        item.encode(&mut buf).map_err(|e| Status::internal(format!("Protobuf encode error: {e}")))?;
         let mut stream = self.ws_stream.try_lock().map_err(|_| Status::unavailable("WebSocket stream is busy, could not send"))?;
         Pin::new(&mut *stream).start_send(WsMessage::Binary(buf.into())).map_err(|e| Status::internal(e.to_string()))
     }

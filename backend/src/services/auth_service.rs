@@ -17,14 +17,14 @@ pub async fn register_user(pool: &DatabaseConnection, req: RegisterRequest) -> R
         .filter(user::Column::Username.eq(&req.username))
         .one(pool)
         .await
-        .map_err(|e: DbErr| AppError::DatabaseError(format!("检查用户名是否存在时出错: {}", e)))?;
+        .map_err(|e: DbErr| AppError::DatabaseError(format!("检查用户名是否存在时出错: {e}")))?;
 
     if existing_user_by_username.is_some() {
         return Err(AppError::UserAlreadyExists("用户名已被使用。".to_string()));
     }
 
     let password_hash = hash(&req.password, DEFAULT_COST)
-        .map_err(|e| AppError::PasswordHashingError(format!("密码哈希失败: {}", e)))?;
+        .map_err(|e| AppError::PasswordHashingError(format!("密码哈希失败: {e}")))?;
 
     let new_user = user::ActiveModel {
         username: Set(req.username.clone()),
@@ -37,7 +37,7 @@ pub async fn register_user(pool: &DatabaseConnection, req: RegisterRequest) -> R
             id: user_model.id,
             username: user_model.username,
         }),
-        Err(e) => Err(AppError::DatabaseError(format!("创建用户失败: {}", e))),
+        Err(e) => Err(AppError::DatabaseError(format!("创建用户失败: {e}"))),
     }
 }
 
@@ -51,7 +51,7 @@ pub async fn login_user(pool: &DatabaseConnection, req: LoginRequest, jwt_secret
             .filter(user::Column::Username.eq(&req.username))
             .one(pool)
             .await
-            .map_err(|e: DbErr| AppError::DatabaseError(format!("通过用户名查询用户失败: {}", e)))?;
+            .map_err(|e: DbErr| AppError::DatabaseError(format!("通过用户名查询用户失败: {e}")))?;
 
     let user = match user_model_option {
         Some(u) => u,
@@ -68,7 +68,7 @@ pub async fn login_user(pool: &DatabaseConnection, req: LoginRequest, jwt_secret
     };
 
     let valid_password = verify(&req.password, password_hash)
-        .map_err(|e| AppError::InternalServerError(format!("密码验证过程中出错: {}",e)))?;
+        .map_err(|e| AppError::InternalServerError(format!("密码验证过程中出错: {e}")))?;
 
     if !valid_password {
         return Err(AppError::InvalidCredentials);
@@ -89,7 +89,7 @@ pub fn create_jwt_for_user(user: &user::Model, jwt_secret: &str) -> Result<Login
     };
 
     let token = encode(&Header::default(), &claims, &EncodingKey::from_secret(jwt_secret.as_ref()))
-        .map_err(|e| AppError::TokenCreationError(format!("生成Token失败: {}", e)))?;
+        .map_err(|e| AppError::TokenCreationError(format!("生成Token失败: {e}")))?;
 
     Ok(LoginResponse {
         token,

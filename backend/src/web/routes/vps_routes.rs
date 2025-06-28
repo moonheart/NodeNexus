@@ -568,8 +568,7 @@ async fn bulk_trigger_update_check_handler(
 
     Ok(Json(BulkActionResponse {
         message: format!(
-            "Update commands sent. Success: {}, Failed/Not Found: {}.",
-            successful_sends, not_owned_or_failed
+            "Update commands sent. Success: {successful_sends}, Failed/Not Found: {not_owned_or_failed}."
         ),
         successful_count: successful_sends,
         failed_count: not_owned_or_failed,

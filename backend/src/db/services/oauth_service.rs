@@ -39,7 +39,7 @@ pub async fn get_provider_config(
         .one(db)
         .await
         .map_err(|e| AppError::DatabaseError(e.to_string()))?
-        .ok_or_else(|| AppError::NotFound(format!("OAuth provider '{}' not found", provider_name)))?;
+        .ok_or_else(|| AppError::NotFound(format!("OAuth provider '{provider_name}' not found")))?;
 
     provider
         .decrypt_client_secret(encryption_key)
@@ -67,16 +67,16 @@ pub async fn exchange_code_for_token(
         .header("Accept", "application/json")
         .send()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to send token request: {}", e)))?;
+        .map_err(|e| AppError::InternalServerError(format!("Failed to send token request: {e}")))?;
 
     if !response.status().is_success() {
         let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-        return Err(AppError::InternalServerError(format!("Failed to get token: {}", error_text)));
+        return Err(AppError::InternalServerError(format!("Failed to get token: {error_text}")));
     }
 
     response.json::<TokenResponse>()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to parse token response: {}", e)))
+        .map_err(|e| AppError::InternalServerError(format!("Failed to parse token response: {e}")))
 }
 
 pub async fn get_user_info(
@@ -89,10 +89,10 @@ pub async fn get_user_info(
         .header("User-Agent", "mjjer-agent") // Some providers require a User-Agent
         .send()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to send user info request: {}", e)))?
+        .map_err(|e| AppError::InternalServerError(format!("Failed to send user info request: {e}")))?
         .json::<serde_json::Value>()
         .await
-        .map_err(|e| AppError::InternalServerError(format!("Failed to parse user info response: {}", e)))
+        .map_err(|e| AppError::InternalServerError(format!("Failed to parse user info response: {e}")))
 }
 
 // This struct will be used in the route handler
@@ -291,7 +291,7 @@ pub async fn update_provider(
         .filter(oauth2_provider::Column::ProviderName.eq(provider_name))
         .one(db)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("OAuth provider '{}' not found", provider_name)))?;
+        .ok_or_else(|| AppError::NotFound(format!("OAuth provider '{provider_name}' not found")))?;
 
     let mut active_provider: oauth2_provider::ActiveModel = provider.into();
 
@@ -324,7 +324,7 @@ pub async fn delete_provider(
         .await?;
 
     if delete_result.rows_affected == 0 {
-        Err(AppError::NotFound(format!("OAuth provider '{}' not found", provider_name)))
+        Err(AppError::NotFound(format!("OAuth provider '{provider_name}' not found")))
     } else {
         Ok(())
     }

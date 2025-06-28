@@ -256,18 +256,18 @@ impl<E: RustEmbed, T> ServeFuture<E, T> {
             }
         } else if path_candidate.ends_with('/') {
             if let Some(index_file) = self.index_file.as_ref().as_ref() {
-                let new_path_candidate = format!("{}{}", path_candidate, index_file);
+                let new_path_candidate = format!("{path_candidate}{index_file}");
                 if E::get(&new_path_candidate).is_some() {
                     path_candidate = Cow::Owned(new_path_candidate);
                 }
             }
         } else if let Some(index_file) = self.index_file.as_ref().as_ref() {
-            let new_path_candidate = format!("{}/{}", path_candidate, index_file);
+            let new_path_candidate = format!("{path_candidate}/{index_file}");
             if E::get(&new_path_candidate).is_some() {
                 return GetFileResult {
                     path: Cow::Owned(new_path_candidate),
                     file: None,
-                    should_redirect: Some(format!("/{}/", path_candidate)),
+                    should_redirect: Some(format!("/{path_candidate}/")),
                     compression_method: CompressionMethod::Identity,
                     is_fallback: false,
                 };
@@ -310,7 +310,7 @@ impl<E: RustEmbed, T> ServeFuture<E, T> {
                 return GetFileResult {
                     path: Cow::Borrowed(path),
                     file: None,
-                    should_redirect: Some(format!("/{}", fallback_file)),
+                    should_redirect: Some(format!("/{fallback_file}")),
                     compression_method: CompressionMethod::Identity,
                     is_fallback: true,
                 };
@@ -469,7 +469,7 @@ impl<E: RustEmbed, T> Future for ServeFuture<E, T> {
 fn hash_to_string(hash: &[u8; 32]) -> String {
     let mut s = String::with_capacity(64);
     for byte in hash {
-        s.push_str(&format!("{:02x}", byte));
+        s.push_str(&format!("{byte:02x}"));
     }
     s
 }

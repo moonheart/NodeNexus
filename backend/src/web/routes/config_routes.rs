@@ -39,7 +39,7 @@ async fn get_global_agent_config(
     match setting_model_option {
         Some(s_model) => {
             let config: AgentConfig = serde_json::from_value(s_model.value) // s_model.value is already serde_json::Value
-                .map_err(|e| AppError::ServerError(format!("Failed to parse global config: {}", e)))?;
+                .map_err(|e| AppError::ServerError(format!("Failed to parse global config: {e}")))?;
             Ok(Json(config))
         },
         None => Err(AppError::NotFound("Global agent config not found.".to_string())),
@@ -52,7 +52,7 @@ async fn update_global_agent_config(
     Json(payload): Json<AgentConfig>,
 ) -> Result<StatusCode, AppError> { // Changed return type
     let value = serde_json::to_value(&payload)
-        .map_err(|e| AppError::InvalidInput(format!("Failed to serialize config: {}", e)))?;
+        .map_err(|e| AppError::InvalidInput(format!("Failed to serialize config: {e}")))?;
     
     db_services::update_setting(&app_state.db_pool, "global_agent_config", &value)
         .await
@@ -172,7 +172,7 @@ pub async fn get_effective_vps_config(
         .ok_or_else(|| AppError::NotFound("Global agent config not found.".to_string()))?;
     
     let mut effective_config: AgentConfig = serde_json::from_value(global_config_setting_model.value)
-        .map_err(|e| AppError::ServerError(format!("Failed to parse global config: {}", e)))?;
+        .map_err(|e| AppError::ServerError(format!("Failed to parse global config: {e}")))?;
 
     // 2. Get VPS and merge override if it exists
     let vps_model: vps::Model = db_services::get_vps_by_id(&app_state.db_pool, vps_id)
@@ -182,7 +182,7 @@ pub async fn get_effective_vps_config(
 
     if let Some(override_json) = vps_model.agent_config_override {
         let override_config: AgentConfig = serde_json::from_value(override_json)
-            .map_err(|e| AppError::ServerError(format!("Failed to parse override config: {}", e)))?;
+            .map_err(|e| AppError::ServerError(format!("Failed to parse override config: {e}")))?;
         
         // This is a simple merge. A more sophisticated merge might be needed.
         if override_config.metrics_collect_interval_seconds > 0 { effective_config.metrics_collect_interval_seconds = override_config.metrics_collect_interval_seconds; }
@@ -200,7 +200,7 @@ pub async fn get_effective_vps_config(
     // 3. Get service monitor tasks for this agent
     let tasks = db_services::service_monitor_service::get_tasks_for_agent(&app_state.db_pool, vps_id)
         .await
-        .map_err(|e| AppError::DatabaseError(format!("Failed to get monitor tasks for agent {}: {}", vps_id, e)))?;
+        .map_err(|e| AppError::DatabaseError(format!("Failed to get monitor tasks for agent {vps_id}: {e}")))?;
     effective_config.service_monitor_tasks = tasks;
 
     Ok(effective_config)

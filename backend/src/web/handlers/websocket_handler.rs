@@ -55,7 +55,7 @@ async fn authenticate_ws_connection(
                 jsonwebtoken::errors::ErrorKind::InvalidToken => Err(AppError::Unauthorized("Invalid token".to_string())),
                 jsonwebtoken::errors::ErrorKind::InvalidSignature => Err(AppError::Unauthorized("Invalid token signature".to_string())),
                 jsonwebtoken::errors::ErrorKind::ExpiredSignature => Err(AppError::Unauthorized("Token has expired".to_string())),
-                _ => Err(AppError::Unauthorized(format!("Token validation failed: {}", e))),
+                _ => Err(AppError::Unauthorized(format!("Token validation failed: {e}"))),
             }
         }
     }

@@ -67,7 +67,7 @@ impl NotificationSender for TelegramSender {
             }
         };
 
-        let api_url = format!("https://api.telegram.org/bot{}/sendMessage", bot_token);
+        let api_url = format!("https://api.telegram.org/bot{bot_token}/sendMessage");
 
         let escaped_message = self.escape_markdown_v2(message);
         let payload = TelegramMessage {
@@ -82,9 +82,7 @@ impl NotificationSender for TelegramSender {
         if !status.is_success() {
             let error_body = response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
             return Err(SenderError::SendFailed(format!(
-                "Telegram API returned non-success status: {}. Body: {}",
-                status,
-                error_body
+                "Telegram API returned non-success status: {status}. Body: {error_body}"
             )));
         }
 

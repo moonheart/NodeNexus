@@ -88,7 +88,7 @@ impl Stream for WebSocketStreamAdapter {
             match Pin::new(&mut self.receiver).poll_next(cx) {
                 Poll::Ready(Some(Ok(Message::Binary(bin)))) => {
                     let msg = MessageToServer::decode(bin.as_ref()).map_err(|e| {
-                        tonic::Status::internal(format!("Protobuf decode error: {}", e))
+                        tonic::Status::internal(format!("Protobuf decode error: {e}"))
                     });
                     return Poll::Ready(Some(msg));
                 }
@@ -99,8 +99,7 @@ impl Stream for WebSocketStreamAdapter {
                 Poll::Ready(Some(Err(e))) => {
                     warn!("WebSocket receive error: {}", e);
                     return Poll::Ready(Some(Err(tonic::Status::internal(format!(
-                        "WebSocket error: {}",
-                        e
+                        "WebSocket error: {e}"
                     )))));
                 }
                 Poll::Ready(None) => return Poll::Ready(None),
@@ -120,32 +119,32 @@ impl Sink<MessageToAgent> for WebSocketStreamAdapter {
         let mut sender = self.sender.try_lock().expect("WebSocket sender lock failed in poll_ready");
         Pin::new(&mut *sender)
             .poll_ready(cx)
-            .map_err(|e| tonic::Status::internal(format!("WebSocket sink error: {}", e)))
+            .map_err(|e| tonic::Status::internal(format!("WebSocket sink error: {e}")))
     }
 
     fn start_send(self: Pin<&mut Self>, item: MessageToAgent) -> Result<(), Self::Error> {
         let mut buf = Vec::new();
         item.encode(&mut buf)
-            .map_err(|e| tonic::Status::internal(format!("Protobuf encode error: {}", e)))?;
+            .map_err(|e| tonic::Status::internal(format!("Protobuf encode error: {e}")))?;
 
         let mut sender = self.sender.try_lock().expect("WebSocket sender lock failed in start_send");
         Pin::new(&mut *sender)
             .start_send(Message::Binary(buf.into()))
-            .map_err(|e| tonic::Status::internal(format!("WebSocket send error: {}", e)))
+            .map_err(|e| tonic::Status::internal(format!("WebSocket send error: {e}")))
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let mut sender = self.sender.try_lock().expect("WebSocket sender lock failed in poll_flush");
         Pin::new(&mut *sender)
             .poll_flush(cx)
-            .map_err(|e| tonic::Status::internal(format!("WebSocket flush error: {}", e)))
+            .map_err(|e| tonic::Status::internal(format!("WebSocket flush error: {e}")))
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let mut sender = self.sender.try_lock().expect("WebSocket sender lock failed in poll_close");
         Pin::new(&mut *sender)
             .poll_close(cx)
-            .map_err(|e| tonic::Status::internal(format!("WebSocket close error: {}", e)))
+            .map_err(|e| tonic::Status::internal(format!("WebSocket close error: {e}")))
     }
 }
 

@@ -121,8 +121,7 @@ async fn create_batch_command(
         Err(e) => {
             error!(error = ?e, "Failed to create batch command.");
             Err(AppError::InternalServerError(format!(
-                "Failed to create batch command: {}",
-                e
+                "Failed to create batch command: {e}"
             )))
         }
     }
@@ -141,8 +140,7 @@ async fn get_batch_command_detail(
     {
         Ok(Some(detail_response)) => Ok(Json(detail_response)),
         Ok(None) => Err(AppError::NotFound(format!(
-            "Batch command task with ID {} not found.",
-            batch_command_id
+            "Batch command task with ID {batch_command_id} not found."
         ))),
         Err(service_err) => {
             error!(
@@ -157,13 +155,11 @@ async fn get_batch_command_detail(
                 }
                 crate::db::services::batch_command_service::BatchCommandServiceError::NotFound(_) => {
                      Err(AppError::NotFound(format!(
-                        "Batch command task with ID {} not found.",
-                        batch_command_id
+                        "Batch command task with ID {batch_command_id} not found."
                     )))
                 }
                 _ => Err(AppError::InternalServerError(format!(
-                    "Failed to fetch batch command detail: {}",
-                    service_err
+                    "Failed to fetch batch command detail: {service_err}"
                 ))),
             }
         }
@@ -218,13 +214,11 @@ async fn terminate_batch_command(
                 }
                 crate::db::services::batch_command_service::BatchCommandServiceError::NotFound(_) => {
                      Err(AppError::NotFound(format!(
-                        "Batch command task with ID {} not found for termination.",
-                        batch_command_id
+                        "Batch command task with ID {batch_command_id} not found for termination."
                     )))
                 }
                 _ => Err(AppError::InternalServerError(format!(
-                    "Failed to terminate batch command: {}",
-                    service_err
+                    "Failed to terminate batch command: {service_err}"
                 ))),
             }
         }
@@ -276,16 +270,14 @@ async fn terminate_child_command(
                 }
                 crate::db::services::batch_command_service::BatchCommandServiceError::NotFound(_) => {
                      Err(AppError::NotFound(format!(
-                        "Child command task with ID {} not found.",
-                        child_id
+                        "Child command task with ID {child_id} not found."
                     )))
                 }
                 crate::db::services::batch_command_service::BatchCommandServiceError::TaskNotTerminable => {
                     Err(AppError::Conflict("Task is already completed or in a non-terminable state.".to_string()))
                 }
                 _ => Err(AppError::InternalServerError(format!(
-                    "Failed to terminate child command: {}",
-                    service_err
+                    "Failed to terminate child command: {service_err}"
                 ))),
             }
         }

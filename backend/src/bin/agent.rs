@@ -358,7 +358,7 @@ async fn run_agent_logic() -> Result<(), Box<dyn Error + Send + Sync>> {
     let args: Vec<String> = std::env::args().collect();
 
     if args.contains(&"--version".to_string()) {
-        println!("Agent version: {}", VERSION);
+        println!("Agent version: {VERSION}");
         return Ok(());
     }
     // --- Health Check Argument Handling ---
@@ -384,7 +384,7 @@ async fn run_agent_logic() -> Result<(), Box<dyn Error + Send + Sync>> {
             config
         }
         Err(e) => {
-            let err_msg = format!("Critical error loading configuration: {}", e);
+            let err_msg = format!("Critical error loading configuration: {e}");
             error!(error = %err_msg);
             // Convert the error into a type that satisfies the Send + Sync bounds.
             return Err(err_msg.into());

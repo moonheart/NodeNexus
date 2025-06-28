@@ -40,9 +40,9 @@ impl IntoResponse for AppError {
             AppError::UserAlreadyExists(msg) => (StatusCode::CONFLICT, msg),
             AppError::UserNotFound => (StatusCode::UNAUTHORIZED, "无效凭据".to_string()),
             AppError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "无效凭据".to_string()),
-            AppError::PasswordHashingError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Password hashing error: {}", msg)),
-            AppError::TokenCreationError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Token creation error: {}", msg)),
-            AppError::DatabaseError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", msg)),
+            AppError::PasswordHashingError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Password hashing error: {msg}")),
+            AppError::TokenCreationError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Token creation error: {msg}")),
+            AppError::DatabaseError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {msg}")),
             AppError::InternalServerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             AppError::ServerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
@@ -61,6 +61,6 @@ impl From<sea_orm::DbErr> for AppError {
 
 impl From<serde_json::Error> for AppError {
     fn from(err: serde_json::Error) -> Self {
-        AppError::InternalServerError(format!("JSON serialization/deserialization error: {}", err))
+        AppError::InternalServerError(format!("JSON serialization/deserialization error: {err}"))
     }
 }

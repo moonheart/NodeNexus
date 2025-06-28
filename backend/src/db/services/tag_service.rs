@@ -100,7 +100,7 @@ pub async fn update_tag(
         .filter(tag::Column::UserId.eq(user_id))
         .one(db)
         .await?
-        .ok_or_else(|| DbErr::RecordNotFound(format!("Tag with id {} not found for user {}", tag_id, user_id)))?;
+        .ok_or_else(|| DbErr::RecordNotFound(format!("Tag with id {tag_id} not found for user {user_id}")))?;
 
     let mut active_tag: tag::ActiveModel = tag_to_update.into_active_model();
     active_tag.name = Set(name.to_owned());

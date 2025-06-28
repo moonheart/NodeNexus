@@ -7,7 +7,7 @@ use hex;
 const NONCE_SIZE: usize = 12; // AES-GCM standard nonce size
 
 pub fn encrypt(plain_text: &str, key_hex: &str) -> Result<String, String> {
-    let key_bytes = hex::decode(key_hex).map_err(|e| format!("Invalid hex key: {}", e))?;
+    let key_bytes = hex::decode(key_hex).map_err(|e| format!("Invalid hex key: {e}"))?;
     if key_bytes.len() != 32 {
         return Err("Encryption key must be 32 bytes (256 bits) long".to_string());
     }
@@ -17,7 +17,7 @@ pub fn encrypt(plain_text: &str, key_hex: &str) -> Result<String, String> {
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
     let ciphertext = cipher
         .encrypt(&nonce, plain_text.as_bytes())
-        .map_err(|e| format!("Encryption failed: {}", e))?;
+        .map_err(|e| format!("Encryption failed: {e}"))?;
 
     let mut result = nonce.to_vec();
     result.extend_from_slice(&ciphertext);
@@ -26,14 +26,14 @@ pub fn encrypt(plain_text: &str, key_hex: &str) -> Result<String, String> {
 }
 
 pub fn decrypt(cipher_hex: &str, key_hex: &str) -> Result<String, String> {
-    let key_bytes = hex::decode(key_hex).map_err(|e| format!("Invalid hex key: {}", e))?;
+    let key_bytes = hex::decode(key_hex).map_err(|e| format!("Invalid hex key: {e}"))?;
     if key_bytes.len() != 32 {
         return Err("Decryption key must be 32 bytes (256 bits) long".to_string());
     }
     let key = key_bytes.as_slice().into();
     let cipher = Aes256Gcm::new(key);
 
-    let encrypted_data = hex::decode(cipher_hex).map_err(|e| format!("Invalid hex ciphertext: {}", e))?;
+    let encrypted_data = hex::decode(cipher_hex).map_err(|e| format!("Invalid hex ciphertext: {e}"))?;
     if encrypted_data.len() < NONCE_SIZE {
         return Err("Ciphertext is too short to contain a nonce".to_string());
     }
@@ -43,9 +43,9 @@ pub fn decrypt(cipher_hex: &str, key_hex: &str) -> Result<String, String> {
 
     let decrypted_bytes = cipher
         .decrypt(nonce, ciphertext)
-        .map_err(|e| format!("Decryption failed: {}", e))?;
+        .map_err(|e| format!("Decryption failed: {e}"))?;
 
-    String::from_utf8(decrypted_bytes).map_err(|e| format!("Invalid UTF-8 sequence: {}", e))
+    String::from_utf8(decrypted_bytes).map_err(|e| format!("Invalid UTF-8 sequence: {e}"))
 }
 
 #[cfg(test)]

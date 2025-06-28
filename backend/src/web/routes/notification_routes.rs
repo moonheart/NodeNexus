@@ -122,17 +122,17 @@ impl From<NotificationError> for AppError {
         match err {
             NotificationError::DatabaseError(e) => AppError::DatabaseError(e.to_string()),
             NotificationError::EncryptionError(e) => {
-                AppError::InternalServerError(format!("Encryption error: {}", e))
+                AppError::InternalServerError(format!("Encryption error: {e}"))
             }
             NotificationError::SerializationError(e) => {
-                AppError::InvalidInput(format!("Failed to process configuration: {}", e))
+                AppError::InvalidInput(format!("Failed to process configuration: {e}"))
             }
             NotificationError::NotFound(_) => AppError::NotFound("Notification channel not found.".to_string()),
             NotificationError::UnsupportedChannel(channel_type) => {
-                AppError::InvalidInput(format!("Unsupported channel type: {}", channel_type))
+                AppError::InvalidInput(format!("Unsupported channel type: {channel_type}"))
             }
             NotificationError::SenderError(e) => {
-                AppError::InternalServerError(format!("Failed to send notification: {}", e))
+                AppError::InternalServerError(format!("Failed to send notification: {e}"))
             }
             NotificationError::PermissionDenied => {
                 AppError::Unauthorized("You do not have permission to access this resource.".to_string())

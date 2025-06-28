@@ -225,7 +225,7 @@ pub async fn update_vps_info_on_handshake(
     });
 
     let os_type_str = crate::agent_service::OsType::try_from(handshake_info.os_type)
-        .map(|os_enum| format!("{:?}", os_enum))
+        .map(|os_enum| format!("{os_enum:?}"))
         .unwrap_or_else(|_| "Unknown".to_string());
 
     let mut agent_info_metadata_map = serde_json::Map::new();

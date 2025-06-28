@@ -32,7 +32,7 @@ struct GitHubAsset {
 /// Fetches the latest release information from GitHub.
 async fn get_latest_github_release() -> Result<GitHubRelease, reqwest::Error> {
     let client = reqwest::Client::new();
-    let url = format!("https://api.github.com/repos/{}/releases/latest", GITHUB_REPO);
+    let url = format!("https://api.github.com/repos/{GITHUB_REPO}/releases/latest");
     
     info!(url = %url, "Fetching latest release from GitHub");
 
@@ -169,7 +169,7 @@ async fn replace_and_restart(new_binary_path: &Path) -> Result<(), Box<dyn std::
                     std::process::exit(0);
                 },
                 Err(e) => {
-                    let msg = format!("Failed to execute 'sc.exe start': {}. Manual intervention required.", e);
+                    let msg = format!("Failed to execute 'sc.exe start': {e}. Manual intervention required.");
                     error!("{}", msg);
                     Err(msg.into())
                 }
@@ -224,7 +224,7 @@ pub async fn handle_update_check(update_lock: Arc<Mutex<()>>) {
                 };
                 let os = std::env::consts::OS;
                 
-                let mut target_asset_name = format!("agent-{}-{}", os, arch);
+                let mut target_asset_name = format!("agent-{os}-{arch}");
                 if os == "windows" {
                     target_asset_name.push_str(".exe");
                 }

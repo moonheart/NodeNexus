@@ -55,7 +55,7 @@ pub async fn server_message_handler_loop(
                                         info!("Successfully updated and saved new config.");
                                     }
                                     Err(e) => {
-                                        error_message = format!("Failed to save config file: {}", e);
+                                        error_message = format!("Failed to save config file: {e}");
                                         error!(error = %error_message);
                                     }
                                 }

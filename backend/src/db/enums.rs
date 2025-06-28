@@ -26,7 +26,7 @@ pub enum BatchCommandStatus {
 
 impl fmt::Display for BatchCommandStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -59,6 +59,6 @@ pub enum ChildCommandStatus {
 
 impl fmt::Display for ChildCommandStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }

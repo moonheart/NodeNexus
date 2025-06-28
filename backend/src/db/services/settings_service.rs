@@ -67,7 +67,7 @@ pub async fn update_vps_config_status(
         active_vps.updated_at = Set(now);
         active_vps.update(db).await
         .map_err(|e| {
-            DbErr::Custom(format!("Failed to update VPS config status: {}", e))
+            DbErr::Custom(format!("Failed to update VPS config status: {e}"))
         })
         .map(|_res| {
             UpdateResult {

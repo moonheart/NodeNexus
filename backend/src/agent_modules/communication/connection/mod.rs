@@ -49,7 +49,7 @@ impl ConnectionHandler {
         info!("Attempting to connect to WebSocket server");
         let base_url = agent_cli_config.server_address.trim_end_matches('/');
         let full_url = if !agent_cli_config.server_address.contains("/ws/agent") {
-            format!("{}/ws/agent", base_url)
+            format!("{base_url}/ws/agent")
         } else {
             agent_cli_config.server_address.clone()
         };

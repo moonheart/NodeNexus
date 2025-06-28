@@ -441,7 +441,7 @@ pub async fn get_vps_ids_for_monitor(
     let monitor = ServiceMonitor::find_by_id(monitor_id)
         .one(db)
         .await?
-        .ok_or_else(|| DbErr::RecordNotFound(format!("Monitor with ID {} not found", monitor_id)))?;
+        .ok_or_else(|| DbErr::RecordNotFound(format!("Monitor with ID {monitor_id} not found")))?;
 
     // Get explicitly assigned/excluded agents and tags
     let assigned_agents_future = ServiceMonitorAgent::find()

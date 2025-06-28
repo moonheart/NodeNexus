@@ -49,8 +49,7 @@ impl NotificationSender for WebhookSender {
             "GET" => Method::GET,
             _ => {
                 return Err(SenderError::InvalidConfiguration(format!(
-                    "Unsupported HTTP method: {}",
-                    method
+                    "Unsupported HTTP method: {method}"
                 )));
             }
         };
@@ -62,9 +61,9 @@ impl NotificationSender for WebhookSender {
             let mut header_map = header::HeaderMap::new();
             for (key, value) in h {
                 let header_name = header::HeaderName::from_bytes(key.as_bytes())
-                    .map_err(|e| SenderError::InvalidConfiguration(format!("Invalid header name: {}", e)))?;
+                    .map_err(|e| SenderError::InvalidConfiguration(format!("Invalid header name: {e}")))?;
                 let header_value = header::HeaderValue::from_str(value)
-                    .map_err(|e| SenderError::InvalidConfiguration(format!("Invalid header value: {}", e)))?;
+                    .map_err(|e| SenderError::InvalidConfiguration(format!("Invalid header value: {e}")))?;
                 header_map.insert(header_name, header_value);
             }
             request_builder = request_builder.headers(header_map);
@@ -92,9 +91,7 @@ impl NotificationSender for WebhookSender {
         if !status.is_success() {
             let error_body = response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
             return Err(SenderError::SendFailed(format!(
-                "Webhook returned non-success status: {}. Body: {}",
-                status,
-                error_body
+                "Webhook returned non-success status: {status}. Body: {error_body}"
             )));
         }
 

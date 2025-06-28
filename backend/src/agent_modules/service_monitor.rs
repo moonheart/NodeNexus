@@ -174,7 +174,7 @@ async fn run_http_check<F>(
                 let error_details = if e.is_timeout() {
                     "Error: Request timed out".to_string()
                 } else {
-                    format!("Error: {}", e)
+                    format!("Error: {e}")
                 };
                 (false, error_details, None)
             }
@@ -216,7 +216,7 @@ async fn run_ping_check<F: Fn() -> u64 + Send + Sync + 'static>(
     let target_clone = task.target.clone();
     let resolved_addr_result = tokio::task::spawn_blocking(move || {
         use std::net::ToSocketAddrs;
-        let host_with_port = format!("{}:0", target_clone);
+        let host_with_port = format!("{target_clone}:0");
         host_with_port.to_socket_addrs()
     }).await;
 
@@ -243,9 +243,9 @@ async fn run_ping_check<F: Fn() -> u64 + Send + Sync + 'static>(
         let (successful, details, latency) = match pinger.ping(surge_ping::PingSequence(0), &[]).await {
             Ok((_reply, duration)) => {
                 let rtt = duration.as_millis() as i32;
-                (true, format!("{} ms", rtt), Some(rtt))
+                (true, format!("{rtt} ms"), Some(rtt))
             }
-            Err(e) => (false, format!("Error: {}", e), None),
+            Err(e) => (false, format!("Error: {e}"), None),
         };
 
         let monitor_result = ServiceMonitorResult {
@@ -291,7 +291,7 @@ async fn run_tcp_check<F: Fn() -> u64 + Send + Sync + 'static>(
 
         let (successful, details, latency) = match result {
             Ok(Ok(_stream)) => (true, "Connection successful".to_string(), Some(response_time_ms)),
-            Ok(Err(e)) => (false, format!("Error: {}", e), None),
+            Ok(Err(e)) => (false, format!("Error: {e}"), None),
             Err(_) => (false, "Error: Connection timed out".to_string(), None),
         };
 
