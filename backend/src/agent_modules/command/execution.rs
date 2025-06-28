@@ -1,6 +1,4 @@
 use chrono::Utc;
-use encoding_rs;
-use lazy_static::lazy_static;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::fs;
@@ -9,101 +7,19 @@ use tokio::process::Command as TokioCommand;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info, warn};
 
-// Platform-specific encoding detection
-#[cfg(windows)]
-use {codepage, windows_sys::Win32::Globalization::GetACP};
-
-lazy_static! {
-    static ref SYSTEM_ENCODING: &'static encoding_rs::Encoding = {
-        #[cfg(windows)]
-        {
-            // On Windows, we use the GetACP function to get the system's active code page.
-            let acp = unsafe { GetACP() };
-            codepage::to_encoding(acp.try_into().unwrap())
-                .unwrap_or(encoding_rs::UTF_8) // Fallback to UTF-8 if the code page is not recognized
-        }
-        #[cfg(not(windows))]
-        {
-            // On Unix-like systems, locale detection is more complex.
-            // A common fallback is to check for en_US.UTF-8, but for simplicity
-            // in this context, we'll default to UTF-8 and have a specific fallback
-            // for GBK, which covers many common non-UTF-8 cases.
-            // A more advanced implementation could parse the `LANG` env var.
-            encoding_rs::UTF_8
-        }
-    };
-}
-
-fn decode_chunk(chunk: &[u8]) -> String {
-    // First, always try to decode as UTF-8, as it's the universal standard.
-    if let Ok(s) = std::str::from_utf8(chunk) {
-        return s.to_string();
-    }
-
-    // If UTF-8 fails, try the detected system encoding (on Windows) or a common fallback.
-    // We check if the system encoding is already UTF-8 to avoid re-checking.
-    if SYSTEM_ENCODING.name() != "UTF-8" {
-        let (cow, _encoding_used, had_errors) = SYSTEM_ENCODING.decode(chunk);
-        if !had_errors {
-            return cow.into_owned();
-        }
-    }
-
-    // As a last resort, use lossy UTF-8 decoding. This prevents data corruption
-    // from crashing the agent, ensuring the app remains stable.
-    String::from_utf8_lossy(chunk).to_string()
-}
-
-use crate::agent_modules::command_tracker::RunningCommandsTracker;
+use crate::agent_modules::command::encoding::decode_chunk;
+use crate::agent_modules::command::tracker::RunningCommandsTracker;
 use crate::agent_service::{
-    BatchAgentCommandRequest, BatchCommandOutputStream, BatchCommandResult,
-    BatchTerminateCommandRequest, CommandStatus, MessageToServer, OutputType,
-    message_to_server::Payload as ServerPayload,
+    BatchAgentCommandRequest, BatchCommandOutputStream, BatchCommandResult, CommandStatus,
+    MessageToServer, OutputType, message_to_server::Payload as ServerPayload,
 };
 
-/// This is the main function for handling a new command execution request.
-/// It spawns a dedicated "management task" for each command to handle its entire lifecycle.
-pub async fn handle_batch_agent_command(
-    request: BatchAgentCommandRequest,
-    tx_to_server: mpsc::Sender<MessageToServer>,
-    command_tracker: Arc<RunningCommandsTracker>,
-    _original_server_message_id: u64,
-    agent_id: String,
-    vps_db_id: i32,
-    agent_secret: String,
-    id_provider: impl Fn() -> u64 + Send + Sync + Clone + 'static,
-) {
-    info!("Received command request.");
-
-    // Create a one-shot channel for termination signaling.
-    let (term_tx, term_rx) = oneshot::channel();
-
-    // Add the termination sender to the tracker.
-    command_tracker.add_command(request.command_id.clone(), term_tx);
-
-    // Spawn the dedicated management task.
-    tokio::spawn(async move {
-        // The command management logic is now fully encapsulated here.
-        manage_command_lifecycle(
-            request,
-            tx_to_server,
-            command_tracker,
-            agent_id,
-            vps_db_id,
-            agent_secret,
-            id_provider,
-            term_rx, // Pass the receiver to the lifecycle manager
-        )
-        .await;
-    });
-}
-
 /// This function encapsulates the entire lifecycle of a single command.
-async fn manage_command_lifecycle(
+pub(super) async fn manage_command_lifecycle(
     request: BatchAgentCommandRequest,
     tx_to_server: mpsc::Sender<MessageToServer>,
     command_tracker: Arc<RunningCommandsTracker>,
-    agent_id: String,
+    _agent_id: String,
     vps_db_id: i32,
     agent_secret: String,
     id_provider: impl Fn() -> u64 + Send + Sync + Clone + 'static,
@@ -382,50 +298,5 @@ async fn send_error_result(
         .is_err()
     {
         error!("Failed to send error result.");
-    }
-}
-
-/// This is the handler for termination requests. It's now much simpler.
-pub async fn handle_batch_terminate_command(
-    request: BatchTerminateCommandRequest,
-    tx_to_server: mpsc::Sender<MessageToServer>,
-    command_tracker: Arc<RunningCommandsTracker>,
-    _original_server_message_id: u64,
-    agent_id: String,
-    vps_db_id: i32,
-    agent_secret: String,
-    id_provider: impl Fn() -> u64 + Send + Sync + Clone + 'static,
-) {
-    let command_id_to_terminate = request.command_id;
-    info!("Received termination request.");
-
-    // Simply signal the command's managing task to terminate.
-    // The managing task is responsible for the actual killing and result reporting.
-    if let Err(e) = command_tracker.signal_termination(&command_id_to_terminate) {
-        // This case happens if the command already completed or was terminated.
-        // We can send a message back to the server to confirm we tried, but the command was already gone.
-        warn!(error = %e, "Termination signal failed, command likely already finished.");
-        let result_payload = BatchCommandResult {
-            command_id: command_id_to_terminate.clone(),
-            status: CommandStatus::Terminated.into(), // We can consider it "Terminated" as the end state is correct.
-            exit_code: -1,
-            error_message: format!(
-                "Termination signal sent, but command was already completed or terminated: {}",
-                e
-            ),
-        };
-        let client_msg_id = id_provider();
-        if tx_to_server
-            .send(MessageToServer {
-                client_message_id: client_msg_id,
-                payload: Some(ServerPayload::BatchCommandResult(result_payload)),
-                vps_db_id,
-                agent_secret,
-            })
-            .await
-            .is_err()
-        {
-            error!("Failed to send 'already terminated' result.");
-        }
     }
 }

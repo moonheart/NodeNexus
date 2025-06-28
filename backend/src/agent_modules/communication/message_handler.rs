@@ -1,6 +1,8 @@
 use crate::agent_modules::{
-    agent_command_service_impl::{handle_batch_agent_command, handle_batch_terminate_command},
-    command_tracker::RunningCommandsTracker,
+    command::{
+        service::{handle_batch_agent_command, handle_batch_terminate_command},
+        tracker::RunningCommandsTracker,
+    },
     config,
     updater,
 };

@@ -13,7 +13,7 @@ use tokio::task::JoinHandle; // For task handles
 use backend::agent_modules::config::{load_cli_config, AgentCliConfig};
 use backend::agent_modules::communication::{ConnectionHandler, heartbeat_loop, server_message_handler_loop};
 use backend::agent_modules::metrics::metrics_collection_loop;
-use backend::agent_modules::command_tracker::RunningCommandsTracker;
+use backend::agent_modules::command::tracker::RunningCommandsTracker;
 use backend::agent_modules::service_monitor::ServiceMonitorManager;
 // Removed: use backend::agent_modules::agent_command_service_impl::create_agent_command_service;
 use backend::agent_service::AgentConfig;
