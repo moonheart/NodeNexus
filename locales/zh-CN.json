@@ -1,0 +1,57 @@
+{
+  "buttons": {
+    "save": "保存",
+    "cancel": "取消"
+  },
+  "errors": {
+    "notFound": "页面 '%{page}' 未找到。"
+  },
+  "accountSettings": {
+    "title": "账户信息",
+    "description": "管理您的公开个人资料信息。",
+    "usernameLabel": "用户名",
+    "saveButton": "保存",
+    "securityTitle": "安全设置",
+    "securityDescription": "管理您的密码和账户安全设置。",
+    "changePasswordTitle": "修改密码",
+    "currentPasswordLabel": "当前密码",
+    "newPasswordLabel": "新密码",
+    "confirmNewPasswordLabel": "确认新密码",
+    "changePasswordButton": "修改密码",
+    "connectedAccountsTitle": "关联账户",
+    "loadingConnectedAccounts": "正在加载关联账户...",
+    "noConnectedAccounts": "没有已关联的第三方账户。",
+    "linkNewAccountTitle": "关联新账户",
+    "unlinkButton": "解除关联",
+    "linkButton": "关联",
+    "unlinkConfirmTitle": "确定要解除关联吗？",
+    "unlinkConfirmDescription": "此操作无法撤销。您可能需要重新进行身份验证才能再次关联。",
+    "confirmButton": "确定",
+    "fetchError": "无法获取账户数据。",
+    "linkSuccess": "账户关联成功！",
+    "updatingUsername": "正在更新用户名...",
+    "updateUsernameSuccess": "用户名更新成功！",
+    "updateUsernameError": "更新用户名失败。",
+    "passwordMismatch": "新密码不匹配！",
+    "changingPassword": "正在修改密码...",
+    "changePasswordSuccess": "密码修改成功！",
+    "changePasswordError": "修改密码失败。",
+    "unlinkingAccount": "正在解除 %{provider} 账户关联...",
+    "unlinkSuccess": "%{provider} 账户解除关联成功！",
+    "unlinkError": "解除 %{provider} 账户关联失败。",
+    "linkedAs": "已关联为 %{id}",
+    "preferences": {
+      "title": "偏好设置",
+      "description": "管理您的语言和区域设置。",
+      "languageLabel": "语言",
+      "languageOptions": {
+        "auto": "跟随浏览器",
+        "en": "English",
+        "zh-CN": "简体中文"
+      },
+      "updatingLanguage": "正在更新语言...",
+      "updateLanguageSuccess": "语言更新成功！",
+      "updateLanguageError": "更新语言失败。"
+    }
+  }
+}

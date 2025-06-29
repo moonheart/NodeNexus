@@ -18,8 +18,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useTranslation } from 'react-i18next';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const AccountSettingsPage: React.FC = () => {
+    const { t, i18n } = useTranslation();
     const { user, setUser } = useAuthStore();
     const [username, setUsername] = useState(user?.username || '');
     
@@ -32,6 +35,7 @@ const AccountSettingsPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [isAlertOpen, setIsAlertOpen] = useState(false);
     const [unlinkingProvider, setUnlinkingProvider] = useState<string | null>(null);
+    const [selectedLanguage, setSelectedLanguage] = useState(i18n.language);
 
     const fetchData = useCallback(async () => {
         try {
@@ -43,11 +47,11 @@ const AccountSettingsPage: React.FC = () => {
             setConnectedAccounts(accounts);
             setAvailableProviders(providers);
         } catch (error) {
-            toast.error(error instanceof Error ? error.message : '无法获取账户数据。');
+            toast.error(error instanceof Error ? error.message : t('accountSettings.fetchError'));
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [t]);
 
     useEffect(() => {
         if (user) {
@@ -59,41 +63,41 @@ const AccountSettingsPage: React.FC = () => {
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('link_success') === 'true') {
-            toast.success('账户关联成功！');
+            toast.success(t('accountSettings.linkSuccess'));
             window.history.replaceState({}, document.title, window.location.pathname);
             fetchData();
         }
-    }, [fetchData]);
+    }, [fetchData, t]);
 
     const handleUpdateUsername = async (e: React.FormEvent) => {
         e.preventDefault();
-        const toastId = toast.loading('正在更新用户名...');
+        const toastId = toast.loading(t('accountSettings.updatingUsername'));
         try {
             const updatedUser = await userService.updateUsername(username);
-            toast.success('用户名更新成功！', { id: toastId });
+            toast.success(t('accountSettings.updateUsernameSuccess'), { id: toastId });
             if (user) {
                 setUser({ ...user, username: updatedUser.username });
             }
         } catch (error) {
-            toast.error(error instanceof Error ? error.message : '更新用户名失败。', { id: toastId });
+            toast.error(error instanceof Error ? error.message : t('accountSettings.updateUsernameError'), { id: toastId });
         }
     };
 
     const handleChangePassword = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newPassword !== confirmPassword) {
-            toast.error("新密码不匹配！");
+            toast.error(t('accountSettings.passwordMismatch'));
             return;
         }
-        const toastId = toast.loading('正在修改密码...');
+        const toastId = toast.loading(t('accountSettings.changingPassword'));
         try {
             await userService.updatePassword({ current_password: currentPassword, new_password: newPassword });
-            toast.success('密码修改成功！', { id: toastId });
+            toast.success(t('accountSettings.changePasswordSuccess'), { id: toastId });
             setCurrentPassword('');
             setNewPassword('');
             setConfirmPassword('');
         } catch (error) {
-            toast.error(error instanceof Error ? error.message : '修改密码失败。', { id: toastId });
+            toast.error(error instanceof Error ? error.message : t('accountSettings.changePasswordError'), { id: toastId });
         }
     };
 
@@ -104,16 +108,29 @@ const AccountSettingsPage: React.FC = () => {
 
     const confirmUnlinkAccount = async () => {
         if (!unlinkingProvider) return;
-        const toastId = toast.loading(`正在解除 ${unlinkingProvider} 账户关联...`);
+        const toastId = toast.loading(t('accountSettings.unlinkingAccount', { provider: unlinkingProvider }));
         try {
             await userService.unlinkProvider(unlinkingProvider);
-            toast.success(`${unlinkingProvider} 账户解除关联成功！`, { id: toastId });
+            toast.success(t('accountSettings.unlinkSuccess', { provider: unlinkingProvider }), { id: toastId });
             fetchData();
         } catch (error) {
-            toast.error(error instanceof Error ? error.message : `解除 ${unlinkingProvider} 账户关联失败。`, { id: toastId });
+            toast.error(error instanceof Error ? error.message : t('accountSettings.unlinkError', { provider: unlinkingProvider }), { id: toastId });
         } finally {
             setIsAlertOpen(false);
             setUnlinkingProvider(null);
+        }
+    };
+
+    const handleLanguageChange = async (lang: string) => {
+        setSelectedLanguage(lang);
+        const toastId = toast.loading(t('accountSettings.updatingLanguage'));
+        try {
+            await userService.updateUserLanguage(lang);
+            i18n.changeLanguage(lang);
+            toast.success(t('accountSettings.preferences.updateLanguageSuccess'), { id: toastId });
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : t('accountSettings.updateLanguageError'), { id: toastId });
+            setSelectedLanguage(i18n.language); // Revert on error
         }
     };
 
@@ -139,27 +156,27 @@ const AccountSettingsPage: React.FC = () => {
             <AlertDialog open={isAlertOpen} onOpenChange={setIsAlertOpen}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
-                        <AlertDialogTitle>确定要解除关联吗？</AlertDialogTitle>
+                        <AlertDialogTitle>{t('accountSettings.unlinkConfirmTitle')}</AlertDialogTitle>
                         <AlertDialogDescription>
-                            此操作无法撤销。您可能需要重新进行身份验证才能再次关联。
+                            {t('accountSettings.unlinkConfirmDescription')}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel onClick={() => setUnlinkingProvider(null)}>取消</AlertDialogCancel>
-                        <AlertDialogAction onClick={confirmUnlinkAccount}>确定</AlertDialogAction>
+                        <AlertDialogCancel onClick={() => setUnlinkingProvider(null)}>{t('buttons.cancel')}</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmUnlinkAccount}>{t('accountSettings.confirmButton')}</AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
 
             <Card>
                 <CardHeader>
-                    <CardTitle>账户信息</CardTitle>
-                    <CardDescription>管理您的公开个人资料信息。</CardDescription>
+                    <CardTitle>{t('accountSettings.title')}</CardTitle>
+                    <CardDescription>{t('accountSettings.description')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <form onSubmit={handleUpdateUsername} className="space-y-4">
                         <div className="space-y-2">
-                            <Label htmlFor="username">用户名</Label>
+                            <Label htmlFor="username">{t('accountSettings.usernameLabel')}</Label>
                             <div className="flex">
                                 <Input
                                     id="username"
@@ -167,7 +184,7 @@ const AccountSettingsPage: React.FC = () => {
                                     onChange={(e) => setUsername(e.target.value)}
                                     className="rounded-r-none"
                                 />
-                                <Button type="submit" className="rounded-l-none">保存</Button>
+                                <Button type="submit" className="rounded-l-none">{t('buttons.save')}</Button>
                             </div>
                         </div>
                     </form>
@@ -176,16 +193,16 @@ const AccountSettingsPage: React.FC = () => {
 
             <Card>
                 <CardHeader>
-                    <CardTitle>安全设置</CardTitle>
-                    <CardDescription>管理您的密码和账户安全设置。</CardDescription>
+                    <CardTitle>{t('accountSettings.securityTitle')}</CardTitle>
+                    <CardDescription>{t('accountSettings.securityDescription')}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-8">
                     {/* Change Password Form */}
                     <form onSubmit={handleChangePassword} className="space-y-4">
-                        <h3 className="text-lg font-medium">修改密码</h3>
+                        <h3 className="text-lg font-medium">{t('accountSettings.changePasswordTitle')}</h3>
                         <div className="space-y-4">
                             <div className="space-y-2">
-                                <Label htmlFor="current-password">当前密码</Label>
+                                <Label htmlFor="current-password">{t('accountSettings.currentPasswordLabel')}</Label>
                                 <Input
                                     type="password"
                                     id="current-password"
@@ -195,7 +212,7 @@ const AccountSettingsPage: React.FC = () => {
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div className="space-y-2">
-                                    <Label htmlFor="new-password">新密码</Label>
+                                    <Label htmlFor="new-password">{t('accountSettings.newPasswordLabel')}</Label>
                                     <Input
                                         type="password"
                                         id="new-password"
@@ -204,7 +221,7 @@ const AccountSettingsPage: React.FC = () => {
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="confirm-password">确认新密码</Label>
+                                    <Label htmlFor="confirm-password">{t('accountSettings.confirmNewPasswordLabel')}</Label>
                                     <Input
                                         type="password"
                                         id="confirm-password"
@@ -215,7 +232,7 @@ const AccountSettingsPage: React.FC = () => {
                             </div>
                         </div>
                         <CardFooter className="px-0 pt-4">
-                            <Button type="submit">修改密码</Button>
+                            <Button type="submit">{t('accountSettings.changePasswordButton')}</Button>
                         </CardFooter>
                     </form>
 
@@ -223,9 +240,9 @@ const AccountSettingsPage: React.FC = () => {
 
                     {/* Connected Accounts */}
                     <div className="space-y-4">
-                        <h3 className="text-lg font-medium">关联账户</h3>
+                        <h3 className="text-lg font-medium">{t('accountSettings.connectedAccountsTitle')}</h3>
                         {loading ? (
-                            <p className="text-muted-foreground">正在加载关联账户...</p>
+                            <p className="text-muted-foreground">{t('accountSettings.loadingConnectedAccounts')}</p>
                         ) : (
                             <div className="space-y-4">
                                 {connectedAccounts.length > 0 ? (
@@ -235,20 +252,20 @@ const AccountSettingsPage: React.FC = () => {
                                                 <ProviderIcon providerName={account.provider_name} />
                                                 <div>
                                                     <p className="font-semibold capitalize">{account.provider_name}</p>
-                                                    <p className="text-sm text-muted-foreground">已关联为 {account.provider_user_id}</p>
+                                                    <p className="text-sm text-muted-foreground">{t('accountSettings.linkedAs', { id: account.provider_user_id })}</p>
                                                 </div>
                                             </div>
                                             <Button variant="destructive" size="sm" onClick={() => handleUnlinkClick(account.provider_name)}>
-                                                解除关联
+                                                {t('accountSettings.unlinkButton')}
                                             </Button>
                                         </div>
                                     ))
                                 ) : (
-                                    <p className="text-sm text-muted-foreground">没有已关联的第三方账户。</p>
+                                    <p className="text-sm text-muted-foreground">{t('accountSettings.noConnectedAccounts')}</p>
                                 )}
                                 {unlinkedProviders.length > 0 && (
                                     <div className="pt-4">
-                                        <h4 className="text-md font-medium">关联新账户</h4>
+                                        <h4 className="text-md font-medium">{t('accountSettings.linkNewAccountTitle')}</h4>
                                         <div className="mt-2 space-y-2">
                                             {unlinkedProviders.map((provider) => (
                                                 <div key={provider.name} className="flex items-center justify-between p-3 border rounded-md">
@@ -257,7 +274,7 @@ const AccountSettingsPage: React.FC = () => {
                                                         <p className="font-semibold capitalize">{provider.name}</p>
                                                     </div>
                                                     <Button variant="outline" size="sm" onClick={() => handleLinkAccount(provider.name)}>
-                                                        关联
+                                                        {t('accountSettings.linkButton')}
                                                     </Button>
                                                 </div>
                                             ))}
@@ -266,6 +283,28 @@ const AccountSettingsPage: React.FC = () => {
                                 )}
                             </div>
                         )}
+                    </div>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>{t('accountSettings.preferences.title')}</CardTitle>
+                    <CardDescription>{t('accountSettings.preferences.description')}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="space-y-2">
+                        <Label htmlFor="language-select">{t('accountSettings.preferences.languageLabel')}</Label>
+                        <Select value={selectedLanguage} onValueChange={handleLanguageChange}>
+                            <SelectTrigger id="language-select" className="w-[280px]">
+                                <SelectValue placeholder={t('accountSettings.preferences.languageLabel')} />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="auto">{t('accountSettings.preferences.languageOptions.auto')}</SelectItem>
+                                <SelectItem value="en">{t('accountSettings.preferences.languageOptions.en')}</SelectItem>
+                                <SelectItem value="zh-CN">{t('accountSettings.preferences.languageOptions.zh-CN')}</SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
                 </CardContent>
             </Card>

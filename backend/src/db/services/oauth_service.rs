@@ -94,7 +94,7 @@ pub async fn get_user_info(
     client
         .get(&provider.user_info_url)
         .bearer_auth(access_token)
-        .header("User-Agent", "mjjer-agent") // Some providers require a User-Agent
+        .header("User-Agent", "node-nexus-agent") // Some providers require a User-Agent
         .send()
         .await
         .map_err(|e| {

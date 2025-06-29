@@ -16,6 +16,7 @@ pub struct Model {
     pub theme_mode: String,
     pub active_light_theme_id: Option<Uuid>,
     pub active_dark_theme_id: Option<Uuid>,
+    pub language: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

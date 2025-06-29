@@ -1,4 +1,10 @@
 // 主入口文件
+#[macro_use]
+extern crate rust_i18n;
+
+// Load all translations from the locales directory
+i18n!("locales", fallback = "en");
+
 use backend::agent_service::agent_communication_service_server::AgentCommunicationServiceServer;
 use backend::alerting::evaluation_service::EvaluationService; // Added EvaluationService
 use backend::db::services as db_services;

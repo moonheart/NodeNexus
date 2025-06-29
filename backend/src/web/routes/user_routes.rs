@@ -21,6 +21,29 @@ pub fn create_user_router() -> Router<Arc<AppState>> {
         .route("/password", put(update_password))
         .route("/connected-accounts", get(get_connected_accounts))
         .route("/connected-accounts/{provider}", delete(unlink_provider))
+        .route("/preference", put(update_preference))
+}
+
+#[derive(Deserialize)]
+pub struct UpdatePreferenceRequest {
+    pub language: String,
+}
+
+async fn update_preference(
+    Extension(auth_user): Extension<AuthenticatedUser>,
+    State(app_state): State<Arc<AppState>>,
+    Json(payload): Json<UpdatePreferenceRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let mut user: user::ActiveModel = user::Entity::find_by_id(auth_user.id)
+        .one(&app_state.db_pool)
+        .await?
+        .ok_or(AppError::UserNotFound)?
+        .into();
+
+    user.language = Set(payload.language);
+    user.update(&app_state.db_pool).await?;
+
+    Ok(Json(serde_json::json!({ "message": "Preference updated successfully" })))
 }
 
 #[derive(Deserialize)]

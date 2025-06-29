@@ -70,3 +70,12 @@ export const getAvailableProviders = async (): Promise<OAuthProvider[]> => {
     });
     return handleResponse<OAuthProvider[]>(response);
 };
+
+export const updateUserLanguage = async (language: string): Promise<{ message: string }> => {
+    const response = await fetch('/api/user/preference', {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ language }),
+    });
+    return handleResponse<{ message: string }>(response);
+};

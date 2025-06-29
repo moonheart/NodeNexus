@@ -1,0 +1,57 @@
+{
+  "buttons": {
+    "save": "Save",
+    "cancel": "Cancel"
+  },
+  "errors": {
+    "notFound": "Page '%{page}' not found."
+  },
+  "accountSettings": {
+    "title": "Account Information",
+    "description": "Manage your public profile information.",
+    "usernameLabel": "Username",
+    "saveButton": "Save",
+    "securityTitle": "Security Settings",
+    "securityDescription": "Manage your password and account security.",
+    "changePasswordTitle": "Change Password",
+    "currentPasswordLabel": "Current Password",
+    "newPasswordLabel": "New Password",
+    "confirmNewPasswordLabel": "Confirm New Password",
+    "changePasswordButton": "Change Password",
+    "connectedAccountsTitle": "Connected Accounts",
+    "loadingConnectedAccounts": "Loading connected accounts...",
+    "noConnectedAccounts": "No third-party accounts are connected.",
+    "linkNewAccountTitle": "Link New Account",
+    "unlinkButton": "Unlink",
+    "linkButton": "Link",
+    "unlinkConfirmTitle": "Are you sure you want to unlink?",
+    "unlinkConfirmDescription": "This action cannot be undone. You may need to re-authenticate to link again.",
+    "confirmButton": "Confirm",
+    "fetchError": "Failed to fetch account data.",
+    "linkSuccess": "Account linked successfully!",
+    "updatingUsername": "Updating username...",
+    "updateUsernameSuccess": "Username updated successfully!",
+    "updateUsernameError": "Failed to update username.",
+    "passwordMismatch": "New passwords do not match!",
+    "changingPassword": "Changing password...",
+    "changePasswordSuccess": "Password changed successfully!",
+    "changePasswordError": "Failed to change password.",
+    "unlinkingAccount": "Unlinking %{provider} account...",
+    "unlinkSuccess": "%{provider} account unlinked successfully!",
+    "unlinkError": "Failed to unlink %{provider} account.",
+    "linkedAs": "Linked as %{id}",
+    "preferences": {
+      "title": "Preferences",
+      "description": "Manage your language and regional settings.",
+      "languageLabel": "Language",
+      "languageOptions": {
+        "auto": "Follow Browser",
+        "en": "English",
+        "zh-CN": "简体中文"
+      },
+      "updatingLanguage": "Updating language...",
+      "updateLanguageSuccess": "Language updated successfully!",
+      "updateLanguageError": "Failed to update language."
+    }
+  }
+}

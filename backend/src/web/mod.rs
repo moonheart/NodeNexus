@@ -158,6 +158,10 @@ pub fn create_axum_router(
 
     Router::new()
         .route("/api/health", get(health_check_handler))
+        .route_layer(axum_middleware::from_fn_with_state(
+            app_state.clone(),
+            middleware::i18n::i18n_middleware,
+        ))
         .route("/login_test_simple", post(login_test_handler))
         .route("/api/auth/login_test", post(login_test_handler))
         .route("/api/auth/register", post(register_handler))
