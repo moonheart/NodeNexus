@@ -137,18 +137,18 @@ const ServiceMonitoringPage: React.FC = () => {
         monitors.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {monitors.map((monitor) => (
-              <Card key={monitor.id} className="flex flex-col">
-                <CardHeader>
-                  <CardTitle className="hover:text-primary">
-                    <Link to={`/monitors/${monitor.id}`}>{monitor.name}</Link>
-                  </CardTitle>
-                  <CardDescription className="truncate" title={monitor.target}>
-                    {monitor.monitorType.toUpperCase()} - {monitor.target}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex-grow">
-                  <p className="text-sm text-muted-foreground">检查频率: {monitor.frequencySeconds}秒</p>
-                </CardContent>
+              <Card key={monitor.id} className="flex flex-col transition-all hover:shadow-md">
+                <Link to={`/monitors/${monitor.id}`} className="flex flex-col flex-grow">
+                  <CardHeader>
+                    <CardTitle>{monitor.name}</CardTitle>
+                    <CardDescription className="truncate" title={monitor.target}>
+                      {monitor.monitorType.toUpperCase()} - {monitor.target}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex-grow">
+                    <p className="text-sm text-muted-foreground">检查频率: {monitor.frequencySeconds}秒</p>
+                  </CardContent>
+                </Link>
                 <CardFooter className="flex justify-end space-x-2">
                   <Button variant="outline" size="sm" onClick={() => handleOpenEditModal(monitor)}>
                     <Pencil className="w-4 h-4 mr-1" /> 编辑

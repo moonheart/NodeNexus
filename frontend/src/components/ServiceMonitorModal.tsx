@@ -142,8 +142,8 @@ const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClo
           <ChevronDown className="h-4 w-4 ml-2" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-        <ScrollArea className="h-48">
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" onWheel={(e) => e.stopPropagation()}>
+        <ScrollArea className="h-48 w-full">
           <div className="p-4 space-y-2">
             {options.map(option => (
               <div key={option.id} className="flex items-center space-x-2">
@@ -178,7 +178,7 @@ const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClo
           <DialogDescription>Configure the details for your service monitor.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
-          <ScrollArea className="h-[70vh] p-1">
+          <ScrollArea className="h-[70vh]">
             <div className="p-4 space-y-6">
               {/* Basic Info */}
               <div className="space-y-4">
@@ -227,11 +227,34 @@ const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClo
                     <h3 className="text-lg font-medium text-slate-900">HTTP Options</h3>
                     <div>
                         <Label>Expected Status Codes</Label>
-                        <Controller name="monitorConfig.expected_status_codes" control={control} render={({ field }) => <Input placeholder="e.g., 200, 201" {...field} value={Array.isArray(field.value) ? field.value.join(', ') : ''} onChange={e => field.onChange(e.target.value.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)))} />} />
+                        <Controller
+                            name="monitorConfig.expected_status_codes"
+                            control={control}
+                            render={({ field: { onChange, onBlur, value, name, ref } }) => (
+                                <Input
+                                    ref={ref}
+                                    name={name}
+                                    onBlur={onBlur}
+                                    placeholder="e.g., 200, 201"
+                                    value={Array.isArray(value) ? value.join(', ') : ''}
+                                    onChange={e => onChange(e.target.value.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)))}
+                                />
+                            )}
+                        />
                     </div>
                     <div>
                         <Label>Response Body Match</Label>
-                        <Controller name="monitorConfig.response_body_match" control={control} render={({ field }) => <Input placeholder="Text to find in response body" {...field} value={field.value || ''} />} />
+                        <Controller
+                            name="monitorConfig.response_body_match"
+                            control={control}
+                            render={({ field }) => (
+                                <Input
+                                    placeholder="Text to find in response body"
+                                    {...field}
+                                    value={field.value ?? ''}
+                                />
+                            )}
+                        />
                     </div>
                 </div>
               )}
@@ -240,7 +263,7 @@ const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClo
               <div className="p-4 border rounded-md bg-slate-50 space-y-4">
                 <h3 className="text-lg font-medium">Assignments</h3>
                 <Controller name="assignments.assignmentType" control={control} render={({ field }) => (
-                  <RadioGroup onValueChange={field.onChange} value={field.value} className="flex items-center space-x-4">
+                  <RadioGroup onValueChange={field.onChange} value={field.value} className="space-y-2">
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="INCLUSIVE" id="inclusive" />
                       <Label htmlFor="inclusive">Inclusive (Apply to selected)</Label>
