@@ -3,6 +3,7 @@ use crate::db::{
     models::Tag as DtoTag, // Use DtoTag for the DTO
     services,
 };
+use crate::server::update_service;
 use crate::web::models::AuthenticatedUser;
 use crate::web::{AppError, AppState};
 use axum::{
@@ -136,6 +137,13 @@ async fn update_tag_handler(
             _ => AppError::DatabaseError(db_err.to_string()),
         }
     })?;
+
+    update_service::broadcast_full_state_update(
+        &app_state.db_pool,
+        &app_state.live_server_data_cache,
+        &app_state.ws_data_broadcaster_tx,
+    )
+    .await;
 
     let dto_tag = DtoTag {
         id: updated_tag_model.id,
