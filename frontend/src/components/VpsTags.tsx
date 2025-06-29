@@ -2,6 +2,7 @@ import React from 'react';
 import type { Tag } from '../types';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { DynamicIcon, type IconName } from 'lucide-react/dynamic';
 
 interface VpsTagsProps {
   tags: Tag[] | undefined;
@@ -27,16 +28,19 @@ export const VpsTags: React.FC<VpsTagsProps> = ({ tags, className }) => {
   return (
     <div className={cn("mt-2 flex flex-wrap gap-1", className)}>
       {tags.filter(tag => tag.isVisible).map(tag => {
+        console.log('Rendering tag:', tag);
+        const iconName = tag.icon as IconName;
         const tagContent = (
           <Badge
             key={tag.id}
-            className="text-xs font-medium"
+            className="text-xs font-medium flex items-center gap-1"
             style={{
               backgroundColor: tag.color,
               color: getContrastingTextColor(tag.color),
             }}
           >
-            {tag.name}
+            {tag.icon && <DynamicIcon name={iconName} className="h-3 w-3" />}
+            <span>{tag.name}</span>
           </Badge>
         );
 

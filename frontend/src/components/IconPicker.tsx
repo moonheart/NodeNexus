@@ -1,39 +1,14 @@
-import React, { useState } from 'react';
-import { icons, ExternalLink, Check, ChevronsUpDown } from 'lucide-react';
-import type { LucideProps } from 'lucide-react';
-
+import React from 'react';
+import { ExternalLink } from 'lucide-react';
+import { DynamicIcon, type IconName } from 'lucide-react/dynamic';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { cn } from '@/lib/utils';
-
-// A curated list of common icon names for quick selection.
-const iconNames = [
-  'Server', 'Database', 'Cloud', 'Terminal', 'Code', 'Globe', 'HardDrive',
-  'Shield', 'Key', 'Wallet', 'Box', 'Archive', 'Cpu', 'Router', 'GitBranch',
-  'File', 'Folder', 'Network', 'Activity', 'ChartBar', 'Layers', 'Package',
-  'Unplug', 'PlugZap', 'Power', 'Settings', 'Wrench', 'Bug', 'Rocket', 'Star'
-] as const;
-
-// A helper component to safely render a Lucide icon by its string name.
-const LucideIcon = ({ name, ...props }: { name: string } & LucideProps) => {
-  const IconComponent = icons[name as keyof typeof icons];
-  if (!IconComponent) {
-    return null; // Return null if the icon name is invalid
-  }
-  return <IconComponent {...props} />;
-};
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface IconPickerProps {
   value: string;
@@ -41,65 +16,34 @@ interface IconPickerProps {
 }
 
 const IconPicker: React.FC<IconPickerProps> = ({ value, onChange }) => {
-  const [open, setOpen] = useState(false);
+  const iconName = value as IconName;
 
   return (
-    <div>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            role="combobox"
-            aria-expanded={open}
-            className="w-full justify-between"
-          >
-            <div className="flex items-center gap-2">
-              {value ? <LucideIcon name={value} className="h-4 w-4" /> : null}
-              {value ? value : "Select an icon..."}
-            </div>
-            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-[300px] p-0">
-          <Command>
-            <CommandInput placeholder="Search icon..." />
-            <CommandList>
-              <CommandEmpty>No icon found.</CommandEmpty>
-              <CommandGroup>
-                {iconNames.map((name) => (
-                  <CommandItem
-                    key={name}
-                    value={name}
-                    onSelect={(currentValue) => {
-                      onChange(currentValue === value ? "" : currentValue);
-                      setOpen(false);
-                    }}
-                  >
-                    <Check
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        value === name ? "opacity-100" : "opacity-0"
-                      )}
-                    />
-                    <LucideIcon name={name} className="mr-2 h-4 w-4" />
-                    {name}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-      <div className="text-right mt-2">
-        <a
-          href="https://lucide.dev/icons/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs text-muted-foreground hover:text-primary flex items-center justify-end gap-1"
-        >
-          Browse all icons <ExternalLink className="w-3 h-3" />
-        </a>
+    <div className="flex items-center gap-2">
+      <div className="flex-shrink-0 h-10 w-10 border rounded-md flex items-center justify-center">
+        {value ? <DynamicIcon name={iconName} className="h-6 w-6" /> : null}
       </div>
+      <Input
+        type="text"
+        placeholder="Enter icon name"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="flex-grow"
+      />
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="outline" size="icon" asChild>
+              <a href="https://lucide.dev/icons/" target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Browse all icons on lucide.dev</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </div>
   );
 };

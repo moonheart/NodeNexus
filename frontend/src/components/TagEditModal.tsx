@@ -154,10 +154,9 @@ const TagEditModal: React.FC<TagEditModalProps> = ({ isOpen, onClose, onTagSaved
                 Icon
               </Label>
               <div className="col-span-3">
-                <Controller
-                  name="icon"
-                  control={control}
-                  render={({ field }) => <IconPicker value={field.value} onChange={field.onChange} />}
+                <IconPicker
+                  value={watch('icon')}
+                  onChange={(name) => setValue('icon', name, { shouldValidate: true, shouldDirty: true })}
                 />
               </div>
             </div>

@@ -1,19 +1,10 @@
 import React from 'react';
 import type { Tag as TagType } from '../types';
-import { Pencil, Trash2, Link as LinkIcon, Eye, EyeOff, icons } from 'lucide-react';
-import type { LucideProps } from 'lucide-react';
+import { Pencil, Trash2, Link as LinkIcon, Eye, EyeOff } from 'lucide-react';
+import { DynamicIcon, type IconName } from 'lucide-react/dynamic';
 import { Button } from "@/components/ui/button";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-
-// Helper component to safely render a Lucide icon by its string name.
-const LucideIcon = ({ name, ...props }: { name: string } & LucideProps) => {
-  const IconComponent = icons[name as keyof typeof icons];
-  if (!IconComponent) {
-    return null; // Or a default icon
-  }
-  return <IconComponent {...props} />;
-};
 
 interface TagTableRowProps {
   tag: TagType;
@@ -23,13 +14,15 @@ interface TagTableRowProps {
 }
 
 const TagTableRow: React.FC<TagTableRowProps> = ({ tag, onEdit, onDelete, onToggleVisibility }) => {
+  const iconName = tag.icon as IconName;
+
   return (
     <TableRow key={tag.id}>
       <TableCell>
         <div className="flex items-center gap-3">
           <div className="w-6 h-6 rounded-full" style={{ backgroundColor: tag.color }} />
           <div className="flex items-center gap-2">
-            {tag.icon && <LucideIcon name={tag.icon} className="w-5 h-5" />}
+            {tag.icon && <DynamicIcon name={iconName} className="w-5 h-5" />}
             <span className="font-medium">{tag.name}</span>
           </div>
         </div>

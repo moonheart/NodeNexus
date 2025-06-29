@@ -273,7 +273,7 @@ const BatchCommandPage: React.FC = () => {
                         </Button>
                     </CardHeader>
                     <CardContent className={isServerPanelOpen ? 'block' : 'hidden'}>
-                        <Card className="mb-4 bg-muted/50">
+                        <Card className="mb-4 bg-muted/50 y-0">
                             <CardHeader className="pb-2 pt-4">
                                 <CardTitle className="text-base">Quick Select</CardTitle>
                             </CardHeader>
