@@ -3,81 +3,70 @@ import { Link, NavLink } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { ServerIcon } from './Icons';
 import UserMenu from './UserMenu';
+import { ThemeToggle } from './ThemeToggle';
+import { Button } from '@/components/ui/button';
 
 const Navbar: React.FC = () => {
   const { isAuthenticated } = useAuthStore();
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-lg border-b border-slate-200/80 shadow-sm">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          <div className="flex-shrink-0">
-            <Link to="/" className="flex items-center space-x-2">
-              <ServerIcon className="h-8 w-8 text-indigo-600" />
-              <span className="text-xl font-semibold text-slate-800">VPS Monitor</span>
-            </Link>
-          </div>
-          <nav className="flex items-center space-x-4">
-            {isAuthenticated ? (
+    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="container flex h-14 max-w-screen-2xl items-center">
+        <div className="mr-4 hidden md:flex">
+          <Link to="/" className="mr-6 flex items-center space-x-2">
+            <ServerIcon className="h-6 w-6" />
+            <span className="hidden font-bold sm:inline-block">VPS Monitor</span>
+          </Link>
+          <nav className="flex items-center gap-4 text-sm lg:gap-6">
+            {isAuthenticated && (
               <>
-                <NavLink
-                  to="/servers"
-                  className={({ isActive }) =>
-                    `px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                      isActive ? 'bg-slate-100 text-indigo-600' : 'text-slate-700 hover:bg-slate-100'
-                    }`
-                  }
-                >
-                  服务器管理
+                <NavLink to="/servers">
+                  {({ isActive }) => (
+                    <Button variant={isActive ? "secondary" : "ghost"} asChild>
+                      <Link to="/servers">服务器管理</Link>
+                    </Button>
+                  )}
                 </NavLink>
-                <NavLink
-                  to="/tasks"
-                  className={({ isActive }) =>
-                    `px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                      isActive ? 'bg-slate-100 text-indigo-600' : 'text-slate-700 hover:bg-slate-100'
-                    }`
-                  }
-                >
-                  任务
+                <NavLink to="/tasks">
+                  {({ isActive }) => (
+                    <Button variant={isActive ? "secondary" : "ghost"} asChild>
+                      <Link to="/tasks">任务</Link>
+                    </Button>
+                  )}
                 </NavLink>
-                <NavLink
-                  to="/monitors"
-                  className={({ isActive }) =>
-                    `px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                      isActive ? 'bg-slate-100 text-indigo-600' : 'text-slate-700 hover:bg-slate-100'
-                    }`
-                  }
-                >
-                  服务监控
+                <NavLink to="/monitors">
+                  {({ isActive }) => (
+                    <Button variant={isActive ? "secondary" : "ghost"} asChild>
+                      <Link to="/monitors">服务监控</Link>
+                    </Button>
+                  )}
                 </NavLink>
-                <NavLink
-                  to="/settings"
-                  className={({ isActive }) =>
-                    `px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                      isActive ? 'bg-slate-100 text-indigo-600' : 'text-slate-700 hover:bg-slate-100'
-                    }`
-                  }
-                >
-                  设置
+                <NavLink to="/settings">
+                  {({ isActive }) => (
+                    <Button variant={isActive ? "secondary" : "ghost"} asChild>
+                      <Link to="/settings">设置</Link>
+                    </Button>
+                  )}
                 </NavLink>
-                <UserMenu />
-              </>
-            ) : (
-              <>
-                <Link
-                  to="/login"
-                  className="px-3 py-2 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
-                >
-                  登录
-                </Link>
-                <Link
-                  to="/register"
-                  className="px-3 py-2 rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
-                >
-                  注册
-                </Link>
               </>
             )}
+          </nav>
+        </div>
+        <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
+          <nav className="flex items-center gap-2">
+            {isAuthenticated ? (
+              <UserMenu />
+            ) : (
+              <>
+                <Button variant="ghost" asChild>
+                  <Link to="/login">登录</Link>
+                </Button>
+                <Button asChild>
+                  <Link to="/register">注册</Link>
+                </Button>
+              </>
+            )}
+            <ThemeToggle />
           </nav>
         </div>
       </div>

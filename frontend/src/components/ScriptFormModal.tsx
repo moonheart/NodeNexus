@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Editor } from '@monaco-editor/react';
 import type { ScriptPayload, CommandScript } from '../services/scriptService';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface ScriptFormModalProps {
     isOpen: boolean;
@@ -15,10 +21,18 @@ const ScriptFormModal: React.FC<ScriptFormModalProps> = ({ isOpen, onClose, onSa
         description: '',
         language: 'shell',
         script_content: '',
-        working_directory: '',
+        working_directory: '.',
     });
 
     useEffect(() => {
+        const resetForm = (): ScriptPayload => ({
+            name: '',
+            description: '',
+            language: 'shell',
+            script_content: '',
+            working_directory: '.',
+        });
+
         if (initialData) {
             setFormData({
                 name: initialData.name,
@@ -28,18 +42,16 @@ const ScriptFormModal: React.FC<ScriptFormModalProps> = ({ isOpen, onClose, onSa
                 working_directory: initialData.working_directory,
             });
         } else {
-            setFormData({
-                name: '',
-                description: '',
-                language: 'shell',
-                script_content: '',
-                working_directory: '',
-            });
+            setFormData(resetForm());
         }
     }, [initialData, isOpen]);
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+    
+    const handleSelectChange = (name: keyof ScriptPayload, value: string) => {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
@@ -52,36 +64,44 @@ const ScriptFormModal: React.FC<ScriptFormModalProps> = ({ isOpen, onClose, onSa
         onSave(formData);
     };
 
-    if (!isOpen) return null;
-
     return (
-        <div className="fixed inset-0 bg-black/50  z-50 flex justify-center items-center">
-            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-3xl max-h-[90vh] flex flex-col">
-                <h2 className="text-2xl font-bold mb-4">{initialData ? 'Edit Script' : 'Create New Script'}</h2>
-                <form onSubmit={handleSubmit} className="flex-grow flex flex-col space-y-4 overflow-y-auto min-h-0">
-                    <div>
-                        <label htmlFor="name" className="block text-sm font-medium text-gray-700">Name</label>
-                        <input type="text" name="name" id="name" value={formData.name} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+        <Dialog open={isOpen} onOpenChange={onClose}>
+            <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col">
+                <DialogHeader>
+                    <DialogTitle>{initialData ? 'Edit Script' : 'Create New Script'}</DialogTitle>
+                    <DialogDescription>
+                        Fill in the details for your command script below.
+                    </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="flex-grow flex flex-col space-y-4 overflow-y-auto min-h-0 p-1">
+                    <div className="grid gap-2">
+                        <Label htmlFor="name">Name</Label>
+                        <Input id="name" name="name" value={formData.name} onChange={handleChange} required />
                     </div>
-                    <div>
-                        <label htmlFor="description" className="block text-sm font-medium text-gray-700">Description</label>
-                        <textarea name="description" id="description" value={formData.description || ''} onChange={handleChange} rows={2} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
+                    <div className="grid gap-2">
+                        <Label htmlFor="description">Description</Label>
+                        <Textarea id="description" name="description" value={formData.description || ''} onChange={handleChange} rows={2} />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label htmlFor="language" className="block text-sm font-medium text-gray-700">Language</label>
-                            <select name="language" id="language" value={formData.language} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                                <option value="shell">Shell</option>
-                                <option value="powershell">PowerShell</option>
-                            </select>
+                        <div className="grid gap-2">
+                            <Label htmlFor="language">Language</Label>
+                            <Select name="language" value={formData.language} onValueChange={(value) => handleSelectChange('language', value)}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select language" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="shell">Shell</SelectItem>
+                                    <SelectItem value="powershell">PowerShell</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
-                        <div>
-                            <label htmlFor="working_directory" className="block text-sm font-medium text-gray-700">Working Directory</label>
-                            <input type="text" name="working_directory" id="working_directory" value={formData.working_directory} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+                        <div className="grid gap-2">
+                            <Label htmlFor="working_directory">Working Directory</Label>
+                            <Input id="working_directory" name="working_directory" value={formData.working_directory} onChange={handleChange} required />
                         </div>
                     </div>
                     <div className="flex-grow flex flex-col min-h-0">
-                        <label htmlFor="script_content" className="block text-sm font-medium text-gray-700 mb-1">Script Content</label>
+                        <Label htmlFor="script_content" className="mb-2">Script Content</Label>
                         <div className="border rounded-md overflow-hidden flex-grow h-48">
                             <Editor
                                 height="100%"
@@ -89,17 +109,17 @@ const ScriptFormModal: React.FC<ScriptFormModalProps> = ({ isOpen, onClose, onSa
                                 value={formData.script_content}
                                 onChange={handleEditorChange}
                                 theme="vs-dark"
-                                options={{ minimap: { enabled: false } }}
+                                options={{ minimap: { enabled: false }, scrollbar: { vertical: 'auto' } }}
                             />
                         </div>
                     </div>
-                    <div className="pt-4 flex justify-end space-x-2">
-                        <button type="button" onClick={onClose} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
-                        <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">Save</button>
-                    </div>
                 </form>
-            </div>
-        </div>
+                 <DialogFooter className="pt-4">
+                    <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+                    <Button type="submit" onClick={handleSubmit}>Save</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 };
 
