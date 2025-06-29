@@ -22,6 +22,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout'; // Import the new Layout component
 import SettingsLayout from './components/SettingsLayout';
 import AccountSettingsPage from './pages/AccountSettingsPage'; // Import the new page
+import ThemeSettingsPage from './pages/ThemeSettingsPage'; // Import the theme settings page
 import AuthCallbackPage from './pages/AuthCallbackPage'; // Import the new callback page
 import { useAuthStore } from './store/authStore';
 
@@ -76,6 +77,7 @@ function App() {
               <Route path="scripts" element={<ScriptManagementPage />} />
               <Route path="oauth" element={<AdminOAuthProvidersPage />} />
               <Route path="account" element={<AccountSettingsPage />} />
+              <Route path="appearance" element={<ThemeSettingsPage />} />
             </Route>
           </Route>
         </Route>

@@ -252,6 +252,12 @@ pub fn create_axum_router(
                 auth::auth,
             )),
         )
+        .nest(
+            "/api", // A common prefix for theme routes
+            theme_routes::create_router(&app_state.db_pool).route_layer(
+                axum_middleware::from_fn_with_state(app_state.clone(), auth::auth),
+            ),
+        )
         .with_state(app_state.clone())
         .layer(cors)
 }

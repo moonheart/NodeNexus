@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { SlidersHorizontal, Bell, AlertTriangle, Tags, ScrollText, User, KeyRound } from 'lucide-react';
+import { SlidersHorizontal, Bell, AlertTriangle, Tags, ScrollText, User, KeyRound, Palette } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const settingsGroups = [
@@ -24,6 +24,7 @@ const settingsGroups = [
     title: '个人设置',
     links: [
       { name: '账户信息', to: '/settings/account', icon: User },
+      { name: '外观设置', to: '/settings/appearance', icon: Palette },
     ],
   },
 ];

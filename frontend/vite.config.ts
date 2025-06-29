@@ -15,13 +15,13 @@ export default defineConfig({
     proxy: {
       // Proxy all WebSocket requests under /ws
       '/ws': {
-        target: 'ws://192.168.50.50:8080',
+        target: 'ws://192.168.50.108:8080',
         ws: true,
         changeOrigin: true,
       },
       // Proxy all API requests under /api
       '/api': {
-        target: 'http://192.168.50.50:8080',
+        target: 'http://192.168.50.108:8080',
         changeOrigin: true
       }
     }

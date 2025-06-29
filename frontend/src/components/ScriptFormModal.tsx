@@ -17,7 +17,7 @@ interface ScriptFormModalProps {
 }
 
 const ScriptFormModal: React.FC<ScriptFormModalProps> = ({ isOpen, onClose, onSave, initialData }) => {
-    const { theme } = useTheme();
+    const { themeType } = useTheme();
     const [formData, setFormData] = useState<ScriptPayload>({
         name: '',
         description: '',
@@ -110,7 +110,7 @@ const ScriptFormModal: React.FC<ScriptFormModalProps> = ({ isOpen, onClose, onSa
                                 language={formData.language}
                                 value={formData.script_content}
                                 onChange={handleEditorChange}
-                                theme={theme === 'light' ? 'vs-light' : 'vs-dark'}
+                                theme={themeType === 'light' ? 'vs-light' : 'vs-dark'}
                                 options={{ minimap: { enabled: false }, scrollbar: { vertical: 'auto' } }}
                             />
                         </div>

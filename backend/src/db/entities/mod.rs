@@ -25,6 +25,7 @@ pub mod setting;
 pub mod tag;
 pub mod task;
 pub mod task_run;
+pub mod theme;
 pub mod user;
 pub mod user_identity_provider;
 pub mod vps;

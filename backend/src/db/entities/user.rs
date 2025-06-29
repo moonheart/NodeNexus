@@ -13,6 +13,9 @@ pub struct Model {
     pub password_login_disabled: bool,
     pub created_at: ChronoDateTimeUtc,
     pub updated_at: ChronoDateTimeUtc,
+    pub theme_mode: String,
+    pub active_light_theme_id: Option<Uuid>,
+    pub active_dark_theme_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -25,11 +28,20 @@ pub enum Relation {
 
     #[sea_orm(has_many = "super::user_identity_provider::Entity")]
     UserIdentityProviders,
+
+    #[sea_orm(has_many = "super::theme::Entity")]
+    Themes,
 }
 
 impl Related<super::vps::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Vps.def()
+    }
+}
+
+impl Related<super::theme::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Themes.def()
     }
 }
 

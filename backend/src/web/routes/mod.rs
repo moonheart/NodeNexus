@@ -8,5 +8,6 @@ pub mod notification_routes;
 pub mod oauth_routes;
 pub mod service_monitor_routes;
 pub mod tag_routes;
+pub mod theme_routes;
 pub mod user_routes;
 pub mod vps_routes;

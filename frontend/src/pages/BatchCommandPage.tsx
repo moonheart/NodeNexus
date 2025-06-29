@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { ChevronLeft, History, X } from 'lucide-react';
 
 const BatchCommandPage: React.FC = () => {
-    const { theme } = useTheme();
+    const { themeType } = useTheme();
     const { servers } = useServerListStore();
     const [selectedVps, setSelectedVps] = useState<Set<number>>(new Set());
     const [command, setCommand] = useState('');
@@ -347,7 +347,7 @@ const BatchCommandPage: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="relative w-full rounded-md border" style={{ height: `${editorHeight}px` }}>
-                                    <Editor theme={theme === 'light' ? 'vs-light' : 'vs-dark'} language={scriptLanguage} value={command} onChange={(value) => setCommand(value || '')} options={{ minimap: { enabled: false }, scrollbar: { vertical: 'auto', horizontal: 'auto' }, wordWrap: 'on', lineNumbers: 'off', glyphMargin: false, folding: false, lineDecorationsWidth: 0, lineNumbersMinChars: 0, renderLineHighlight: 'none' }} />
+                                    <Editor theme={themeType === 'light' ? 'vs-light' : 'vs-dark'} language={scriptLanguage} value={command} onChange={(value) => setCommand(value || '')} options={{ minimap: { enabled: false }, scrollbar: { vertical: 'auto', horizontal: 'auto' }, wordWrap: 'on', lineNumbers: 'off', glyphMargin: false, folding: false, lineDecorationsWidth: 0, lineNumbersMinChars: 0, renderLineHighlight: 'none' }} />
                                 </div>
                                 <div onMouseDown={handleResizeMouseDown} className="w-full h-2 cursor-ns-resize bg-muted hover:bg-muted-foreground/20 transition-colors rounded-b-md" title="Drag to resize editor" />
                                 {showHistory && (
