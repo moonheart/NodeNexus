@@ -1,10 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getMonitorById, getMonitorResults } from '../services/serviceMonitorService';
 import type { ServiceMonitor, ServiceMonitorResult } from '../types';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea, type LegendProps } from 'recharts';
 import websocketService from '../services/websocketService';
-import { ArrowLeftIcon } from '../components/Icons';
+import { ArrowLeft, CheckCircle, XCircle } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import type { ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
 const TIME_RANGE_OPTIONS = [
   { label: '实时', value: 'realtime' as const },
@@ -15,6 +21,11 @@ const TIME_RANGE_OPTIONS = [
 ];
 type TimeRangeOption = typeof TIME_RANGE_OPTIONS[number]['value'];
 
+const formatDateTick = (tickItem: string) => new Date(tickItem).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+const formatTooltipLabel = (label: string) => new Date(label).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+const formatLatencyForTooltip = (value: ValueType) => typeof value === 'number' ? `${value.toFixed(0)} ms` : `${value}`;
+
+const AGENT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F'];
 
 const ServiceMonitorDetailPage: React.FC = () => {
   const { monitorId } = useParams<{ monitorId: string }>();
@@ -23,50 +34,7 @@ const ServiceMonitorDetailPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('realtime');
-
-  interface ChartDataPoint {
-    time: string;
-    [agentName: string]: number | null | string;
-  }
-  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
-  const [agentColors, setAgentColors] = useState<Record<string, string>>({});
-
-  const AGENT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F'];
-
-  const processAndSetData = (data: ServiceMonitorResult[]) => {
-    const sortedData = data.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-    setResults(sortedData);
-
-    const groupedByAgent = sortedData.reduce((acc, result) => {
-      const agentName = result.agentName;
-      if (!acc[agentName]) {
-        acc[agentName] = [];
-      }
-      acc[agentName].push(result);
-      return acc;
-    }, {} as Record<string, ServiceMonitorResult[]>);
-
-    const newAgentColors = { ...agentColors };
-    let colorIndex = Object.keys(newAgentColors).length;
-    Object.keys(groupedByAgent).forEach(agentName => {
-      if (!newAgentColors[agentName]) {
-        newAgentColors[agentName] = AGENT_COLORS[colorIndex % AGENT_COLORS.length];
-        colorIndex++;
-      }
-    });
-    setAgentColors(newAgentColors);
-
-    const formattedTimePoints = [...new Set(sortedData.map(r => new Date(r.time).toLocaleString()))];
-    const finalChartData = formattedTimePoints.map(time => {
-      const point: ChartDataPoint = { time };
-      Object.keys(groupedByAgent).forEach(agentName => {
-        const resultForTime = groupedByAgent[agentName].find(r => new Date(r.time).toLocaleString() === time);
-        point[agentName] = resultForTime ? resultForTime.latencyMs : null;
-      });
-      return point;
-    });
-    setChartData(finalChartData);
-  };
+  const [hiddenLines, setHiddenLines] = useState<Record<string, boolean>>({});
 
   const timeRangeToMillis: Record<Exclude<TimeRangeOption, 'realtime'>, number> = { '1h': 36e5, '6h': 216e5, '24h': 864e5, '7d': 6048e5 };
 
@@ -87,11 +55,10 @@ const ServiceMonitorDetailPage: React.FC = () => {
           const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange]);
           resultsData = await getMonitorResults(parseInt(monitorId, 10), startTime.toISOString(), endTime.toISOString());
         }
-
-        processAndSetData(resultsData);
+        setResults(resultsData.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()));
         setError(null);
       } catch (err) {
-        setError('Failed to fetch monitor details.');
+        setError('无法获取监控详情。');
         console.error(err);
       } finally {
         setIsLoading(false);
@@ -102,13 +69,10 @@ const ServiceMonitorDetailPage: React.FC = () => {
   }, [monitorId, selectedTimeRange]);
 
   useEffect(() => {
-    if (!monitorId) return;
+    if (!monitorId || selectedTimeRange !== 'realtime') return;
 
     const handleNewResult = (result: ServiceMonitorResult) => {
-      if (result.monitorId !== parseInt(monitorId, 10) || selectedTimeRange !== 'realtime') {
-        return;
-      }
-
+      if (result.monitorId !== parseInt(monitorId, 10)) return;
       setResults(prevResults => {
         const updatedResults = [...prevResults, result].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
         return updatedResults.length > 300 ? updatedResults.slice(updatedResults.length - 300) : updatedResults;
@@ -116,129 +80,161 @@ const ServiceMonitorDetailPage: React.FC = () => {
     };
 
     websocketService.on('service_monitor_result', handleNewResult);
-
     return () => {
       websocketService.off('service_monitor_result', handleNewResult);
     };
   }, [monitorId, selectedTimeRange]);
 
-  useEffect(() => {
-    // Re-process chart data whenever results change
-    if (results.length > 0) {
-      processAndSetData(results);
+  const { chartData, agentLines, downtimeAreas } = useMemo(() => {
+    if (!results || results.length === 0) {
+      return { chartData: [], agentLines: [], downtimeAreas: [] };
     }
-  }, [results]);
 
+    const groupedByAgent = results.reduce((acc, result) => {
+      const agentName = result.agentName;
+      if (!acc[agentName]) acc[agentName] = [];
+      acc[agentName].push(result);
+      return acc;
+    }, {} as Record<string, ServiceMonitorResult[]>);
 
-  const getDowntimeAreas = () => {
-    const areas = [];
-    let inDowntime = false;
-    let start: string | null = null;
-    const sortedResults = [...results].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-    const formattedResults = sortedResults.map(r => ({ ...r, time: new Date(r.time).toLocaleString() }));
+    const agentLines = Object.keys(groupedByAgent).map((agentName, index) => ({
+      dataKey: agentName,
+      name: agentName,
+      stroke: AGENT_COLORS[index % AGENT_COLORS.length],
+    }));
 
-    for (let i = 0; i < formattedResults.length; i++) {
-      const result = formattedResults[i];
-      if (!result.isUp && !inDowntime) {
-        inDowntime = true;
-        start = result.time;
-      } else if (result.isUp && inDowntime) {
-        inDowntime = false;
-        if (start) {
-          areas.push({ x1: start, x2: result.time, y1: 0, y2: 'auto' });
-          start = null;
-        }
+    const timePoints = [...new Set(results.map(r => new Date(r.time).toISOString()))].sort();
+    const chartData = timePoints.map(time => {
+      const point: { time: string; [key: string]: number | null | string } = { time };
+      for (const agentName in groupedByAgent) {
+        const resultForTime = groupedByAgent[agentName].find(r => new Date(r.time).toISOString() === time);
+        point[agentName] = resultForTime && resultForTime.isUp ? resultForTime.latencyMs : null;
+      }
+      return point;
+    });
+
+    const areas: { x1: string, x2: string }[] = [];
+    let downtimeStart: string | null = null;
+    for (let i = 0; i < timePoints.length; i++) {
+      const time = timePoints[i];
+      const isDown = Object.values(groupedByAgent).some(agentResults => agentResults.some(r => new Date(r.time).toISOString() === time && !r.isUp));
+      if (isDown && !downtimeStart) {
+        downtimeStart = time;
+      } else if (!isDown && downtimeStart) {
+        const prevTime = i > 0 ? timePoints[i - 1] : downtimeStart;
+        areas.push({ x1: downtimeStart, x2: prevTime });
+        downtimeStart = null;
       }
     }
-
-    if (inDowntime && start && formattedResults.length > 0) {
-      areas.push({ x1: start, x2: formattedResults[formattedResults.length - 1].time, y1: 0, y2: 'auto' });
+    if (downtimeStart) {
+      areas.push({ x1: downtimeStart, x2: timePoints[timePoints.length - 1] });
     }
-    return areas;
+
+    return { chartData, agentLines, downtimeAreas: areas };
+  }, [results]);
+
+  const handleLegendClick: LegendProps['onClick'] = (data) => {
+    const dataKey = data.dataKey as string;
+    setHiddenLines(prev => ({ ...prev, [dataKey]: !prev[dataKey] }));
   };
 
-  if (isLoading) return <div>Loading...</div>;
-  if (error) return <div className="text-red-500">{error}</div>;
-  if (!monitor) return <div>Monitor not found.</div>;
+  const renderLegendText: LegendProps['formatter'] = (value, entry) => {
+    const { color, dataKey } = entry;
+    const isHidden = typeof dataKey === 'string' && hiddenLines[dataKey];
+    return <span style={{ color: isHidden ? '#A0A0A0' : color || '#000', cursor: 'pointer' }}>{value}</span>;
+  };
 
-  const downtimeAreas = getDowntimeAreas();
+  if (isLoading) return <div className="container mx-auto p-8 text-center">正在加载...</div>;
+  if (error) return (
+    <div className="container mx-auto p-8">
+      <Alert variant="destructive">
+        <AlertTitle>错误</AlertTitle>
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
+    </div>
+  );
+  if (!monitor) return <div className="container mx-auto p-8 text-center">未找到监控项。</div>;
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="flex justify-between items-center mb-4">
-        <div>
-            <h1 className="text-3xl font-bold mb-2">{monitor.name}</h1>
-            <p className="text-lg text-gray-600">{monitor.monitorType.toUpperCase()} - {monitor.target}</p>
-        </div>
-        <Link to="/monitors" className="inline-flex items-center bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-1.5 px-3.5 rounded-lg transition-colors text-sm">
-            <ArrowLeftIcon className="w-4 h-4 mr-1.5" /> Back to List
-        </Link>
-      </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 text-center">
-        <div className="bg-white p-4 rounded-lg shadow">
-            <h3 className="text-sm font-medium text-gray-500">Frequency</h3>
-            <p className="text-2xl font-semibold">{monitor.frequencySeconds}s</p>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-            <h3 className="text-sm font-medium text-gray-500">Timeout</h3>
-            <p className="text-2xl font-semibold">{monitor.timeoutSeconds}s</p>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-            <h3 className="text-sm font-medium text-gray-500">Status</h3>
-            <p className={`text-2xl font-semibold ${monitor.isActive ? 'text-green-500' : 'text-red-500'}`}>
-                {monitor.isActive ? 'Active' : 'Inactive'}
-            </p>
-        </div>
-      </div>
+    <div className="container mx-auto p-4 md:p-6 lg:p-8 space-y-6">
+      <Card>
+        <CardHeader className="flex flex-col sm:flex-row justify-between items-start gap-4">
+          <div>
+            <CardTitle className="text-3xl font-bold">{monitor.name}</CardTitle>
+            <CardDescription className="text-lg mt-1">{monitor.monitorType.toUpperCase()} - {monitor.target}</CardDescription>
+          </div>
+          <Button asChild variant="outline">
+            <Link to="/monitors"><ArrowLeft className="w-4 h-4 mr-2" /> 返回列表</Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+            <Card>
+              <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">检查频率</CardTitle></CardHeader>
+              <CardContent><p className="text-2xl font-semibold">{monitor.frequencySeconds}s</p></CardContent>
+            </Card>
+            <Card>
+              <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">超时</CardTitle></CardHeader>
+              <CardContent><p className="text-2xl font-semibold">{monitor.timeoutSeconds}s</p></CardContent>
+            </Card>
+            <Card>
+              <CardHeader><CardTitle className="text-sm font-medium text-muted-foreground">状态</CardTitle></CardHeader>
+              <CardContent>
+                <Badge variant={monitor.isActive ? 'success' : 'destructive'} className="text-lg">
+                  {monitor.isActive ? <CheckCircle className="w-4 h-4 mr-2" /> : <XCircle className="w-4 h-4 mr-2" />}
+                  {monitor.isActive ? 'Active' : 'Inactive'}
+                </Badge>
+              </CardContent>
+            </Card>
+          </div>
+        </CardContent>
+      </Card>
 
-      <div className="mt-8">
-        <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
-            <h2 className="text-2xl font-bold">Monitoring Results</h2>
-            <div className="flex items-center space-x-1 mt-3 sm:mt-0 p-1 bg-slate-100 rounded-lg">
-                {TIME_RANGE_OPTIONS.map(period => (
-                <button
-                    key={period.value}
-                    onClick={() => setSelectedTimeRange(period.value)}
-                    aria-pressed={selectedTimeRange === period.value}
-                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${selectedTimeRange === period.value ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-200'}`}
-                >
-                    {period.label}
-                </button>
-                ))}
-            </div>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow h-96">
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+            <CardTitle>监控结果</CardTitle>
+            <ToggleGroup type="single" value={selectedTimeRange} onValueChange={(value) => value && setSelectedTimeRange(value as TimeRangeOption)} aria-label="Time range">
+              {TIME_RANGE_OPTIONS.map(period => (
+                <ToggleGroupItem key={period.value} value={period.value}>{period.label}</ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </div>
+        </CardHeader>
+        <CardContent className="h-96">
           {results.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" tick={{ fontSize: 11 }} />
-                <YAxis label={{ value: 'Latency (ms)', angle: -90, position: 'insideLeft' }} />
-                <Tooltip />
-                <Legend />
+                <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
+                <YAxis label={{ value: '延迟 (ms)', angle: -90, position: 'insideLeft' }} tickFormatter={(tick) => `${tick}ms`} />
+                <Tooltip formatter={formatLatencyForTooltip} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'hsl(var(--background) / 0.8)', backdropFilter: 'blur(2px)', borderRadius: 'var(--radius)', fontSize: '0.8rem' }} />
+                <Legend onClick={handleLegendClick} formatter={renderLegendText} />
                 {downtimeAreas.map((area, index) => (
-                  <ReferenceArea key={index} x1={area.x1} x2={area.x2} stroke="transparent" fill="red" fillOpacity={0.1} />
+                  <ReferenceArea key={index} x1={area.x1} x2={area.x2} stroke="transparent" fill="hsl(var(--destructive))" fillOpacity={0.15} />
                 ))}
-                {Object.keys(agentColors).map(agentName => (
+                {agentLines.map(line => (
                   <Line
-                    key={agentName}
+                    key={line.dataKey}
                     type="monotone"
-                    dataKey={agentName}
-                    name={agentName}
-                    stroke={agentColors[agentName]}
+                    dataKey={line.dataKey}
+                    name={line.name}
+                    stroke={hiddenLines[line.dataKey] ? 'transparent' : line.stroke}
                     dot={false}
-                    activeDot={{ r: 8 }}
-                    connectNulls={false}
+                    activeDot={{ r: 6 }}
+                    connectNulls={true}
+                    strokeWidth={2}
                   />
                 ))}
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            <p>No monitoring results available yet.</p>
+            <div className="flex items-center justify-center h-full">
+              <p className="text-muted-foreground">暂无监控结果。</p>
+            </div>
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };

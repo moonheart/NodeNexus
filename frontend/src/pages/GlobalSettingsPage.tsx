@@ -3,19 +3,26 @@ import { getGlobalConfig, updateGlobalConfig, retryConfigPush, pushConfig, previ
 import type { AgentConfig, VpsListItemResponse } from '../types';
 import { useServerListStore } from '../store/serverListStore';
 import toast from 'react-hot-toast';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { RefreshCwIcon } from '@/components/Icons';
 
 const ConfigStatusBadge: React.FC<{ status: string }> = ({ status }) => {
-    const statusMap: { [key: string]: { text: string; className: string } } = {
-        synced: { text: 'Synced', className: 'bg-green-100 text-green-800' },
-        pending: { text: 'Pending', className: 'bg-yellow-100 text-yellow-800' },
-        failed: { text: 'Failed', className: 'bg-red-100 text-red-800' },
-        unknown: { text: 'Unknown', className: 'bg-gray-100 text-gray-800' },
+    const statusMap: { [key: string]: { text: string; variant: "default" | "destructive" | "outline" | "secondary" | "success" | "warning" } } = {
+        synced: { text: 'Synced', variant: 'success' },
+        pending: { text: 'Pending', variant: 'warning' },
+        failed: { text: 'Failed', variant: 'destructive' },
+        unknown: { text: 'Unknown', variant: 'secondary' },
     };
-    const { text, className } = statusMap[status] || statusMap.unknown;
+    const { text, variant } = statusMap[status] || statusMap.unknown;
     return (
-        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${className}`}>
-            {text}
-        </span>
+        <Badge variant={variant}>{text}</Badge>
     );
 };
 
@@ -39,8 +46,9 @@ const GlobalSettingsPage: React.FC = () => {
             setError(null);
         } catch (err) {
             console.error('Failed to load global configuration:', err);
-            setError('Failed to load global configuration.');
-            toast.error('Failed to load global configuration.');
+            const errorMessage = err instanceof Error ? err.message : 'Failed to load global configuration.';
+            setError(errorMessage);
+            toast.error(errorMessage);
         } finally {
             setIsLoading(false);
         }
@@ -65,13 +73,15 @@ const GlobalSettingsPage: React.FC = () => {
 
         setIsSaving(true);
         setError(null);
+        const toastId = toast.loading('Saving configuration...');
         try {
             await updateGlobalConfig(config);
-            toast.success('Configuration saved successfully! It will be pushed to relevant agents.');
+            toast.success('Configuration saved successfully! It will be pushed to relevant agents.', { id: toastId });
         } catch (err) {
-            setError('Failed to save configuration.');
+            const errorMessage = err instanceof Error ? err.message : 'Failed to save configuration.';
+            setError(errorMessage);
             console.error(err);
-            toast.error('Error: Failed to save configuration.');
+            toast.error(`Error: ${errorMessage}`, { id: toastId });
         } finally {
             setIsSaving(false);
         }
@@ -79,12 +89,13 @@ const GlobalSettingsPage: React.FC = () => {
 
     const handleRetry = async (vpsId: number) => {
         setRetrying(vpsId);
+        const toastId = toast.loading(`Retrying config push for VPS ID: ${vpsId}`);
         try {
             await retryConfigPush(vpsId);
-            toast.success(`Retrying config push for VPS ID: ${vpsId}`);
+            toast.success(`Successfully initiated config push retry for VPS ID: ${vpsId}`, { id: toastId });
         } catch (err) {
             console.error(`Failed to retry config push for VPS ID: ${vpsId}`, err);
-            toast.error(`Error: Failed to retry config push for VPS ID: ${vpsId}`);
+            toast.error(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`, { id: toastId });
         } finally {
             setRetrying(null);
         }
@@ -92,12 +103,13 @@ const GlobalSettingsPage: React.FC = () => {
 
     const handlePushConfig = async (vpsId: number) => {
         setPushing(vpsId);
+        const toastId = toast.loading(`Triggering config push for VPS ID: ${vpsId}`);
         try {
             await pushConfig(vpsId);
-            toast.success(`Configuration push triggered for VPS ID: ${vpsId}`);
+            toast.success(`Configuration push triggered for VPS ID: ${vpsId}`, { id: toastId });
         } catch (err) {
             console.error(`Failed to trigger config push for VPS ID: ${vpsId}`, err);
-            toast.error(`Error: Failed to trigger config push for VPS ID: ${vpsId}`);
+            toast.error(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`, { id: toastId });
         } finally {
             setPushing(null);
         }
@@ -111,131 +123,135 @@ const GlobalSettingsPage: React.FC = () => {
             setIsPreviewModalOpen(true);
         } catch (err) {
             console.error(`Failed to preview config for VPS ID: ${vpsId}`, err);
-            toast.error(`Error: Failed to preview config for VPS ID: ${vpsId}`);
+            toast.error(`Error: ${err instanceof Error ? err.message : 'Failed to preview config'}`);
         } finally {
             setPreviewing(null);
         }
     };
 
     if (isLoading) {
-        return <div className="container mx-auto p-4">Loading configuration...</div>;
+        return <div className="flex items-center justify-center h-full"><RefreshCwIcon className="h-8 w-8 animate-spin" /></div>;
     }
 
     if (error) {
-        return <div className="container mx-auto p-4 text-red-500">Error loading global config: {error}</div>;
+        return (
+            <Alert variant="destructive">
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+            </Alert>
+        );
     }
 
     return (
-        <div className="space-y-8">
-            <section className="bg-white p-6 rounded-lg shadow-md">
-                <h2 className="text-xl font-semibold mb-4">Global Agent Configuration</h2>
-                {config && (
-                    <form onSubmit={handleSave}>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {Object.keys(config).filter(k => k !== 'feature_flags').map((key) => (
-                                <div key={key}>
-                                    <label htmlFor={`global-${key}`} className="block text-sm font-medium text-gray-700 capitalize">
-                                        {key.replace(/_/g, ' ')}
-                                    </label>
-                                    <input
-                                        type={typeof config[key as keyof AgentConfig] === 'number' ? 'number' : 'text'}
-                                        id={`global-${key}`}
-                                        name={key}
-                                        value={String(config[key as keyof AgentConfig])}
-                                        onChange={handleInputChange}
-                                        className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                                    />
-                                </div>
-                            ))}
-                        </div>
-                        <div className="mt-6">
-                            <button
-                                type="submit"
-                                disabled={isSaving}
-                                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-                            >
-                                {isSaving ? 'Saving...' : 'Save Global Config'}
-                            </button>
-                        </div>
-                    </form>
-                )}
-            </section>
+        <div className="space-y-6">
+            <Dialog open={isPreviewModalOpen} onOpenChange={setIsPreviewModalOpen}>
+                <DialogContent className="sm:max-w-[600px]">
+                    <DialogHeader>
+                        <DialogTitle>Configuration Preview</DialogTitle>
+                    </DialogHeader>
+                    <div className="mt-2">
+                        <pre className="bg-muted p-4 rounded-md text-sm overflow-auto max-h-[60vh]">
+                            <code>{previewContent}</code>
+                        </pre>
+                    </div>
+                    <DialogFooter>
+                        <Button onClick={() => setIsPreviewModalOpen(false)}>Close</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
-            <section className="bg-white p-6 rounded-lg shadow-md">
-                <h2 className="text-xl font-semibold mb-4">VPS Configuration Status</h2>
-                <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Config Status</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Update</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Error</th>
-                                <th scope="col" className="relative px-6 py-3"><span className="sr-only">Actions</span></th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Global Agent Configuration</CardTitle>
+                    <CardDescription>This configuration applies to all agents unless overridden by a specific VPS setting.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {config && (
+                        <form onSubmit={handleSave}>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {Object.keys(config).filter(k => k !== 'feature_flags').map((key) => (
+                                    <div key={key} className="space-y-2">
+                                        <Label htmlFor={`global-${key}`} className="capitalize">
+                                            {key.replace(/_/g, ' ')}
+                                        </Label>
+                                        <Input
+                                            type={typeof config[key as keyof AgentConfig] === 'number' ? 'number' : 'text'}
+                                            id={`global-${key}`}
+                                            name={key}
+                                            value={String(config[key as keyof AgentConfig])}
+                                            onChange={handleInputChange}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="mt-6 flex justify-end">
+                                <Button type="submit" disabled={isSaving}>
+                                    {isSaving && <RefreshCwIcon className="mr-2 h-4 w-4 animate-spin" />}
+                                    {isSaving ? 'Saving...' : 'Save Global Config'}
+                                </Button>
+                            </div>
+                        </form>
+                    )}
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>VPS Configuration Status</CardTitle>
+                    <CardDescription>Monitor the configuration sync status for each connected VPS.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Name</TableHead>
+                                <TableHead>Config Status</TableHead>
+                                <TableHead>Last Update</TableHead>
+                                <TableHead>Last Error</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
                             {servers.map((vps: VpsListItemResponse) => (
-                                <tr key={vps.id}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{vps.name}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><ConfigStatusBadge status={vps.configStatus} /></td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vps.lastConfigUpdateAt ? new Date(vps.lastConfigUpdateAt).toLocaleString() : 'N/A'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">{vps.lastConfigError || 'None'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                                        <button
+                                <TableRow key={vps.id}>
+                                    <TableCell className="font-medium">{vps.name}</TableCell>
+                                    <TableCell><ConfigStatusBadge status={vps.configStatus} /></TableCell>
+                                    <TableCell>{vps.lastConfigUpdateAt ? new Date(vps.lastConfigUpdateAt).toLocaleString() : 'N/A'}</TableCell>
+                                    <TableCell className="text-destructive">{vps.lastConfigError || 'None'}</TableCell>
+                                    <TableCell className="text-right space-x-2">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
                                             onClick={() => handlePreviewConfig(vps.id)}
                                             disabled={previewing === vps.id}
-                                            className="text-blue-600 hover:text-blue-900 disabled:text-gray-400"
                                         >
-                                            {previewing === vps.id ? 'Loading...' : 'Preview'}
-                                        </button>
-                                        <button
+                                            {previewing === vps.id ? <RefreshCwIcon className="h-4 w-4 animate-spin" /> : 'Preview'}
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
                                             onClick={() => handlePushConfig(vps.id)}
                                             disabled={pushing === vps.id}
-                                            className="text-green-600 hover:text-green-900 disabled:text-gray-400"
                                         >
-                                            {pushing === vps.id ? 'Pushing...' : 'Push Config'}
-                                        </button>
+                                            {pushing === vps.id ? <RefreshCwIcon className="h-4 w-4 animate-spin" /> : 'Push'}
+                                        </Button>
                                         {vps.configStatus === 'failed' && (
-                                            <button
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
                                                 onClick={() => handleRetry(vps.id)}
                                                 disabled={retrying === vps.id}
-                                                className="text-indigo-600 hover:text-indigo-900 disabled:text-gray-400"
                                             >
-                                                {retrying === vps.id ? 'Retrying...' : 'Retry'}
-                                            </button>
+                                                {retrying === vps.id ? <RefreshCwIcon className="h-4 w-4 animate-spin" /> : 'Retry'}
+                                            </Button>
                                         )}
-                                    </td>
-                                </tr>
+                                    </TableCell>
+                                </TableRow>
                             ))}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            {isPreviewModalOpen && (
-                <div className="fixed inset-0 bg-gray-600/50 overflow-y-auto h-full w-full z-50">
-                    <div className="relative top-20 mx-auto p-5 border w-1/2 shadow-lg rounded-md bg-white">
-                        <div className="mt-3 text-center">
-                            <h3 className="text-lg leading-6 font-medium text-gray-900">Configuration Preview</h3>
-                            <div className="mt-2 px-7 py-3">
-                                <pre className="bg-gray-100 p-4 rounded-md text-left text-sm overflow-auto max-h-96">
-                                    <code>{previewContent}</code>
-                                </pre>
-                            </div>
-                            <div className="items-center px-4 py-3">
-                                <button
-                                    id="ok-btn"
-                                    onClick={() => setIsPreviewModalOpen(false)}
-                                    className="px-4 py-2 bg-gray-800 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
-                                >
-                                    Close
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+            </Card>
         </div>
     );
 };

@@ -4,70 +4,64 @@ import { useAuthStore } from '../store/authStore';
 import { ServerIcon } from './Icons';
 import UserMenu from './UserMenu';
 import { ThemeToggle } from './ThemeToggle';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+const navLinks = [
+  { to: '/servers', label: '服务器管理' },
+  { to: '/tasks', label: '任务' },
+  { to: '/monitors', label: '服务监控' },
+  { to: '/settings', label: '设置' },
+];
 
 const Navbar: React.FC = () => {
   const { isAuthenticated } = useAuthStore();
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-14 max-w-screen-2xl items-center">
-        <div className="mr-4 hidden md:flex">
-          <Link to="/" className="mr-6 flex items-center space-x-2">
-            <ServerIcon className="h-6 w-6" />
-            <span className="hidden font-bold sm:inline-block">VPS Monitor</span>
-          </Link>
-          <nav className="flex items-center gap-4 text-sm lg:gap-6">
+      <div className="container mx-auto flex h-16 max-w-screen-2xl items-center justify-between px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center space-x-8">
+          <div className="flex-shrink-0">
+            <Link to="/" className="flex items-center space-x-2">
+              <ServerIcon className="h-8 w-8 text-primary" />
+              <span className="text-xl font-semibold text-foreground">VPS Monitor</span>
+            </Link>
+          </div>
+          <nav className="hidden items-center space-x-1 md:flex">
             {isAuthenticated && (
               <>
-                <NavLink to="/servers">
-                  {({ isActive }) => (
-                    <Button variant={isActive ? "secondary" : "ghost"} asChild>
-                      <Link to="/servers">服务器管理</Link>
-                    </Button>
-                  )}
-                </NavLink>
-                <NavLink to="/tasks">
-                  {({ isActive }) => (
-                    <Button variant={isActive ? "secondary" : "ghost"} asChild>
-                      <Link to="/tasks">任务</Link>
-                    </Button>
-                  )}
-                </NavLink>
-                <NavLink to="/monitors">
-                  {({ isActive }) => (
-                    <Button variant={isActive ? "secondary" : "ghost"} asChild>
-                      <Link to="/monitors">服务监控</Link>
-                    </Button>
-                  )}
-                </NavLink>
-                <NavLink to="/settings">
-                  {({ isActive }) => (
-                    <Button variant={isActive ? "secondary" : "ghost"} asChild>
-                      <Link to="/settings">设置</Link>
-                    </Button>
-                  )}
-                </NavLink>
+                {navLinks.map((link) => (
+                  <NavLink
+                    key={link.to}
+                    to={link.to}
+                    className={({ isActive }) =>
+                      cn(
+                        buttonVariants({ variant: isActive ? 'secondary' : 'ghost', size: 'sm' }),
+                        'h-8',
+                      )
+                    }
+                  >
+                    {link.label}
+                  </NavLink>
+                ))}
               </>
             )}
           </nav>
         </div>
-        <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
-          <nav className="flex items-center gap-2">
-            {isAuthenticated ? (
-              <UserMenu />
-            ) : (
-              <>
-                <Button variant="ghost" asChild>
-                  <Link to="/login">登录</Link>
-                </Button>
-                <Button asChild>
-                  <Link to="/register">注册</Link>
-                </Button>
-              </>
-            )}
-            <ThemeToggle />
-          </nav>
+        <div className="flex items-center space-x-2">
+          {isAuthenticated ? (
+            <UserMenu />
+          ) : (
+            <>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/login">登录</Link>
+              </Button>
+              <Button asChild size="sm">
+                <Link to="/register">注册</Link>
+              </Button>
+            </>
+          )}
+          <ThemeToggle />
         </div>
       </div>
     </header>

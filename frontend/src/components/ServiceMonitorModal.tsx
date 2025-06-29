@@ -1,8 +1,46 @@
-import React, { useState, useEffect } from 'react';
-import type { ServiceMonitor, ServiceMonitorInput, Tag, HttpMonitorConfig, VpsListItemResponse } from '../types';
+import React, { useEffect } from 'react';
+import { useForm, Controller, type ControllerRenderProps } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import type { ServiceMonitor, ServiceMonitorInput, Tag, VpsListItemResponse } from '../types';
 import { getAllVpsListItems } from '../services/vpsService';
 import { getTags } from '../services/tagService';
 import toast from 'react-hot-toast';
+
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { ChevronDown } from 'lucide-react';
+import { Badge } from './ui/badge';
+import { Switch } from './ui/switch';
+
+const httpMonitorConfigSchema = z.object({
+  expected_status_codes: z.array(z.number()).optional(),
+  response_body_match: z.string().optional(),
+}).optional();
+
+const formSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  monitorType: z.enum(['http', 'ping', 'tcp']),
+  target: z.string().min(1, "Target is required"),
+  frequencySeconds: z.number().min(10),
+  timeoutSeconds: z.number().min(1),
+  isActive: z.boolean(),
+  monitorConfig: httpMonitorConfigSchema,
+  assignments: z.object({
+    agentIds: z.array(z.number()),
+    tagIds: z.array(z.number()),
+    assignmentType: z.enum(['INCLUSIVE', 'EXCLUSIVE']),
+  }),
+});
+
+type FormValues = z.infer<typeof formSchema>;
 
 interface ServiceMonitorModalProps {
   isOpen: boolean;
@@ -12,28 +50,33 @@ interface ServiceMonitorModalProps {
 }
 
 const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClose, onSave, monitorToEdit }) => {
-  const [formData, setFormData] = useState<ServiceMonitorInput>({
-    name: '',
-    monitorType: 'http',
-    target: '',
-    frequencySeconds: 60,
-    timeoutSeconds: 10,
-    isActive: true,
-    monitorConfig: {},
-    assignments: {
-      agentIds: [],
-      tagIds: [],
-      assignmentType: 'INCLUSIVE',
+  const [allAgents, setAllAgents] = React.useState<VpsListItemResponse[]>([]);
+  const [allTags, setAllTags] = React.useState<Tag[]>([]);
+
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      name: '',
+      monitorType: 'http',
+      target: '',
+      frequencySeconds: 60,
+      timeoutSeconds: 10,
+      isActive: true,
+      monitorConfig: {},
+      assignments: {
+        agentIds: [],
+        tagIds: [],
+        assignmentType: 'INCLUSIVE',
+      },
     },
   });
-  const [allAgents, setAllAgents] = useState<VpsListItemResponse[]>([]);
-  const [allTags, setAllTags] = useState<Tag[]>([]);
+
+  const { handleSubmit, control, reset, watch } = form;
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const [agentsResponse, tags] = await Promise.all([getAllVpsListItems(), getTags()]);
-        // The Vps type is compatible with what we need for the list.
         setAllAgents(agentsResponse as VpsListItemResponse[]);
         setAllTags(tags);
       } catch (error) {
@@ -47,200 +90,189 @@ const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClo
   }, [isOpen]);
 
   useEffect(() => {
-    if (monitorToEdit) {
-      setFormData({
-        name: monitorToEdit.name,
-        monitorType: monitorToEdit.monitorType,
-        target: monitorToEdit.target,
-        frequencySeconds: monitorToEdit.frequencySeconds,
-        timeoutSeconds: monitorToEdit.timeoutSeconds,
-        isActive: monitorToEdit.isActive,
-        monitorConfig: monitorToEdit.monitorConfig || {},
-        assignments: {
-          agentIds: monitorToEdit.agentIds || [],
-          tagIds: monitorToEdit.tagIds || [],
-          assignmentType: monitorToEdit.assignmentType || 'INCLUSIVE',
-        }
-      });
-    } else {
-      // Reset to default when opening for creation
-      setFormData({
-        name: '',
-        monitorType: 'http',
-        target: '',
-        frequencySeconds: 60,
-        timeoutSeconds: 10,
-        isActive: true,
-        monitorConfig: {},
-        assignments: {
-          agentIds: [],
-          tagIds: [],
-          assignmentType: 'INCLUSIVE',
-        },
-      });
+    if (isOpen) {
+      if (monitorToEdit) {
+        const initialMonitorConfig =
+          monitorToEdit.monitorType === 'http' &&
+          monitorToEdit.monitorConfig &&
+          'expected_status_codes' in monitorToEdit.monitorConfig
+            ? {
+                expected_status_codes: monitorToEdit.monitorConfig.expected_status_codes,
+                response_body_match: 'response_body_match' in monitorToEdit.monitorConfig ? monitorToEdit.monitorConfig.response_body_match : undefined,
+              }
+            : {};
+        
+        reset({
+          name: monitorToEdit.name,
+          monitorType: monitorToEdit.monitorType,
+          target: monitorToEdit.target,
+          frequencySeconds: monitorToEdit.frequencySeconds,
+          timeoutSeconds: monitorToEdit.timeoutSeconds,
+          isActive: monitorToEdit.isActive,
+          monitorConfig: initialMonitorConfig,
+          assignments: {
+            agentIds: monitorToEdit.agentIds || [],
+            tagIds: monitorToEdit.tagIds || [],
+            assignmentType: monitorToEdit.assignmentType || 'INCLUSIVE',
+          },
+        });
+      } else {
+        // Reset to default for creation
+        form.reset();
+      }
     }
-  }, [monitorToEdit, isOpen]);
+  }, [monitorToEdit, isOpen, reset, form]);
 
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value, type } = e.target;
-    const isNumber = type === 'number';
-    setFormData(prev => ({ ...prev, [name]: isNumber ? parseInt(value, 10) : value }));
-  };
-
-  const handleAssignmentChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-        ...prev,
-        assignments: {
-            ...prev.assignments,
-            [name]: value
-        }
-    }));
+  const onSubmit = (data: FormValues) => {
+    const monitorInput: ServiceMonitorInput = {
+        ...data,
+        // Handle any transformations if necessary, e.g., for monitorConfig
+        monitorConfig: data.monitorType === 'http' ? data.monitorConfig : {},
+    };
+    onSave(monitorInput, monitorToEdit?.id);
   };
   
-  const handleHttpConfigChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      monitorConfig: {
-        ...prev.monitorConfig,
-        [name]: value,
-      } as HttpMonitorConfig,
-    }));
-  };
-
-  const handleMultiSelectChange = (e: React.ChangeEvent<HTMLSelectElement>, field: 'agentIds' | 'tagIds') => {
-    const selectedIds = Array.from(e.target.selectedOptions, option => parseInt(option.value, 10));
-    setFormData(prev => ({
-        ...prev,
-        assignments: {
-            ...prev.assignments,
-            [field]: selectedIds
-        }
-    }));
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave(formData, monitorToEdit?.id);
-  };
+  const MultiSelectPopover = ({ field, options, placeholder }: { field: ControllerRenderProps<FormValues, 'assignments.agentIds' | 'assignments.tagIds'>, options: (VpsListItemResponse | Tag)[], placeholder: string }) => (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" className="w-full justify-between">
+          <span className="truncate">
+            {(field.value || []).length > 0 ? `${(field.value || []).length} selected` : placeholder}
+          </span>
+          <ChevronDown className="h-4 w-4 ml-2" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+        <ScrollArea className="h-48">
+          <div className="p-4 space-y-2">
+            {options.map(option => (
+              <div key={option.id} className="flex items-center space-x-2">
+                <Checkbox
+                  id={`option-${option.id}`}
+                  checked={field.value?.includes(option.id)}
+                  onCheckedChange={(checked) => {
+                    const newValue = checked
+                      ? [...(field.value || []), option.id]
+                      : (field.value || []).filter((id: number) => id !== option.id);
+                    field.onChange(newValue);
+                  }}
+                />
+                <Label htmlFor={`option-${option.id}`} className="flex-grow">
+                  {'color' in option && option.color ? <Badge style={{ backgroundColor: option.color, color: '#fff' }}>{option.name}</Badge> : option.name}
+                </Label>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
+      </PopoverContent>
+    </Popover>
+  );
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex justify-center items-center">
-      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">{monitorToEdit ? 'Edit' : 'Create'} Service Monitor</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-800">&times;</button>
-        </div>
-        
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            {/* Basic Info */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700">Monitor Name</label>
-                <input type="text" id="name" name="name" value={formData.name} onChange={handleChange} required className="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-              </div>
-              <div>
-                <label htmlFor="monitorType" className="block text-sm font-medium text-gray-700">Monitor Type</label>
-                <select id="monitorType" name="monitorType" value={formData.monitorType} onChange={handleChange} className="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-                  <option value="http">HTTP(s)</option>
-                  <option value="ping">Ping</option>
-                  <option value="tcp">TCP Port</option>
-                </select>
-              </div>
-            </div>
-            <div>
-              <label htmlFor="target" className="block text-sm font-medium text-gray-700">Target</label>
-              <input type="text" id="target" name="target" value={formData.target} onChange={handleChange} placeholder="e.g., https://example.com or 8.8.8.8:53" required className="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="frequencySeconds" className="block text-sm font-medium text-gray-700">Frequency (seconds)</label>
-                <input type="number" id="frequencySeconds" name="frequencySeconds" value={formData.frequencySeconds} onChange={handleChange} min="10" className="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-              </div>
-              <div>
-                <label htmlFor="timeoutSeconds" className="block text-sm font-medium text-gray-700">Timeout (seconds)</label>
-                <input type="number" id="timeoutSeconds" name="timeoutSeconds" value={formData.timeoutSeconds} onChange={handleChange} min="1" className="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-              </div>
-            </div>
-
-            {/* Dynamic Config Section */}
-            {formData.monitorType === 'http' && (
-              <div className="p-4 border rounded-md bg-gray-50">
-                <h3 className="text-lg font-medium mb-2">HTTP Options</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label htmlFor="expected_status_codes" className="block text-sm font-medium text-gray-700">Expected Status Codes</label>
-                        <input type="text" id="expected_status_codes" name="expected_status_codes"
-                               value={(formData.monitorConfig as HttpMonitorConfig)?.expected_status_codes?.join(', ') || '200'}
-                               onChange={handleHttpConfigChange}
-                               placeholder="e.g., 200, 201"
-                               className="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-                    </div>
-                    <div>
-                        <label htmlFor="response_body_match" className="block text-sm font-medium text-gray-700">Response Body Match</label>
-                        <input type="text" id="response_body_match" name="response_body_match"
-                               value={(formData.monitorConfig as HttpMonitorConfig)?.response_body_match || ''}
-                               onChange={handleHttpConfigChange}
-                               placeholder="Text to find in response body"
-                               className="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-                    </div>
-                </div>
-              </div>
-            )}
-
-            {/* Assignments */}
-            <div className="p-4 border rounded-md bg-gray-50">
-                <h3 className="text-lg font-medium mb-2">Assignments</h3>
-                <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700">Assignment Mode</label>
-                    <div className="flex items-center space-x-4 mt-1">
-                        <label className="flex items-center">
-                            <input type="radio" name="assignmentType" value="INCLUSIVE" checked={formData.assignments?.assignmentType === 'INCLUSIVE'} onChange={handleAssignmentChange} className="form-radio"/>
-                            <span className="ml-2">Inclusive (Apply to selected)</span>
-                        </label>
-                        <label className="flex items-center">
-                            <input type="radio" name="assignmentType" value="EXCLUSIVE" checked={formData.assignments?.assignmentType === 'EXCLUSIVE'} onChange={handleAssignmentChange} className="form-radio"/>
-                            <span className="ml-2">Exclusive (Apply to all except selected)</span>
-                        </label>
-                    </div>
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{monitorToEdit ? 'Edit' : 'Create'} Service Monitor</DialogTitle>
+          <DialogDescription>Configure the details for your service monitor.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(onSubmit)}>
+          <ScrollArea className="h-[70vh] p-1">
+            <div className="p-4 space-y-6">
+              {/* Basic Info */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                    <Label>Is Active</Label>
+                    <Controller name="isActive" control={control} render={({ field }) => <Switch checked={field.value} onCheckedChange={field.onChange} />} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label htmlFor="agentIds" className="block text-sm font-medium text-gray-700">
-                      {formData.assignments?.assignmentType === 'EXCLUSIVE' ? 'Exclude Agents' : 'Assign to Agents'}
-                    </label>
-                    <select id="agentIds" name="agentIds" multiple value={formData.assignments?.agentIds?.map(String)} onChange={(e) => handleMultiSelectChange(e, 'agentIds')} className="mt-1 block w-full h-32 border-gray-300 rounded-md shadow-sm">
-                      {allAgents.map(agent => (
-                        <option key={agent.id} value={agent.id}>{agent.name}</option>
-                      ))}
-                    </select>
+                    <Label htmlFor="name">Monitor Name</Label>
+                    <Controller name="name" control={control} render={({ field }) => <Input id="name" {...field} />} />
                   </div>
                   <div>
-                    <label htmlFor="tagIds" className="block text-sm font-medium text-gray-700">
-                      {formData.assignments?.assignmentType === 'EXCLUSIVE' ? 'Exclude Tags' : 'Assign to Tags'}
-                    </label>
-                    <select id="tagIds" name="tagIds" multiple value={formData.assignments?.tagIds?.map(String)} onChange={(e) => handleMultiSelectChange(e, 'tagIds')} className="mt-1 block w-full h-32 border-gray-300 rounded-md shadow-sm">
-                      {allTags.map(tag => (
-                        <option key={tag.id} value={tag.id} style={{ color: tag.color }}>{tag.name}</option>
-                      ))}
-                    </select>
+                    <Label>Monitor Type</Label>
+                    <Controller name="monitorType" control={control} render={({ field }) => (
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="http">HTTP(s)</SelectItem>
+                          <SelectItem value="ping">Ping</SelectItem>
+                          <SelectItem value="tcp">TCP Port</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )} />
                   </div>
                 </div>
-            </div>
-          </div>
+                <div>
+                  <Label htmlFor="target">Target</Label>
+                  <Controller name="target" control={control} render={({ field }) => <Input id="target" placeholder="e.g., https://example.com or 8.8.8.8:53" {...field} />} />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="frequencySeconds">Frequency (seconds)</Label>
+                    <Controller name="frequencySeconds" control={control} render={({ field }) => <Input id="frequencySeconds" type="number" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10))} />} />
+                  </div>
+                  <div>
+                    <Label htmlFor="timeoutSeconds">Timeout (seconds)</Label>
+                    <Controller name="timeoutSeconds" control={control} render={({ field }) => <Input id="timeoutSeconds" type="number" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10))} />} />
+                  </div>
+                </div>
+              </div>
 
-          <div className="mt-6 flex justify-end space-x-2">
-            <button type="button" onClick={onClose} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
-            <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">Save</button>
-          </div>
+              {/* Dynamic Config Section */}
+              {watch('monitorType') === 'http' && (
+                <div className="space-y-4 p-4 border rounded-md bg-slate-50">
+                    <h3 className="text-lg font-medium text-slate-900">HTTP Options</h3>
+                    <div>
+                        <Label>Expected Status Codes</Label>
+                        <Controller name="monitorConfig.expected_status_codes" control={control} render={({ field }) => <Input placeholder="e.g., 200, 201" {...field} value={Array.isArray(field.value) ? field.value.join(', ') : ''} onChange={e => field.onChange(e.target.value.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)))} />} />
+                    </div>
+                    <div>
+                        <Label>Response Body Match</Label>
+                        <Controller name="monitorConfig.response_body_match" control={control} render={({ field }) => <Input placeholder="Text to find in response body" {...field} value={field.value || ''} />} />
+                    </div>
+                </div>
+              )}
+
+              {/* Assignments */}
+              <div className="p-4 border rounded-md bg-slate-50 space-y-4">
+                <h3 className="text-lg font-medium">Assignments</h3>
+                <Controller name="assignments.assignmentType" control={control} render={({ field }) => (
+                  <RadioGroup onValueChange={field.onChange} value={field.value} className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="INCLUSIVE" id="inclusive" />
+                      <Label htmlFor="inclusive">Inclusive (Apply to selected)</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="EXCLUSIVE" id="exclusive" />
+                      <Label htmlFor="exclusive">Exclusive (Apply to all except selected)</Label>
+                    </div>
+                  </RadioGroup>
+                )} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label>{watch('assignments.assignmentType') === 'EXCLUSIVE' ? 'Exclude Agents' : 'Assign to Agents'}</Label>
+                    <Controller name="assignments.agentIds" control={control} render={({ field }) => <MultiSelectPopover field={field} options={allAgents} placeholder="Select agents..." />} />
+                  </div>
+                  <div>
+                    <Label>{watch('assignments.assignmentType') === 'EXCLUSIVE' ? 'Exclude Tags' : 'Assign to Tags'}</Label>
+                    <Controller name="assignments.tagIds" control={control} render={({ field }) => <MultiSelectPopover field={field} options={allTags} placeholder="Select tags..." />} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </ScrollArea>
+          <DialogFooter className="pt-4">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={form.formState.isSubmitting}>
+              {form.formState.isSubmitting ? 'Saving...' : 'Save'}
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 

@@ -1,10 +1,27 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getAllAlertRules, createAlertRule, updateAlertRule, deleteAlertRule, updateAlertRuleStatus } from '../services/alertService';
+import { getAllAlertRules, deleteAlertRule, updateAlertRuleStatus } from '../services/alertService';
 import { getAllVpsListItems } from '../services/vpsService';
-import type { VpsListItemResponse, AlertRule, CreateAlertRulePayload, UpdateAlertRulePayload } from '../types';
+import type { VpsListItemResponse, AlertRule } from '../types';
 import AlertRuleModal from '../components/AlertRuleModal';
 import toast from 'react-hot-toast';
-import { PlusCircle, Edit3, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Edit3, PlusCircle, Trash2 } from 'lucide-react';
+import { RefreshCwIcon as SpinnerIcon } from '@/components/Icons';
+import EmptyState from '@/components/EmptyState';
 
 const AlertsSettingsPage: React.FC = () => {
     const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
@@ -13,6 +30,8 @@ const AlertsSettingsPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
     const [currentEditingAlertRule, setCurrentEditingAlertRule] = useState<AlertRule | null>(null);
+    const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
+    const [deletingRuleId, setDeletingRuleId] = useState<number | null>(null);
 
     const fetchAlertsData = useCallback(async () => {
         setIsLoading(true);
@@ -25,9 +44,10 @@ const AlertsSettingsPage: React.FC = () => {
             setVpsList(vpsData);
             setError(null);
         } catch (err) {
-            console.error('Failed to load alert rules or VPS list:', err);
-            setError('Failed to load alert rules or VPS list.');
-            toast.error('Failed to load alert rules or VPS list.');
+            const errorMessage = err instanceof Error ? err.message : 'Failed to load alert rules or VPS list.';
+            console.error(errorMessage, err);
+            setError(errorMessage);
+            toast.error(errorMessage);
         } finally {
             setIsLoading(false);
         }
@@ -47,56 +67,48 @@ const AlertsSettingsPage: React.FC = () => {
         setIsAlertModalOpen(true);
     };
 
-    const handleAlertModalClose = () => {
-        setIsAlertModalOpen(false);
-        setCurrentEditingAlertRule(null);
+    const handleRuleSaved = () => {
+        toast.success(`Alert rule ${currentEditingAlertRule ? 'updated' : 'created'} successfully!`);
+        fetchAlertsData();
     };
 
-    const handleAlertModalSubmit = async (data: CreateAlertRulePayload | UpdateAlertRulePayload) => {
+    const handleDeleteClick = (id: number) => {
+        setDeletingRuleId(id);
+        setIsDeleteAlertOpen(true);
+    };
+
+    const confirmDeleteAlertRule = async () => {
+        if (deletingRuleId === null) return;
+        const toastId = toast.loading('Deleting alert rule...');
         try {
-            if (currentEditingAlertRule) {
-                await updateAlertRule(currentEditingAlertRule.id, data as UpdateAlertRulePayload);
-                toast.success('Alert rule updated successfully!');
-            } else {
-                await createAlertRule(data as CreateAlertRulePayload);
-                toast.success('Alert rule created successfully!');
-            }
+            await deleteAlertRule(deletingRuleId);
+            toast.success('Alert rule deleted successfully!', { id: toastId });
             fetchAlertsData();
         } catch (err) {
-            console.error('Failed to save alert rule:', err);
-            toast.error('Failed to save alert rule.');
-            throw err;
-        }
-    };
-
-    const handleDeleteAlertRule = async (id: number) => {
-        if (window.confirm('Are you sure you want to delete this alert rule?')) {
-            try {
-                await deleteAlertRule(id);
-                toast.success('Alert rule deleted successfully!');
-                fetchAlertsData();
-            } catch (err) {
-                console.error('Failed to delete alert rule:', err);
-                toast.error('Failed to delete alert rule.');
-            }
+            console.error('Failed to delete alert rule:', err);
+            toast.error('Failed to delete alert rule.', { id: toastId });
+        } finally {
+            setIsDeleteAlertOpen(false);
+            setDeletingRuleId(null);
         }
     };
 
     const handleToggleAlertRuleStatus = async (rule: AlertRule) => {
+        const toastId = toast.loading(`Updating status for "${rule.name}"...`);
         try {
             const updatedRule = await updateAlertRuleStatus(rule.id, !rule.isActive);
             setAlertRules(prevRules =>
                 prevRules.map(r => r.id === updatedRule.id ? updatedRule : r)
             );
-            toast.success(`Rule "${updatedRule.name}" ${updatedRule.isActive ? 'enabled' : 'disabled'}.`);
+            toast.success(`Rule "${updatedRule.name}" ${updatedRule.isActive ? 'enabled' : 'disabled'}.`, { id: toastId });
         } catch (err) {
             console.error('Failed to update alert rule status:', err);
-            toast.error('Failed to update alert rule status.');
+            toast.error('Failed to update alert rule status.', { id: toastId });
         }
     };
 
     if (isLoading) {
-        return <div className="container mx-auto p-4">Loading alert rules...</div>;
+        return <div className="flex items-center justify-center h-full"><SpinnerIcon className="h-8 w-8 animate-spin" /></div>;
     }
 
     if (error) {
@@ -104,65 +116,101 @@ const AlertsSettingsPage: React.FC = () => {
     }
 
     return (
-        <div className="space-y-8">
-            <section className="bg-white p-6 rounded-lg shadow-md">
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-semibold">Alert Rules</h2>
-                    <button
-                        onClick={handleOpenCreateAlertModal}
-                        className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-sm flex items-center"
-                    >
+        <div className="space-y-6">
+            <Card>
+                <CardHeader className="flex flex-row items-center justify-between">
+                    <div>
+                        <CardTitle>Alert Rules</CardTitle>
+                        <CardDescription>Manage rules to get notified about important events.</CardDescription>
+                    </div>
+                    <Button onClick={handleOpenCreateAlertModal}>
                         <PlusCircle size={18} className="mr-2" /> Add New Rule
-                    </button>
-                </div>
-                {alertRules.length === 0 && <p className="text-gray-500">No alert rules configured yet.</p>}
-                {alertRules.length > 0 && (
-                    <ul className="divide-y divide-gray-200">
-                        {alertRules.map(rule => (
-                            <li key={rule.id} className="py-3 flex justify-between items-center">
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center">
-                                        <p className="text-md font-medium text-gray-900 mr-2">{rule.name}</p>
-                                        <span className={`px-2 py-0.5 inline-flex text-xs leading-4 font-semibold rounded-full ${rule.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                            {rule.isActive ? 'Active' : 'Inactive'}
-                                        </span>
-                                    </div>
-                                    <p className="text-sm text-gray-500">
-                                        Metric: {rule.metricType}, Threshold: {rule.comparisonOperator} {rule.threshold} for {rule.durationSeconds}s
-                                    </p>
-                                    <p className="text-sm text-gray-500">
-                                        Channels: {rule.notificationChannelIds?.join(', ') || 'None'}
-                                    </p>
-                                    <p className="text-sm text-gray-500">
-                                        Cooldown: {rule.cooldownSeconds !== undefined ? `${rule.cooldownSeconds}s` : 'Default (300s)'}
-                                    </p>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                    <button
-                                        onClick={() => handleToggleAlertRuleStatus(rule)}
-                                        className={`p-1 rounded-md ${rule.isActive ? 'text-gray-500 hover:text-gray-700' : 'text-gray-400 hover:text-gray-600'}`}
-                                        title={rule.isActive ? 'Disable Rule' : 'Enable Rule'}
-                                    >
-                                        {rule.isActive ? <ToggleRight size={20} className="text-green-600" /> : <ToggleLeft size={20} className="text-red-600"/>}
-                                    </button>
-                                    <button onClick={() => handleOpenEditAlertModal(rule)} className="text-indigo-600 hover:text-indigo-900 p-1"><Edit3 size={18} /></button>
-                                    <button onClick={() => handleDeleteAlertRule(rule.id)} className="text-red-600 hover:text-red-900 p-1"><Trash2 size={18} /></button>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </section>
+                    </Button>
+                </CardHeader>
+                <CardContent>
+                    {alertRules.length === 0 ? (
+                        <EmptyState
+                            title="No Alert Rules"
+                            message="Get started by creating a new alert rule."
+                            action={<Button onClick={handleOpenCreateAlertModal}><PlusCircle size={18} className="mr-2" /> Add New Rule</Button>}
+                        />
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Name</TableHead>
+                                    <TableHead>Status</TableHead>
+                                    <TableHead>Condition</TableHead>
+                                    <TableHead className="text-center">Enabled</TableHead>
+                                    <TableHead className="text-right">Actions</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {alertRules.map(rule => (
+                                    <TableRow key={rule.id}>
+                                        <TableCell className="font-medium">{rule.name}</TableCell>
+                                        <TableCell>
+                                            <Badge variant={rule.isActive ? 'success' : 'secondary'}>
+                                                {rule.isActive ? 'Active' : 'Inactive'}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="text-sm">
+                                                <span className="font-semibold">{rule.metricType.replace(/_/g, ' ')}</span>
+                                                <span> {rule.comparisonOperator} </span>
+                                                <span className="font-semibold">{rule.threshold}</span>
+                                                <span> for </span>
+                                                <span className="font-semibold">{rule.durationSeconds}s</span>
+                                            </div>
+                                            <div className="text-xs text-muted-foreground">
+                                                Cooldown: {rule.cooldownSeconds}s
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-center">
+                                            <Switch
+                                                checked={rule.isActive}
+                                                onCheckedChange={() => handleToggleAlertRuleStatus(rule)}
+                                                aria-label={`Toggle rule ${rule.name}`}
+                                            />
+                                        </TableCell>
+                                        <TableCell className="text-right space-x-1">
+                                            <Button variant="ghost" size="icon" onClick={() => handleOpenEditAlertModal(rule)}>
+                                                <Edit3 className="h-4 w-4" />
+                                            </Button>
+                                            <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(rule.id)}>
+                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
+                </CardContent>
+            </Card>
 
-            {isAlertModalOpen && (
-                <AlertRuleModal
-                    isOpen={isAlertModalOpen}
-                    onClose={handleAlertModalClose}
-                    onRuleSaved={handleAlertModalSubmit}
-                    rule={currentEditingAlertRule}
-                    vpsList={vpsList}
-                />
-            )}
+            <AlertRuleModal
+                isOpen={isAlertModalOpen}
+                onOpenChange={setIsAlertModalOpen}
+                onRuleSaved={handleRuleSaved}
+                rule={currentEditingAlertRule}
+                vpsList={vpsList}
+            />
+
+            <AlertDialog open={isDeleteAlertOpen} onOpenChange={setIsDeleteAlertOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete the alert rule.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel onClick={() => setDeletingRuleId(null)}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmDeleteAlertRule}>Delete</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 };

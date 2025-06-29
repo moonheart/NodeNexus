@@ -5,6 +5,7 @@ import { connectForBatchCommand } from '../services/batchCommandService';
 import { getCommandScripts, createCommandScript } from '../services/commandScriptService';
 import SaveScriptModal from '../components/SaveScriptModal';
 import Editor from '@monaco-editor/react';
+import { useTheme } from "@/components/ThemeProvider";
 import Convert from 'ansi-to-html';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { ChevronLeft, History, X } from 'lucide-react';
 
 const BatchCommandPage: React.FC = () => {
+    const { theme } = useTheme();
     const { servers } = useServerListStore();
     const [selectedVps, setSelectedVps] = useState<Set<number>>(new Set());
     const [command, setCommand] = useState('');
@@ -318,7 +320,7 @@ const BatchCommandPage: React.FC = () => {
                                 <Label htmlFor="working-directory-input">Working Directory</Label>
                                 <Input id="working-directory-input" value={workingDirectory} onChange={(e) => setWorkingDirectory(e.target.value)} placeholder="e.g., /root or C:\Users\Admin" />
                             </div>
-                            <div>
+                            <div className="min-w-0">
                                 <div className="flex justify-between items-center mb-1">
                                     <Label htmlFor="command-input">Command</Label>
                                     <div className="flex items-center gap-2">
@@ -344,8 +346,8 @@ const BatchCommandPage: React.FC = () => {
                                         </Button>
                                     </div>
                                 </div>
-                                <div className="relative rounded-md border" style={{ height: `${editorHeight}px` }}>
-                                    <Editor language={scriptLanguage} value={command} onChange={(value) => setCommand(value || '')} options={{ minimap: { enabled: false }, scrollbar: { vertical: 'auto', horizontal: 'auto' }, wordWrap: 'on', lineNumbers: 'off', glyphMargin: false, folding: false, lineDecorationsWidth: 0, lineNumbersMinChars: 0, renderLineHighlight: 'none' }} />
+                                <div className="relative w-full rounded-md border" style={{ height: `${editorHeight}px` }}>
+                                    <Editor theme={theme === 'light' ? 'vs-light' : 'vs-dark'} language={scriptLanguage} value={command} onChange={(value) => setCommand(value || '')} options={{ minimap: { enabled: false }, scrollbar: { vertical: 'auto', horizontal: 'auto' }, wordWrap: 'on', lineNumbers: 'off', glyphMargin: false, folding: false, lineDecorationsWidth: 0, lineNumbersMinChars: 0, renderLineHighlight: 'none' }} />
                                 </div>
                                 <div onMouseDown={handleResizeMouseDown} className="w-full h-2 cursor-ns-resize bg-muted hover:bg-muted-foreground/20 transition-colors rounded-b-md" title="Drag to resize editor" />
                                 {showHistory && (
@@ -378,70 +380,66 @@ const BatchCommandPage: React.FC = () => {
                                 {isLoading && currentBatchCommandId && <Button variant="destructive" onClick={handleTerminateCommand}>Terminate</Button>}
                             </div>
                             {error && <div className="p-2 bg-destructive/10 text-destructive border border-destructive/20 rounded-md text-sm">{error}</div>}
+                            
+                            <div className="mt-4 border-t pt-4">
+                                <div className="flex justify-between items-center mb-2">
+                                    <h2 className="text-lg font-semibold">Live Output</h2>
+                                    <div className="flex items-center space-x-4">
+                                        <div className="flex items-center space-x-2">
+                                            <Label htmlFor="timestamps-switch" className="text-sm font-medium">Timestamps</Label>
+                                            <Switch id="timestamps-switch" checked={showMetadata} onCheckedChange={setShowMetadata} />
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <Button variant={activeView === 'all' ? 'secondary' : 'ghost'} size="sm" onClick={() => setActiveView('all')}>Aggregated</Button>
+                                            <Button variant={activeView === 'per-server' ? 'secondary' : 'ghost'} size="sm" onClick={() => setActiveView('per-server')}>Per-Server</Button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className={`bg-muted/50 text-foreground p-4 rounded-md font-mono text-sm h-96 overflow-y-auto ${!showMetadata ? 'hide-metadata' : ''}`}>
+                                    {activeView === 'all' && (
+                                        <>
+                                            {generalOutput.map((line, index) => <div key={`general-${index}`} style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: line }} />)}
+                                            {aggregatedLogs.map((item, index) => (
+                                                <div key={`agg-${index}`} style={{ whiteSpace: 'pre-wrap' }}>
+                                                    <span className="text-cyan-400 mr-2">[{item.vpsName}]</span>
+                                                    <span dangerouslySetInnerHTML={{ __html: item.log }} />
+                                                </div>
+                                            ))}
+                                            {generalOutput.length === 0 && aggregatedLogs.length === 0 && <p>Command output will appear here...</p>}
+                                        </>
+                                    )}
+                                    {activeView === 'per-server' && (
+                                        <>
+                                            {Array.from(activeServersInTask).map(vpsId => {
+                                                const data = serverOutputs[vpsId];
+                                                const server = servers.find(s => s.id === vpsId);
+                                                const vpsName = server ? server.name : `VPS_ID_${vpsId}`;
+                                                if (!data) {
+                                                    return (
+                                                        <details key={vpsId} className="mb-2">
+                                                            <summary className="cursor-pointer font-semibold text-muted-foreground">{vpsName} - <span className="text-yellow-400">Pending...</span></summary>
+                                                        </details>
+                                                    );
+                                                }
+                                                const statusColor = data.status.toLowerCase().includes('success') || (data.exitCode === 0) ? 'text-green-400' : data.status.toLowerCase().includes('fail') || (typeof data.exitCode === 'number' && data.exitCode > 0) ? 'text-red-400' : 'text-yellow-400';
+                                                return (
+                                                    <details key={vpsId} className="mb-2" open>
+                                                        <summary className="cursor-pointer font-semibold">{data.name} - <span className={statusColor}>{data.status} (Exit: {data.exitCode ?? 'N/A'})</span></summary>
+                                                        <div className="pl-4 mt-2 border-l-2 border-border">
+                                                            {data.logs.map((log, index) => <div key={index} style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: log }} />)}
+                                                        </div>
+                                                    </details>
+                                                );
+                                            })}
+                                            {activeServersInTask.size === 0 && <p>No servers selected for the command.</p>}
+                                        </>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </CardContent>
                 </Card>
             </div>
-
-            <Card className="mt-4">
-                <CardHeader>
-                    <div className="flex justify-between items-center">
-                        <CardTitle>Live Output</CardTitle>
-                        <div className="flex items-center space-x-4">
-                            <div className="flex items-center space-x-2">
-                                <Label htmlFor="timestamps-switch" className="text-sm font-medium">Timestamps</Label>
-                                <Switch id="timestamps-switch" checked={showMetadata} onCheckedChange={setShowMetadata} />
-                            </div>
-                            <div className="flex items-center space-x-2">
-                                <Button variant={activeView === 'all' ? 'secondary' : 'ghost'} size="sm" onClick={() => setActiveView('all')}>Aggregated</Button>
-                                <Button variant={activeView === 'per-server' ? 'secondary' : 'ghost'} size="sm" onClick={() => setActiveView('per-server')}>Per-Server</Button>
-                            </div>
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <div className={`bg-muted/50 text-foreground p-4 rounded-md font-mono text-sm h-96 overflow-y-auto ${!showMetadata ? 'hide-metadata' : ''}`}>
-                        {activeView === 'all' && (
-                            <>
-                                {generalOutput.map((line, index) => <div key={`general-${index}`} style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: line }} />)}
-                                {aggregatedLogs.map((item, index) => (
-                                    <div key={`agg-${index}`} style={{ whiteSpace: 'pre-wrap' }}>
-                                        <span className="text-cyan-400 mr-2">[{item.vpsName}]</span>
-                                        <span dangerouslySetInnerHTML={{ __html: item.log }} />
-                                    </div>
-                                ))}
-                                {generalOutput.length === 0 && aggregatedLogs.length === 0 && <p>Command output will appear here...</p>}
-                            </>
-                        )}
-                        {activeView === 'per-server' && (
-                            <>
-                                {Array.from(activeServersInTask).map(vpsId => {
-                                    const data = serverOutputs[vpsId];
-                                    const server = servers.find(s => s.id === vpsId);
-                                    const vpsName = server ? server.name : `VPS_ID_${vpsId}`;
-                                    if (!data) {
-                                        return (
-                                            <details key={vpsId} className="mb-2">
-                                                <summary className="cursor-pointer font-semibold text-muted-foreground">{vpsName} - <span className="text-yellow-400">Pending...</span></summary>
-                                            </details>
-                                        );
-                                    }
-                                    const statusColor = data.status.toLowerCase().includes('success') || (data.exitCode === 0) ? 'text-green-400' : data.status.toLowerCase().includes('fail') || (typeof data.exitCode === 'number' && data.exitCode > 0) ? 'text-red-400' : 'text-yellow-400';
-                                    return (
-                                        <details key={vpsId} className="mb-2" open>
-                                            <summary className="cursor-pointer font-semibold">{data.name} - <span className={statusColor}>{data.status} (Exit: {data.exitCode ?? 'N/A'})</span></summary>
-                                            <div className="pl-4 mt-2 border-l-2 border-border">
-                                                {data.logs.map((log, index) => <div key={index} style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: log }} />)}
-                                            </div>
-                                        </details>
-                                    );
-                                })}
-                                {activeServersInTask.size === 0 && <p>No servers selected for the command.</p>}
-                            </>
-                        )}
-                    </div>
-                </CardContent>
-            </Card>
 
             <SaveScriptModal isOpen={showSaveModal} onClose={() => setShowSaveModal(false)} onSave={handleSaveScript} initialCommand={command} />
         </div>

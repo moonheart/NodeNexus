@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Editor } from '@monaco-editor/react';
+import { useTheme } from "@/components/ThemeProvider";
 import type { ScriptPayload, CommandScript } from '../services/scriptService';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ interface ScriptFormModalProps {
 }
 
 const ScriptFormModal: React.FC<ScriptFormModalProps> = ({ isOpen, onClose, onSave, initialData }) => {
+    const { theme } = useTheme();
     const [formData, setFormData] = useState<ScriptPayload>({
         name: '',
         description: '',
@@ -108,7 +110,7 @@ const ScriptFormModal: React.FC<ScriptFormModalProps> = ({ isOpen, onClose, onSa
                                 language={formData.language}
                                 value={formData.script_content}
                                 onChange={handleEditorChange}
-                                theme="vs-dark"
+                                theme={theme === 'light' ? 'vs-light' : 'vs-dark'}
                                 options={{ minimap: { enabled: false }, scrollbar: { vertical: 'auto' } }}
                             />
                         </div>

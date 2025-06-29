@@ -1,65 +1,72 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
-import { UserCircleIcon, LogoutIcon, CogIcon } from './Icons'; // Assuming you have these icons
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { LogOut, Settings, User } from 'lucide-react';
 
 const UserMenu: React.FC = () => {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
-  const [isOpen, setIsOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
-
   if (!user) {
     return null;
   }
 
+  const getInitials = (name: string) => {
+    return name.charAt(0).toUpperCase();
+  }
+
   return (
-    <div className="relative" ref={menuRef}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-      >
-        <UserCircleIcon className="h-6 w-6" />
-        <span>{user.username}</span>
-      </button>
-      {isOpen && (
-        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 ring-1 ring-black ring-opacity-5 z-50">
-          <Link
-            to="/settings/account"
-            onClick={() => setIsOpen(false)}
-            className="flex items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
-          >
-            <CogIcon className="h-5 w-5 mr-3" />
-            账户信息
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+          <Avatar className="h-8 w-8">
+            {/* Add AvatarImage if you have user avatars */}
+            {/* <AvatarImage src={user.avatarUrl} alt={user.username} /> */}
+            <AvatarFallback>{getInitials(user.username)}</AvatarFallback>
+          </Avatar>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-56" align="end" forceMount>
+        <DropdownMenuLabel className="font-normal">
+          <div className="flex flex-col space-y-1">
+            <p className="text-sm font-medium leading-none">{user.username}</p>
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link to="/settings/account">
+            <User className="mr-2 h-4 w-4" />
+            <span>账户信息</span>
           </Link>
-          <button
-            onClick={handleLogout}
-            className="flex items-center w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
-          >
-            <LogoutIcon className="h-5 w-5 mr-3" />
-            登出
-          </button>
-        </div>
-      )}
-    </div>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/settings">
+            <Settings className="mr-2 h-4 w-4" />
+            <span>设置</span>
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={handleLogout}>
+          <LogOut className="mr-2 h-4 w-4" />
+          <span>登出</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 };
 

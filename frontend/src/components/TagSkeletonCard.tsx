@@ -1,40 +1,42 @@
 import React from 'react';
+import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardHeader, CardContent, CardFooter } from "@/components/ui/card";
 
 const TagSkeletonCard: React.FC = () => {
   return (
-    <div className="bg-white rounded-lg shadow-md border border-slate-200 flex flex-col animate-pulse">
+    <Card>
       {/* Header */}
-      <div className="p-3 rounded-t-lg bg-slate-300">
+      <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-5 h-5 bg-slate-400 rounded"></div>
-            <div className="w-24 h-6 bg-slate-400 rounded"></div>
+            <Skeleton className="w-5 h-5" />
+            <Skeleton className="w-24 h-6" />
           </div>
-          <div className="w-12 h-6 bg-slate-400 rounded"></div>
+          <Skeleton className="w-12 h-6" />
         </div>
-      </div>
+      </CardHeader>
 
       {/* Body */}
-      <div className="p-4 space-y-3 flex-grow">
+      <CardContent className="space-y-3">
         <div className="flex items-center justify-between">
-          <div className="w-20 h-4 bg-slate-300 rounded"></div>
-          <div className="w-8 h-4 bg-slate-300 rounded"></div>
+          <Skeleton className="w-20 h-4" />
+          <Skeleton className="w-8 h-4" />
         </div>
         <div className="flex items-center justify-between">
-          <div className="w-24 h-4 bg-slate-300 rounded"></div>
-          <div className="w-12 h-4 bg-slate-300 rounded"></div>
+          <Skeleton className="w-24 h-4" />
+          <Skeleton className="w-12 h-4" />
         </div>
-      </div>
+      </CardContent>
 
       {/* Footer */}
-      <div className="p-3 bg-slate-50 rounded-b-lg flex items-center justify-between border-t">
-        <div className="w-8 h-8 bg-slate-200 rounded-full"></div>
+      <CardFooter className="flex items-center justify-between">
+        <Skeleton className="w-8 h-8 rounded-full" />
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-slate-200 rounded"></div>
-          <div className="w-8 h-8 bg-slate-200 rounded"></div>
+          <Skeleton className="w-8 h-8" />
+          <Skeleton className="w-8 h-8" />
         </div>
-      </div>
-    </div>
+      </CardFooter>
+    </Card>
   );
 };
 

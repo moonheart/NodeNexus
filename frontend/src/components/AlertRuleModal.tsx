@@ -1,61 +1,42 @@
 import React, { useEffect, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import type { SubmitHandler } from 'react-hook-form';
-import { X } from 'lucide-react';
-import * as alertService from '../services/alertService'; // To be created
-import { getAllChannels as getAllNotificationChannels } from '../services/notificationService'; // To fetch channels
-import type { AlertRule, CreateAlertRulePayload, UpdateAlertRulePayload, VpsListItemResponse, ChannelResponse } from '../types'; // Assuming these types exist or will be created
-
-// TODO: Define these types in src/types/index.ts
-// export interface AlertRule {
-//   id: number;
-//   userId: number;
-//   vpsId?: number | null;
-//   metricType: string;
-//   threshold: number;
-//   comparisonOperator: string;
-//   durationSeconds: number;
-//   notificationChannelIds?: number[]; // Changed from single string to array of IDs
-//   createdAt: string;
-//   updatedAt: string;
-// }
-// export interface CreateAlertRulePayload {
-//   name: string; // Assuming AlertRule has a name, add if not present in backend
-//   vpsId?: number | null;
-//   metricType: string;
-//   threshold: number;
-//   comparisonOperator: string;
-//   durationSeconds: number;
-//   notificationChannelIds: number[];
-// }
-// export interface UpdateAlertRulePayload extends Partial<CreateAlertRulePayload> {}
-
+import * as alertService from '../services/alertService';
+import { getAllChannels as getAllNotificationChannels } from '../services/notificationService';
+import type { AlertRule, CreateAlertRulePayload, UpdateAlertRulePayload, VpsListItemResponse, ChannelResponse } from '../types';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from "@/components/ui/checkbox";
+import { RefreshCwIcon as SpinnerIcon } from '@/components/Icons';
 
 type AlertRuleFormInputs = {
   name: string;
-  vpsId: string; // Store as string for form, convert to number or null on submit
+  vpsId: string;
   metricType: string;
   threshold: number;
   comparisonOperator: string;
   durationSeconds: number;
   notificationChannelIds: number[];
-  cooldownSeconds: number; // Added
+  cooldownSeconds: number;
 };
 
 interface AlertRuleModalProps {
   isOpen: boolean;
-  onClose: () => void;
-  onRuleSaved: (data: CreateAlertRulePayload | UpdateAlertRulePayload) => Promise<void>; // Updated signature
+  onOpenChange: (isOpen: boolean) => void;
+  onRuleSaved: () => void;
   rule: AlertRule | null;
-  vpsList: VpsListItemResponse[]; // To populate VPS dropdown
+  vpsList: VpsListItemResponse[];
 }
 
-const AlertRuleModal: React.FC<AlertRuleModalProps> = ({ isOpen, onClose, onRuleSaved, rule, vpsList }) => {
+const AlertRuleModal: React.FC<AlertRuleModalProps> = ({ isOpen, onOpenChange, onRuleSaved, rule, vpsList }) => {
   const {
+    control,
     register,
     handleSubmit,
     reset,
-    control,
     formState: { errors, isSubmitting },
   } = useForm<AlertRuleFormInputs>();
 
@@ -70,24 +51,24 @@ const AlertRuleModal: React.FC<AlertRuleModalProps> = ({ isOpen, onClose, onRule
       if (rule) {
         reset({
           name: rule.name || '',
-          vpsId: rule.vpsId?.toString() || '',
+          vpsId: rule.vpsId?.toString() || 'global',
           metricType: rule.metricType,
           threshold: rule.threshold,
           comparisonOperator: rule.comparisonOperator,
           durationSeconds: rule.durationSeconds,
           notificationChannelIds: rule.notificationChannelIds || [],
-          cooldownSeconds: rule.cooldownSeconds || 300, // Added
+          cooldownSeconds: rule.cooldownSeconds || 300,
         });
       } else {
         reset({
           name: '',
-          vpsId: '',
-          metricType: 'cpu_usage_percent', // Default value
+          vpsId: 'global',
+          metricType: 'cpu_usage_percent',
           threshold: 80,
           comparisonOperator: '>',
           durationSeconds: 300,
           notificationChannelIds: [],
-          cooldownSeconds: 300, // Default cooldown
+          cooldownSeconds: 300,
         });
       }
     }
@@ -96,182 +77,158 @@ const AlertRuleModal: React.FC<AlertRuleModalProps> = ({ isOpen, onClose, onRule
   const onSubmit: SubmitHandler<AlertRuleFormInputs> = async (data) => {
     try {
       const payload = {
-        name: data.name,
-        vpsId: data.vpsId ? parseInt(data.vpsId, 10) : null,
-        metricType: data.metricType,
+        ...data,
+        vpsId: data.vpsId === 'global' ? null : parseInt(data.vpsId, 10),
         threshold: Number(data.threshold),
-        comparisonOperator: data.comparisonOperator,
         durationSeconds: Number(data.durationSeconds),
+        cooldownSeconds: Number(data.cooldownSeconds),
         notificationChannelIds: data.notificationChannelIds.map(id => Number(id)),
-        cooldownSeconds: Number(data.cooldownSeconds), // Added
       };
 
       if (rule) {
         await alertService.updateAlertRule(rule.id, payload as UpdateAlertRulePayload);
-        console.log("Update Alert Rule:", rule.id, payload);
       } else {
         await alertService.createAlertRule(payload as CreateAlertRulePayload);
-        console.log("Create Alert Rule:", payload);
       }
-      await onRuleSaved(payload); // Pass payload to onRuleSaved
-      onClose();
+      onRuleSaved();
+      onOpenChange(false);
     } catch (err) {
       console.error('Failed to save alert rule:', err);
-      // Consider adding toast notifications for errors
     }
   };
 
-  if (!isOpen) {
-    return null;
-  }
-
-  const metricTypes = ["cpu_usage_percent", "memory_usage_percent", "network_rx_instant_bps", "network_tx_instant_bps"]; // Example, fetch from backend or define globally
+  const metricTypes = ["cpu_usage_percent", "memory_usage_percent", "network_rx_instant_bps", "network_tx_instant_bps"];
   const comparisonOperators = [">", "<", "=", ">=", "<="];
 
-
   return (
-    <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 transition-opacity duration-300">
-      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg m-4 transform transition-all duration-300">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold text-slate-800">{rule ? 'Edit Alert Rule' : 'Create New Alert Rule'}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div>
-            <label htmlFor="ruleName" className="block text-sm font-medium text-slate-700 mb-1">Rule Name</label>
-            <input
-              type="text"
-              id="ruleName"
-              {...register('name', { required: 'Rule name is required' })}
-              className={`w-full px-3 py-2 border rounded-md ${errors.name ? 'border-red-500' : 'border-slate-300'}`}
-            />
-            {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>}
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[600px]">
+        <DialogHeader>
+          <DialogTitle>{rule ? 'Edit Alert Rule' : 'Create New Alert Rule'}</DialogTitle>
+          <DialogDescription>
+            Configure the details of your alert rule. Click save when you're done.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="name">Rule Name</Label>
+            <Input id="name" {...register('name', { required: 'Rule name is required' })} />
+            {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
           </div>
 
-          <div>
-            <label htmlFor="vpsId" className="block text-sm font-medium text-slate-700 mb-1">Target VPS (Optional)</label>
-            <select
-              id="vpsId"
-              {...register('vpsId')}
-              className="w-full px-3 py-2 border border-slate-300 rounded-md"
-            >
-              <option value="">Global (All VPS)</option>
-              {vpsList.map(vps => <option key={vps.id} value={vps.id}>{vps.name}</option>)}
-            </select>
-          </div>
-
-          <div>
-            <label htmlFor="metricType" className="block text-sm font-medium text-slate-700 mb-1">Metric Type</label>
-            <select
-              id="metricType"
-              {...register('metricType', { required: 'Metric type is required' })}
-              className={`w-full px-3 py-2 border rounded-md ${errors.metricType ? 'border-red-500' : 'border-slate-300'}`}
-            >
-              {metricTypes.map(mt => <option key={mt} value={mt}>{mt.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>)}
-            </select>
-            {errors.metricType && <p className="text-red-500 text-xs mt-1">{errors.metricType.message}</p>}
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="threshold" className="block text-sm font-medium text-slate-700 mb-1">Threshold</label>
-              <input
-                type="number"
-                id="threshold"
-                {...register('threshold', { required: 'Threshold is required', valueAsNumber: true })}
-                className={`w-full px-3 py-2 border rounded-md ${errors.threshold ? 'border-red-500' : 'border-slate-300'}`}
-              />
-              {errors.threshold && <p className="text-red-500 text-xs mt-1">{errors.threshold.message}</p>}
-            </div>
-            <div>
-              <label htmlFor="comparisonOperator" className="block text-sm font-medium text-slate-700 mb-1">Operator</label>
-              <select
-                id="comparisonOperator"
-                {...register('comparisonOperator', { required: 'Operator is required' })}
-                className={`w-full px-3 py-2 border rounded-md ${errors.comparisonOperator ? 'border-red-500' : 'border-slate-300'}`}
-              >
-                {comparisonOperators.map(op => <option key={op} value={op}>{op}</option>)}
-              </select>
-              {errors.comparisonOperator && <p className="text-red-500 text-xs mt-1">{errors.comparisonOperator.message}</p>}
-            </div>
-          </div>
-
-          <div>
-            <label htmlFor="durationSeconds" className="block text-sm font-medium text-slate-700 mb-1">Duration (seconds)</label>
-            <input
-              type="number"
-              id="durationSeconds"
-              {...register('durationSeconds', { required: 'Duration is required', valueAsNumber: true, min: { value: 1, message: "Duration must be at least 1 second"} })}
-              className={`w-full px-3 py-2 border rounded-md ${errors.durationSeconds ? 'border-red-500' : 'border-slate-300'}`}
-            />
-            {errors.durationSeconds && <p className="text-red-500 text-xs mt-1">{errors.durationSeconds.message}</p>}
-          </div>
-
-          <div>
-            <label htmlFor="cooldownSeconds" className="block text-sm font-medium text-slate-700 mb-1">Cooldown (seconds)</label>
-            <input
-              type="number"
-              id="cooldownSeconds"
-              {...register('cooldownSeconds', { required: 'Cooldown is required', valueAsNumber: true, min: { value: 0, message: "Cooldown must be non-negative"} })}
-              className={`w-full px-3 py-2 border rounded-md ${errors.cooldownSeconds ? 'border-red-500' : 'border-slate-300'}`}
-            />
-            {errors.cooldownSeconds && <p className="text-red-500 text-xs mt-1">{errors.cooldownSeconds.message}</p>}
-          </div>
-
-          <div>
-            <label htmlFor="notificationChannelIds" className="block text-sm font-medium text-slate-700 mb-1">Notification Channels</label>
+          <div className="space-y-2">
+            <Label htmlFor="vpsId">Target VPS (Optional)</Label>
             <Controller
-                name="notificationChannelIds"
-                control={control}
-                defaultValue={[]}
-                render={({ field }) => (
-                    <select
-                        multiple
-                        id="notificationChannelIds"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md h-32"
-                        // react-hook-form's field.value for multiple select is expected to be an array of values.
-                        // HTML select element's value property behaves differently for multiple.
-                        // We ensure the value passed to select is an array of strings (matching option values).
-                        value={field.value ? field.value.map(String) : []}
-                        onBlur={field.onBlur}
-                        ref={field.ref}
-                        onChange={(e) => {
-                            const selectedOptions = Array.from(e.target.selectedOptions, option => Number(option.value));
-                            field.onChange(selectedOptions);
-                        }}
-                    >
-                        {notificationChannels.map(channel => (
-                            <option key={channel.id} value={channel.id}>{channel.name} ({channel.channelType})</option>
-                        ))}
-                    </select>
-                )}
+              name="vpsId"
+              control={control}
+              render={({ field }) => (
+                <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a VPS or Global" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="global">Global (All VPS)</SelectItem>
+                    {vpsList.map(vps => <SelectItem key={vps.id} value={vps.id.toString()}>{vps.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
             />
-             {errors.notificationChannelIds && <p className="text-red-500 text-xs mt-1">{errors.notificationChannelIds.message}</p>}
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="metricType">Metric Type</Label>
+            <Controller
+              name="metricType"
+              control={control}
+              render={({ field }) => (
+                <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a metric type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {metricTypes.map(mt => <SelectItem key={mt} value={mt}>{mt.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </div>
 
-          <div className="mt-6 flex justify-end space-x-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors duration-150"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors duration-150 disabled:bg-indigo-400 disabled:cursor-not-allowed"
-            >
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="threshold">Threshold</Label>
+              <Input id="threshold" type="number" {...register('threshold', { required: 'Threshold is required', valueAsNumber: true })} />
+              {errors.threshold && <p className="text-sm text-destructive">{errors.threshold.message}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="comparisonOperator">Operator</Label>
+              <Controller
+                name="comparisonOperator"
+                control={control}
+                render={({ field }) => (
+                  <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select an operator" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {comparisonOperators.map(op => <SelectItem key={op} value={op}>{op}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="durationSeconds">Duration (seconds)</Label>
+              <Input id="durationSeconds" type="number" {...register('durationSeconds', { required: 'Duration is required', valueAsNumber: true, min: { value: 1, message: "Duration must be at least 1 second"} })} />
+              {errors.durationSeconds && <p className="text-sm text-destructive">{errors.durationSeconds.message}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="cooldownSeconds">Cooldown (seconds)</Label>
+              <Input id="cooldownSeconds" type="number" {...register('cooldownSeconds', { required: 'Cooldown is required', valueAsNumber: true, min: { value: 0, message: "Cooldown must be non-negative"} })} />
+              {errors.cooldownSeconds && <p className="text-sm text-destructive">{errors.cooldownSeconds.message}</p>}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <Label>Notification Channels</Label>
+            <Controller
+              name="notificationChannelIds"
+              control={control}
+              render={({ field }) => (
+                <div className="space-y-2 rounded-md border p-4 max-h-40 overflow-y-auto">
+                  {notificationChannels.map((channel) => (
+                    <div key={channel.id} className="flex flex-row items-start space-x-3 space-y-0">
+                      <Checkbox
+                        id={channel.id.toString()}
+                        checked={field.value?.includes(channel.id)}
+                        onCheckedChange={(checked) => {
+                          return checked
+                            ? field.onChange([...(field.value || []), channel.id])
+                            : field.onChange(field.value?.filter((id) => id !== channel.id));
+                        }}
+                      />
+                      <Label htmlFor={channel.id.toString()} className="font-normal">
+                        {channel.name} <span className="text-muted-foreground">({channel.channelType})</span>
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              )}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting && <SpinnerIcon className="mr-2 h-4 w-4 animate-spin" />}
               {isSubmitting ? 'Saving...' : (rule ? 'Update Rule' : 'Create Rule')}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 

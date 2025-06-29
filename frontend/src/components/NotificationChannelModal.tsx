@@ -1,228 +1,184 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
+import { useForm, Controller } from 'react-hook-form';
+import type { SubmitHandler } from 'react-hook-form';
 import type { ChannelTemplate, ChannelResponse, CreateChannelRequest, UpdateChannelRequest } from '../types';
 import DynamicForm from './DynamicForm';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { RefreshCwIcon as SpinnerIcon } from '@/components/Icons';
+
+type FormInputs = {
+  name: string;
+  channelType: string;
+  config: Record<string, unknown>;
+};
 
 interface NotificationChannelModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onOpenChange: (isOpen: boolean) => void;
   onSubmit: (data: CreateChannelRequest | UpdateChannelRequest) => Promise<void>;
   templates: ChannelTemplate[];
-  editingChannel?: ChannelResponse | null; // For pre-filling form when editing
-  // We might need to fetch full config for editing, or adjust backend ChannelResponse
+  editingChannel?: ChannelResponse | null;
 }
 
 const NotificationChannelModal: React.FC<NotificationChannelModalProps> = ({
   isOpen,
-  onClose,
+  onOpenChange,
   onSubmit,
   templates,
   editingChannel,
 }) => {
-  const [channelName, setChannelName] = useState('');
-  const [selectedTemplate, setSelectedTemplate] = useState<ChannelTemplate | null>(null);
-  const [formData, setFormData] = useState<Record<string, unknown>>({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    control,
+    handleSubmit,
+    register,
+    reset,
+    watch,
+    setValue,
+    formState: { errors, isSubmitting },
+  } = useForm<FormInputs>();
+
+  const selectedChannelType = watch('channelType');
+  const selectedTemplate = templates.find(t => t.channelType === selectedChannelType);
 
   useEffect(() => {
     if (isOpen) {
-      if (editingChannel && templates.length > 0) {
+      if (editingChannel) {
         const template = templates.find(t => t.channelType === editingChannel.channelType);
-        setSelectedTemplate(template || null);
-        setChannelName(editingChannel.name);
-        const initialFormData: Record<string, unknown> = {};
-        // Populate formData based on the editing channel's config if available,
-        // otherwise, use template fields. This needs backend to send full config.
-        // For now, assuming editingChannel.config is available or we initialize from template.
+        const initialConfig: Record<string, unknown> = {};
         if (template) {
-            template.fields.forEach(field => {
-                // Use configParams from the backend response
-                initialFormData[field.name] = editingChannel?.configParams?.[field.name] || '';
-            });
+          template.fields.forEach(field => {
+            initialConfig[field.name] = editingChannel?.configParams?.[field.name] || '';
+          });
         }
-        setFormData(initialFormData);
-      } else if (!editingChannel) {
-        // Reset form for new channel creation when modal opens
-        setChannelName('');
-        setSelectedTemplate(null); // Explicitly set to null so user must select
-        setFormData({});
+        reset({
+          name: editingChannel.name,
+          channelType: editingChannel.channelType,
+          config: initialConfig,
+        });
+      } else {
+        reset({
+          name: '',
+          channelType: '',
+          config: {},
+        });
       }
-    } else {
-      // Optionally reset when modal closes, if desired
-      // setChannelName('');
-      // setSelectedTemplate(null);
-      // setFormData({});
     }
-  }, [isOpen, editingChannel, templates]); // Removed reset from dependencies
+  }, [isOpen, editingChannel, templates, reset]);
 
-
-  const handleFormChange = (fieldName: string, value: unknown) => {
-    setFormData(prev => ({ ...prev, [fieldName]: value }));
-  };
-
-  const handleTemplateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const templateType = e.target.value;
-    console.log("Selected templateType:", templateType);
-    const template = templates.find(t => t.channelType === templateType) || null;
-    console.log("Found template:", template);
-    setSelectedTemplate(template);
-    
-    const newFormData: Record<string, unknown> = {};
-    if (template) {
-      template.fields.forEach(field => {
-        newFormData[field.name] = ''; // Initialize with empty string or default value
+  useEffect(() => {
+    // Reset config when template changes
+    const newConfig: Record<string, unknown> = {};
+    if (selectedTemplate) {
+      selectedTemplate.fields.forEach(field => {
+        newConfig[field.name] = ''; // Or a default value
       });
     }
-    setFormData(newFormData);
-    console.log("New formData after template change:", newFormData);
+    setValue('config', newConfig);
+  }, [selectedTemplate, setValue]);
+
+  const handleDynamicFormChange = (fieldName: string, value: unknown) => {
+    setValue(`config.${fieldName}`, value);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
+  const onFormSubmit: SubmitHandler<FormInputs> = async (data) => {
     if (!selectedTemplate) {
-      setError("Please select a channel type.");
+      // This should be caught by form validation, but as a safeguard
+      console.error("No template selected");
       return;
     }
-    if (!channelName.trim()) {
-        setError("Channel name is required.");
-        return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      // Prepare config according to backend expectations for ChannelConfig enum
-      // The `type` field is crucial for Serde to deserialize into the correct enum variant.
-      // The fields within the config (like botToken, chatId) must match the camelCase renaming
-      // if `#[serde(rename_all = "camelCase")]` is applied to the enum variants' fields,
-      // or match the original snake_case names if not.
-      // Given ChannelConfig has #[serde(tag = "type", rename_all = "camelCase")]
-      // and its variants like Telegram { bot_token: String, chat_id: String }
-      // Serde will expect "botToken" and "chatId" in the JSON for the Telegram variant.
-      
-      const preparedConfig: Record<string, unknown> = { type: selectedTemplate.channelType.toLowerCase() };
-      for (const key in formData) {
-        // Convert snake_case keys from formData (if any) to camelCase for backend
-        // Or ensure formData keys are already camelCase if DynamicForm produces them that way.
-        // For now, let's assume formData keys are what backend expects for the variant fields (e.g. botToken)
-        // If DynamicForm uses 'bot_token', we need to convert here.
-        // Let's assume DynamicForm field names match the expected JSON (camelCase)
-        preparedConfig[key] = formData[key];
-      }
-      
-      // Correction: The `channelType` from `selectedTemplate.channelType` (e.g., "Telegram")
-      // needs to be transformed to the value expected by `#[serde(tag = "type")]` which is likely lowercase.
-      // And the fields within `formData` (e.g. `bot_token`) need to be transformed to camelCase `botToken`.
-
-      const finalConfig: Record<string, unknown> = { type: selectedTemplate.channelType.toLowerCase() };
-      selectedTemplate.fields.forEach(field => {
-        // field.name is likely 'bot_token', 'chat_id', 'url' etc.
-        // We need to convert these to camelCase for the final config if the backend expects camelCase variant fields.
-        // The ChannelConfig enum itself has rename_all = "camelCase" for its variants (Telegram, Webhook)
-        // but the fields *within* those variants (bot_token, chat_id) do not have rename_all.
-        // So, the backend will expect "bot_token", "chat_id" as keys within the config, after the "type" tag.
-        // The `formData` keys should directly match these (e.g. `bot_token`).
-        if (formData[field.name] !== undefined) {
-            finalConfig[field.name] = formData[field.name];
+    
+    const finalConfig: Record<string, unknown> = { type: data.channelType.toLowerCase() };
+    selectedTemplate.fields.forEach(field => {
+        if (data.config[field.name] !== undefined) {
+            finalConfig[field.name] = data.config[field.name];
         }
-      });
+    });
 
+    const submissionData: CreateChannelRequest | UpdateChannelRequest = {
+      name: data.name,
+      channelType: data.channelType,
+      config: finalConfig,
+    };
 
-      const submissionData: CreateChannelRequest | UpdateChannelRequest = {
-        name: channelName,
-        channelType: selectedTemplate.channelType, // This is "Telegram" or "Webhook"
-        config: finalConfig, // Pass the structured config
-      };
-      // If editing, we might need to send only updated fields or handle it differently
-      // For now, this structure matches CreateChannelRequest.
-      // UpdateChannelRequest might need an ID.
-      await onSubmit(submissionData);
-      onClose(); // Close modal on success
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message || 'Failed to save channel.');
-      } else {
-        setError('An unknown error occurred.');
-      }
-      console.error(err);
-    } finally {
-      setIsSubmitting(false);
-    }
+    await onSubmit(submissionData);
+    onOpenChange(false);
   };
 
-  if (!isOpen) {
-    return null;
-  }
-
   return (
-    <div className="fixed inset-0 bg-gray-600/50 overflow-y-auto h-full w-full z-50 flex justify-center items-center">
-      <div className="relative mx-auto p-5 border w-full max-w-lg shadow-lg rounded-md bg-white">
-        <div className="mt-3 text-center">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">
-            {editingChannel ? 'Edit' : 'Add New'} Notification Channel
-          </h3>
-          <button
-            onClick={onClose}
-            className="absolute top-0 right-0 mt-4 mr-4 text-gray-400 hover:text-gray-600"
-          >
-            <span className="sr-only">Close</span>
-            &times;
-          </button>
-          <div className="mt-2 px-7 py-3">
-            {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
-            <div className="mb-4">
-              <label htmlFor="channelName" className="block text-sm font-medium text-gray-700 text-left">
-                Channel Name
-                <span className="text-red-500 ml-1">*</span>
-              </label>
-              <input
-                type="text"
-                id="channelName"
-                name="channelName"
-                value={channelName}
-                onChange={(e) => setChannelName(e.target.value)}
-                required
-                className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              />
-            </div>
-            {!editingChannel && (
-                 <div className="mb-4">
-                    <label htmlFor="channelType" className="block text-sm font-medium text-gray-700 text-left">
-                        Channel Type
-                        <span className="text-red-500 ml-1">*</span>
-                    </label>
-                    <select
-                        id="channelType"
-                        name="channelType"
-                        value={selectedTemplate?.channelType || ''}
-                        onChange={handleTemplateChange}
-                        required
-                        className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    >
-                        <option value="" disabled>Select a type</option>
-                        {templates.map(template => (
-                        <option key={template.channelType} value={template.channelType}>
-                            {template.name}
-                        </option>
-                        ))}
-                    </select>
-                </div>
-            )}
-           
-            {selectedTemplate && (
-              <DynamicForm
-                fields={selectedTemplate.fields}
-                formData={formData}
-                onFormChange={handleFormChange}
-                onSubmit={handleSubmit}
-                isSubmitting={isSubmitting}
-                submitButtonText={editingChannel ? 'Save Changes' : 'Create Channel'}
-              />
-            )}
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{editingChannel ? 'Edit' : 'Add New'} Notification Channel</DialogTitle>
+          <DialogDescription>
+            Select a channel type and fill in the required details.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-6 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="name">Channel Name</Label>
+            <Input id="name" {...register('name', { required: 'Channel name is required' })} />
+            {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
           </div>
-        </div>
-      </div>
-    </div>
+
+          {!editingChannel && (
+            <div className="space-y-2">
+              <Label htmlFor="channelType">Channel Type</Label>
+              <Controller
+                name="channelType"
+                control={control}
+                rules={{ required: 'Please select a channel type' }}
+                render={({ field }) => (
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {templates.map(template => (
+                        <SelectItem key={template.channelType} value={template.channelType}>
+                          {template.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              {errors.channelType && <p className="text-sm text-destructive">{errors.channelType.message}</p>}
+            </div>
+          )}
+
+          {selectedTemplate ? (
+            <Controller
+              name="config"
+              control={control}
+              render={({ field }) => (
+                <DynamicForm
+                  fields={selectedTemplate.fields}
+                  formData={field.value || {}}
+                  onFormChange={handleDynamicFormChange}
+                />
+              )}
+            />
+          ) : !editingChannel ? (
+            <Alert>
+              <AlertDescription>Please select a channel type to see its configuration options.</AlertDescription>
+            </Alert>
+          ) : null}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" disabled={isSubmitting || !selectedTemplate}>
+              {isSubmitting && <SpinnerIcon className="mr-2 h-4 w-4 animate-spin" />}
+              {isSubmitting ? 'Saving...' : (editingChannel ? 'Save Changes' : 'Create Channel')}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 };
 

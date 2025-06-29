@@ -1,25 +1,22 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import type { VpsListItemResponse, ServerStatus as ServerStatusType, ViewMode, Tag } from '../types';
 import { useServerListStore, type ServerListState, type ConnectionStatus } from '../store/serverListStore';
 import { useAuthStore } from '../store/authStore';
 import { useShallow } from 'zustand/react/shallow';
 import StatCard from '../components/StatCard';
-import {
-  ServerIcon,
-  CheckCircleIcon,
-  ExclamationTriangleIcon,
-  XCircleIcon,
-  ArrowUpIcon,
-  ArrowDownIcon,
-  ListBulletIcon,
-  Squares2X2Icon,
-  XMarkIcon,
-  CheckIcon,
-} from '../components/Icons';
-import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_ERROR, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_UNKNOWN } from '../types';
+import { Server, CheckCircle, XCircle, Power, AlertTriangle, ArrowUp, ArrowDown, LayoutGrid, List, Loader2, Tag as TagIcon, X } from 'lucide-react';
+import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_ERROR, STATUS_UNKNOWN } from '../types';
 import VpsCard from '../components/VpsCard';
 import VpsTableRow from '../components/VpsTableRow';
 import * as tagService from '../services/tagService';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 
 interface HomePageStateSlice {
   servers: VpsListItemResponse[];
@@ -48,32 +45,13 @@ const statusColorMap: Record<ServerStatusType, string> = {
   [STATUS_UNKNOWN]: 'text-slate-500',
 };
 
-const getContrastingTextColor = (hexColor: string): string => {
-    if (!hexColor) return '#000000';
-    const hex = hexColor.replace('#', '');
-    if (hex.length !== 6) return '#000000';
-    const r = parseInt(hex.substring(0, 2), 16);
-    const g = parseInt(hex.substring(2, 4), 16);
-    const b = parseInt(hex.substring(4, 6), 16);
-    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
-    return (yiq >= 128) ? '#000000' : '#ffffff';
-};
-
-
 const HomePage: React.FC = () => {
   const { isAuthenticated } = useAuthStore();
-  // WebSocket connection management is now fully handled by the serverListStore,
-  // which listens to authStore changes. This component is now only responsible for
-  // displaying the state from the store.
-
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<ServerStatusType | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<string>('ALL');
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<Set<number>>(new Set());
-  const [isTagDropdownOpen, setIsTagDropdownOpen] = useState(false);
-  const tagDropdownRef = useRef<HTMLDivElement>(null);
-
-  const [sortKey, setSortKey] = useState('id'); // 'id', 'name', 'status', etc.
+  const [sortKey, setSortKey] = useState('id');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const {
@@ -85,12 +63,6 @@ const HomePage: React.FC = () => {
     setViewMode,
   } = useServerListStore(useShallow(selectHomePageData));
 
-  // Effect for managing WebSocket connections based on authentication state
-  // The useEffect for managing WebSocket connection has been removed.
-  // The logic is now centralized in `serverListStore.ts` and triggered
-  // by the `init()` call in `App.tsx`.
-
-
   useEffect(() => {
     const fetchTags = async () => {
       if (isAuthenticated) {
@@ -101,29 +73,12 @@ const HomePage: React.FC = () => {
           console.error("获取标签失败:", error);
         }
       } else {
-        // For public view, tags are derived from the server data itself within the filter logic
-        // We can clear local state to be safe
         setAvailableTags([]);
       }
     };
     fetchTags();
-  }, [isAuthenticated, vpsList]); // Depend on vpsList for public view updates
+  }, [isAuthenticated, vpsList]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (tagDropdownRef.current && !tagDropdownRef.current.contains(event.target as Node)) {
-        setIsTagDropdownOpen(false);
-      }
-    };
-    if (isTagDropdownOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isTagDropdownOpen]);
-
-  // --- Filtering Logic ---
   const groupFilteredServers = useMemo(() => {
     if (selectedGroup === 'ALL') return vpsList;
     return vpsList.filter(s => s.group === selectedGroup);
@@ -174,7 +129,6 @@ const HomePage: React.FC = () => {
       const valB = getVal(b, sortKey);
       const direction = sortDirection === 'asc' ? 1 : -1;
 
-      // Push nulls to the end
       if (valA === null) return 1;
       if (valB === null) return -1;
 
@@ -192,12 +146,6 @@ const HomePage: React.FC = () => {
 
   const displayedServers = sortedServers;
 
-
-  // --- Bulk Edit Logic ---
-  // This logic is now encapsulated within the BulkEditTagsModal component.
-
-
-  // --- Derived Data for Display ---
   const serverStats = useMemo(() => {
     const stats = { total: vpsList.length, [STATUS_ONLINE]: 0, [STATUS_OFFLINE]: 0, [STATUS_REBOOTING]: 0, [STATUS_PROVISIONING]: 0, [STATUS_ERROR]: 0, [STATUS_UNKNOWN]: 0 };
     vpsList.forEach(server => { stats[server.status as ServerStatusType] = (stats[server.status as ServerStatusType] || 0) + 1; });
@@ -242,201 +190,168 @@ const HomePage: React.FC = () => {
   ];
 
   if (isLoadingServers && vpsList.length === 0) {
-    return <div className="flex flex-col items-center justify-center h-64"><p className="mt-4 text-slate-600">正在加载服务器...</p></div>;
+    return <div className="flex flex-col items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="mt-4 text-muted-foreground">正在加载服务器...</p></div>;
   }
 
   let statusMessage = '';
-  if (connectionStatus === 'connecting') statusMessage = '正在连接到实时服务器...';
-  else if (connectionStatus === 'reconnecting') statusMessage = '连接已断开，正在尝试重新连接...';
-  else if (wsError && (connectionStatus === 'error' || connectionStatus === 'permanently_failed')) statusMessage = `无法连接到实时服务器: ${wsError}`;
+  let statusVariant: 'default' | 'destructive' = 'default';
+  if (connectionStatus === 'connecting') {
+    statusMessage = '正在连接到实时服务器...';
+  } else if (connectionStatus === 'reconnecting') {
+    statusMessage = '连接已断开，正在尝试重新连接...';
+  } else if (wsError && (connectionStatus === 'error' || connectionStatus === 'permanently_failed')) {
+    statusMessage = `无法连接到实时服务器: ${wsError}`;
+    statusVariant = 'destructive';
+  }
+
+  const handleTagSelection = (tagId: number) => {
+    const newSet = new Set(selectedTagIds);
+    if (newSet.has(tagId)) {
+      newSet.delete(tagId);
+    } else {
+      newSet.add(tagId);
+    }
+    setSelectedTagIds(newSet);
+  };
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 space-y-6 bg-slate-50 min-h-screen">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center h-0">
-      </div>
+    <div className="p-4 md:p-6 lg:p-8 space-y-6">
+      {statusMessage && <Alert variant={statusVariant} className="mb-6"><AlertTriangle className="h-4 w-4" /><AlertDescription>{statusMessage}</AlertDescription></Alert>}
 
-      {/* Connection Status */}
-      {statusMessage && <div className={`p-3 rounded-md text-sm text-center ${connectionStatus === 'error' || connectionStatus === 'permanently_failed' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{statusMessage}</div>}
-
-      {/* Overview Stats */}
-      <section>
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
-            <h2 className="text-2xl font-semibold text-slate-700">概览</h2>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 md:gap-6">
-          <StatCard title="总服务器数" value={serverStats.total} icon={<ServerIcon className="w-6 h-6" />} colorClass="text-indigo-600" onClick={() => setSelectedStatusFilter(null)} isActive={selectedStatusFilter === null} />
-          <StatCard title="在线" value={serverStats[STATUS_ONLINE]} icon={<CheckCircleIcon className="w-6 h-6" />} colorClass={statusColorMap[STATUS_ONLINE]} onClick={() => setSelectedStatusFilter(STATUS_ONLINE)} isActive={selectedStatusFilter === STATUS_ONLINE} />
-          <StatCard title="离线" value={serverStats[STATUS_OFFLINE]} icon={<XCircleIcon className="w-6 h-6" />} colorClass={statusColorMap[STATUS_OFFLINE]} onClick={() => setSelectedStatusFilter(STATUS_OFFLINE)} isActive={selectedStatusFilter === STATUS_OFFLINE} />
-          {serverStats[STATUS_REBOOTING] > 0 && <StatCard title="重启中" value={serverStats[STATUS_REBOOTING]} icon={<ExclamationTriangleIcon className="w-6 h-6" />} colorClass={statusColorMap[STATUS_REBOOTING]} onClick={() => setSelectedStatusFilter(STATUS_REBOOTING)} isActive={selectedStatusFilter === STATUS_REBOOTING} />}
-          {serverStats[STATUS_ERROR] > 0 && <StatCard title="错误" value={serverStats[STATUS_ERROR]} icon={<ExclamationTriangleIcon className="w-6 h-6" />} colorClass={statusColorMap[STATUS_ERROR]} onClick={() => setSelectedStatusFilter(STATUS_ERROR)} isActive={selectedStatusFilter === STATUS_ERROR} />}
-          <StatCard title="总上传" value={formatNetworkSpeedForDisplay(totalNetworkUp)} icon={<ArrowUpIcon className="w-6 h-6" />} colorClass="text-emerald-500" description="在线服务器" />
-          <StatCard title="总下载" value={formatNetworkSpeedForDisplay(totalNetworkDown)} icon={<ArrowDownIcon className="w-6 h-6" />} colorClass="text-sky-500" description="在线服务器" />
-        </div>
-      </section>
-
-      {/* Server Fleet */}
-      <section>
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
-          <h2 className="text-2xl font-semibold text-slate-700">服务器列表</h2>
-          <div className="flex items-center space-x-1 mt-3 sm:mt-0 p-1 bg-slate-200 rounded-lg">
-              <button onClick={() => setViewMode('card')} aria-pressed={viewMode === 'card'} className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'card' ? 'bg-white text-indigo-600 shadow' : 'text-slate-600 hover:bg-slate-300'}`}><Squares2X2Icon className="w-5 h-5 inline mr-1.5" /> 卡片视图</button>
-              <button onClick={() => setViewMode('list')} aria-pressed={viewMode === 'list'} className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'list' ? 'bg-white text-indigo-600 shadow' : 'text-slate-600 hover:bg-slate-300'}`}><ListBulletIcon className="w-5 h-5 inline mr-1.5" /> 列表视图</button>
+      <Card>
+        <CardHeader>
+          <CardTitle>概览</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 md:gap-6">
+            <StatCard title="总服务器数" value={serverStats.total} icon={<Server className="w-6 h-6" />} valueClassName="text-primary" onClick={() => setSelectedStatusFilter(null)} isActive={selectedStatusFilter === null} />
+            <StatCard title="在线" value={serverStats[STATUS_ONLINE]} icon={<CheckCircle className="w-6 h-6" />} valueClassName={statusColorMap[STATUS_ONLINE]} onClick={() => setSelectedStatusFilter(STATUS_ONLINE)} isActive={selectedStatusFilter === STATUS_ONLINE} />
+            <StatCard title="离线" value={serverStats[STATUS_OFFLINE]} icon={<XCircle className="w-6 h-6" />} valueClassName={statusColorMap[STATUS_OFFLINE]} onClick={() => setSelectedStatusFilter(STATUS_OFFLINE)} isActive={selectedStatusFilter === STATUS_OFFLINE} />
+            {serverStats[STATUS_REBOOTING] > 0 && <StatCard title="重启中" value={serverStats[STATUS_REBOOTING]} icon={<Power className="w-6 h-6" />} valueClassName={statusColorMap[STATUS_REBOOTING]} onClick={() => setSelectedStatusFilter(STATUS_REBOOTING)} isActive={selectedStatusFilter === STATUS_REBOOTING} />}
+            {serverStats[STATUS_ERROR] > 0 && <StatCard title="错误" value={serverStats[STATUS_ERROR]} icon={<AlertTriangle className="w-6 h-6" />} valueClassName={statusColorMap[STATUS_ERROR]} onClick={() => setSelectedStatusFilter(STATUS_ERROR)} isActive={selectedStatusFilter === STATUS_ERROR} />}
+            <StatCard title="总上传" value={formatNetworkSpeedForDisplay(totalNetworkUp)} icon={<ArrowUp className="w-6 h-6" />} valueClassName="text-emerald-500" description="在线服务器" />
+            <StatCard title="总下载" value={formatNetworkSpeedForDisplay(totalNetworkDown)} icon={<ArrowDown className="w-6 h-6" />} valueClassName="text-sky-500" description="在线服务器" />
           </div>
-        </div>
-        <div className="p-4 bg-white rounded-lg shadow-sm mb-6">
-            <div className="flex flex-wrap gap-4 items-center justify-between">
-                <div className="flex flex-wrap gap-4 items-center">
-                    <div className="flex flex-wrap gap-2 items-center">
-                        <span className="text-sm font-medium text-slate-600">按分组筛选:</span>
-                        {uniqueGroups.map(group => (
-                            <button key={group} onClick={() => setSelectedGroup(group)} aria-pressed={selectedGroup === group} className={`px-4 py-1.5 text-xs sm:text-sm font-medium rounded-full transition-all duration-200 ease-in-out ${selectedGroup === group ? 'bg-indigo-600 text-white shadow-md scale-105' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>{group === 'ALL' ? '全部' : group}</button>
-                        ))}
-                    </div>
-                    <div className="w-full md:w-auto border-t md:border-t-0 md:border-l border-slate-200 my-2 md:my-0 md:mx-4 h-auto md:h-8"></div>
-                    {currentAvailableTags.length > 0 && (
-                        <div className="flex flex-wrap gap-2 items-center">
-                            <span className="text-sm font-medium text-slate-600">按标签筛选:</span>
-                            {/* Display selected tags */}
-                            {Array.from(selectedTagIds).map(tagId => {
-                                const tag = currentAvailableTags.find(t => t.id === tagId);
-                                if (!tag) return null;
-                                return (
-                                    <span key={tag.id} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: tag.color, color: getContrastingTextColor(tag.color) }}>
-                                        {tag.name}
-                                        <button
-                                            onClick={() => {
-                                                const newSet = new Set(selectedTagIds);
-                                                newSet.delete(tag.id);
-                                                setSelectedTagIds(newSet);
-                                            }}
-                                            className="flex-shrink-0 ml-1.5 h-4 w-4 rounded-full inline-flex items-center justify-center hover:bg-black/20 focus:outline-none"
-                                            style={{ color: getContrastingTextColor(tag.color) }}
-                                        >
-                                            <span className="sr-only">Remove {tag.name}</span>
-                                            <XMarkIcon className="h-2 w-2" />
-                                        </button>
-                                    </span>
-                                );
-                            })}
+        </CardContent>
+      </Card>
 
-                            {/* Dropdown for adding new tags */}
-                            <div className="relative" ref={tagDropdownRef}>
-                                <button
-                                    onClick={() => setIsTagDropdownOpen(!isTagDropdownOpen)}
-                                    className="px-3 py-1 text-xs font-medium rounded-full transition-all duration-200 ease-in-out bg-slate-200 text-slate-700 hover:bg-slate-300"
-                                >
-                                    + 添加筛选
-                                </button>
-                                {isTagDropdownOpen && (
-                                    <div className="origin-top-left absolute left-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
-                                        <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
-                                            {currentAvailableTags
-                                                .map(tag => (
-                                                    <a
-                                                        key={tag.id}
-                                                        href="#"
-                                                        onClick={(e) => {
-                                                            e.preventDefault();
-                                                            const newSet = new Set(selectedTagIds);
-                                                            if (newSet.has(tag.id)) {
-                                                                newSet.delete(tag.id);
-                                                            } else {
-                                                                newSet.add(tag.id);
-                                                            }
-                                                            setSelectedTagIds(newSet);
-                                                        }}
-                                                        className={`flex items-center justify-between px-4 py-2 text-sm ${selectedTagIds.has(tag.id) ? 'font-semibold text-indigo-600' : 'text-gray-700'} hover:bg-gray-100`}
-                                                        role="menuitem"
-                                                    >
-                                                        <div className="flex items-center">
-                                                            <span className="inline-block w-3 h-3 mr-3 rounded-full" style={{ backgroundColor: tag.color }}></span>
-                                                            {tag.name}
-                                                        </div>
-                                                        {selectedTagIds.has(tag.id) && (
-                                                            <CheckIcon className="w-5 h-5 text-indigo-600" />
-                                                        )}
-                                                    </a>
-                                                ))
-                                            }
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <CardTitle>服务器列表</CardTitle>
+            <ToggleGroup type="single" value={viewMode} onValueChange={(value) => value && setViewMode(value as ViewMode)} aria-label="View mode">
+              <ToggleGroupItem value="card" aria-label="Card view"><LayoutGrid className="h-4 w-4 mr-2" />卡片</ToggleGroupItem>
+              <ToggleGroupItem value="list" aria-label="List view"><List className="h-4 w-4 mr-2" />列表</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-4 items-center justify-between p-4 border rounded-lg mb-6">
+            <div className="flex flex-wrap gap-4 items-center">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">分组:</span>
+                <ToggleGroup type="single" value={selectedGroup} onValueChange={(value) => value && setSelectedGroup(value)} aria-label="Group filter">
+                  {uniqueGroups.map(group => (
+                    <ToggleGroupItem key={group} value={group}>{group === 'ALL' ? '全部分组' : group}</ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </div>
+              {currentAvailableTags.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline">
+                        <TagIcon className="mr-2 h-4 w-4" />
+                        按标签筛选 {selectedTagIds.size > 0 && `(${selectedTagIds.size})`}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="w-56">
+                      <DropdownMenuLabel>可见标签</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {currentAvailableTags.map(tag => (
+                        <DropdownMenuCheckboxItem
+                          key={tag.id}
+                          checked={selectedTagIds.has(tag.id)}
+                          onCheckedChange={() => handleTagSelection(tag.id)}
+                        >
+                          <span className="inline-block w-2 h-2 mr-2 rounded-full" style={{ backgroundColor: tag.color }}></span>
+                          {tag.name}
+                        </DropdownMenuCheckboxItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-                {/* Sorting Controls */}
-                <div className="flex items-center gap-4 border-t border-slate-200 md:border-t-0 md:border-l md:pl-4 mt-4 md:mt-0 pt-4 md:pt-0">
-                    <div className="relative">
-                         <label htmlFor="sort-key" className="text-sm font-medium text-slate-600 mr-2">排序:</label>
-                        <select
-                            id="sort-key"
-                            value={sortKey}
-                            onChange={(e) => setSortKey(e.target.value)}
-                            className="w-full sm:w-auto bg-white border border-slate-300 rounded-md py-2 pl-3 pr-8 text-sm leading-5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                        >
-                            {sortOptions.map(option => (
-                                <option key={option.key} value={option.key}>{option.label}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div className="flex items-center p-0.5 bg-slate-200 rounded-lg">
-                        <button
-                            onClick={() => setSortDirection('asc')}
-                            aria-pressed={sortDirection === 'asc'}
-                            className={`p-1.5 rounded-md transition-colors ${sortDirection === 'asc' ? 'bg-white text-indigo-600 shadow' : 'text-slate-500 hover:bg-slate-300'}`}
-                            title="升序"
-                        >
-                            <ArrowUpIcon className="w-5 h-5" />
-                        </button>
-                        <button
-                            onClick={() => setSortDirection('desc')}
-                            aria-pressed={sortDirection === 'desc'}
-                            className={`p-1.5 rounded-md transition-colors ${sortDirection === 'desc' ? 'bg-white text-indigo-600 shadow' : 'text-slate-500 hover:bg-slate-300'}`}
-                            title="降序"
-                        >
-                            <ArrowDownIcon className="w-5 h-5" />
-                        </button>
-                    </div>
-                </div>
+              )}
             </div>
-        </div>
-
-        {displayedServers.length === 0 && !isLoadingServers ? (
-          <p className="text-slate-500 text-center py-8 bg-white rounded-lg shadow">没有找到符合当前筛选条件的服务器。</p>
-        ) : viewMode === 'card' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {displayedServers.map(server => <VpsCard key={server.id} server={server} />)}
+            <div className="flex items-center gap-2">
+              <Select value={sortKey} onValueChange={setSortKey}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="排序方式" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sortOptions.map(option => (
+                    <SelectItem key={option.key} value={option.key}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <ToggleGroup type="single" value={sortDirection} onValueChange={(value) => value && setSortDirection(value as 'asc' | 'desc')}>
+                <ToggleGroupItem value="asc" aria-label="Ascending"><ArrowUp className="h-4 w-4" /></ToggleGroupItem>
+                <ToggleGroupItem value="desc" aria-label="Descending"><ArrowDown className="h-4 w-4" /></ToggleGroupItem>
+              </ToggleGroup>
+            </div>
           </div>
-        ) : (
-          <div className="bg-white rounded-xl shadow-lg overflow-x-auto">
-            <table className="w-full min-w-[1000px]">
-              <thead className="bg-slate-100">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                      <span>名称</span>
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">状态</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">IP 地址</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">操作系统</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">CPU</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">内存</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">流量使用</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">续费状态</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">上传</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">下载</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {displayedServers.map(server => <VpsTableRow key={server.id} server={server} />)}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+          
+          {selectedTagIds.size > 0 && (
+            <div className="flex flex-wrap gap-2 mb-4">
+              {Array.from(selectedTagIds).map(tagId => {
+                const tag = currentAvailableTags.find(t => t.id === tagId);
+                if (!tag) return null;
+                return (
+                  <Badge key={tag.id} variant="secondary" className="pl-2">
+                    <span className="inline-block w-2 h-2 mr-2 rounded-full" style={{ backgroundColor: tag.color }}></span>
+                    {tag.name}
+                    <button onClick={() => handleTagSelection(tag.id)} className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                );
+              })}
+            </div>
+          )}
 
+          {displayedServers.length === 0 && !isLoadingServers ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <p>没有找到符合当前筛选条件的服务器。</p>
+            </div>
+          ) : viewMode === 'card' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {displayedServers.map(server => <VpsCard key={server.id} server={server} />)}
+            </div>
+          ) : (
+            <div className="border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>名称</TableHead>
+                    <TableHead>状态</TableHead>
+                    <TableHead>IP 地址</TableHead>
+                    <TableHead>操作系统</TableHead>
+                    <TableHead>CPU</TableHead>
+                    <TableHead>内存</TableHead>
+                    <TableHead>流量</TableHead>
+                    <TableHead>续费</TableHead>
+                    <TableHead>上传</TableHead>
+                    <TableHead>下载</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {displayedServers.map(server => <VpsTableRow key={server.id} server={server} />)}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };

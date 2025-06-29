@@ -10,6 +10,23 @@ import {
 import type { ChannelTemplate, ChannelResponse, CreateChannelRequest, UpdateChannelRequest } from '../types';
 import NotificationChannelModal from '../components/NotificationChannelModal';
 import toast from 'react-hot-toast';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { MoreHorizontal, PlusCircle, Send, Trash2, Edit } from 'lucide-react';
+import { RefreshCwIcon as SpinnerIcon } from '@/components/Icons';
+import EmptyState from '@/components/EmptyState';
 
 const NotificationsPage: React.FC = () => {
     const [channels, setChannels] = useState<ChannelResponse[]>([]);
@@ -18,6 +35,9 @@ const NotificationsPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentEditingChannel, setCurrentEditingChannel] = useState<ChannelResponse | null>(null);
+    const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
+    const [deletingChannelId, setDeletingChannelId] = useState<number | null>(null);
+    const [testingChannelId, setTestingChannelId] = useState<number | null>(null);
 
     const fetchAllData = useCallback(async () => {
         setIsLoading(true);
@@ -30,9 +50,10 @@ const NotificationsPage: React.FC = () => {
             setChannels(channelsData);
             setError(null);
         } catch (err) {
-            setError('Failed to load initial data.');
+            const errorMessage = err instanceof Error ? err.message : 'Failed to load data.';
+            setError(errorMessage);
             console.error(err);
-            toast.error('Failed to load data.');
+            toast.error(errorMessage);
         } finally {
             setIsLoading(false);
         }
@@ -52,55 +73,61 @@ const NotificationsPage: React.FC = () => {
         setIsModalOpen(true);
     };
 
-    const handleModalClose = () => {
-        setIsModalOpen(false);
-        setCurrentEditingChannel(null);
-    };
-
     const handleModalSubmit = async (data: CreateChannelRequest | UpdateChannelRequest) => {
+        const isEditing = !!currentEditingChannel;
+        const toastId = toast.loading(isEditing ? 'Updating channel...' : 'Creating channel...');
         try {
-            if (currentEditingChannel && 'id' in currentEditingChannel) {
-                 // Ensure data is UpdateChannelRequest; might need type assertion or check
+            if (isEditing) {
                 await updateChannel(currentEditingChannel.id, data as UpdateChannelRequest);
-                toast.success('Channel updated successfully!');
             } else {
                 await createChannel(data as CreateChannelRequest);
-                toast.success('Channel created successfully!');
             }
-            fetchAllData(); // Refresh list
+            toast.success(`Channel ${isEditing ? 'updated' : 'created'} successfully!`, { id: toastId });
+            fetchAllData();
         } catch (err) {
             console.error('Failed to save channel:', err);
-            toast.error('Failed to save channel.');
-            // setError will be handled by the modal itself if needed, or pass error back up
-            throw err; // Re-throw to let modal handle its own error state if desired
+            toast.error(`Failed to ${isEditing ? 'update' : 'create'} channel.`, { id: toastId });
+            throw err;
         }
     };
 
-    const handleDeleteChannel = async (id: number) => {
-        if (window.confirm('Are you sure you want to delete this channel?')) {
-            try {
-                await deleteChannel(id);
-                toast.success('Channel deleted successfully!');
-                fetchAllData(); // Refresh list
-            } catch (err) {
-                console.error('Failed to delete channel:', err);
-                toast.error('Failed to delete channel.');
-            }
+    const handleDeleteClick = (id: number) => {
+        setDeletingChannelId(id);
+        setIsDeleteAlertOpen(true);
+    };
+
+    const confirmDeleteChannel = async () => {
+        if (deletingChannelId === null) return;
+        const toastId = toast.loading('Deleting channel...');
+        try {
+            await deleteChannel(deletingChannelId);
+            toast.success('Channel deleted successfully!', { id: toastId });
+            fetchAllData();
+        } catch (err) {
+            console.error('Failed to delete channel:', err);
+            toast.error('Failed to delete channel.', { id: toastId });
+        } finally {
+            setIsDeleteAlertOpen(false);
+            setDeletingChannelId(null);
         }
     };
 
     const handleTestChannel = async (id: number) => {
+        setTestingChannelId(id);
+        const toastId = toast.loading('Sending test message...');
         try {
-            await testChannel(id, 'This is a test message.');
-            toast.success('Test message sent successfully!');
+            await testChannel(id, 'This is a test message from the dashboard.');
+            toast.success('Test message sent successfully!', { id: toastId });
         } catch (err) {
             console.error('Failed to send test message:', err);
-            toast.error('Failed to send test message.');
+            toast.error('Failed to send test message.', { id: toastId });
+        } finally {
+            setTestingChannelId(null);
         }
     };
 
     if (isLoading) {
-        return <div className="container mx-auto p-4">Loading notification settings...</div>;
+        return <div className="flex items-center justify-center h-full"><SpinnerIcon className="h-8 w-8 animate-spin" /></div>;
     }
 
     if (error) {
@@ -108,72 +135,92 @@ const NotificationsPage: React.FC = () => {
     }
 
     return (
-        <div className="container mx-auto p-4">
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold">Notification Channels</h1>
-                <button
-                    onClick={handleOpenCreateModal}
-                    className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700"
-                >
-                    Add New Channel
-                </button>
-            </div>
+        <div className="space-y-6">
+            <Card>
+                <CardHeader className="flex flex-row items-center justify-between">
+                    <div>
+                        <CardTitle>Notification Channels</CardTitle>
+                        <CardDescription>Manage channels to receive alerts and notifications.</CardDescription>
+                    </div>
+                    <Button onClick={handleOpenCreateModal}>
+                        <PlusCircle size={18} className="mr-2" /> Add New Channel
+                    </Button>
+                </CardHeader>
+                <CardContent>
+                    {channels.length === 0 ? (
+                        <EmptyState
+                            title="No Notification Channels"
+                            message="Get started by creating your first notification channel."
+                            action={<Button onClick={handleOpenCreateModal}><PlusCircle size={18} className="mr-2" /> Add New Channel</Button>}
+                        />
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Name</TableHead>
+                                    <TableHead>Type</TableHead>
+                                    <TableHead className="text-right">Actions</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {channels.map(channel => (
+                                    <TableRow key={channel.id}>
+                                        <TableCell className="font-medium">{channel.name}</TableCell>
+                                        <TableCell className="capitalize text-muted-foreground">{channel.channelType}</TableCell>
+                                        <TableCell className="text-right">
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button variant="ghost" className="h-8 w-8 p-0">
+                                                        <span className="sr-only">Open menu</span>
+                                                        <MoreHorizontal className="h-4 w-4" />
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end">
+                                                    <DropdownMenuItem onClick={() => handleOpenEditModal(channel)}>
+                                                        <Edit className="mr-2 h-4 w-4" />
+                                                        <span>Edit</span>
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => handleTestChannel(channel.id)} disabled={testingChannelId === channel.id}>
+                                                        {testingChannelId === channel.id ? <SpinnerIcon className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                                                        <span>Test</span>
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => handleDeleteClick(channel.id)} className="text-destructive">
+                                                        <Trash2 className="mr-2 h-4 w-4" />
+                                                        <span>Delete</span>
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
+                </CardContent>
+            </Card>
 
-            {channels.length === 0 && !isLoading ? (
-                 <div className="text-center py-10">
-                    <p className="text-gray-500">No notification channels configured yet.</p>
-                    <button
-                        onClick={handleOpenCreateModal}
-                        className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700"
-                    >
-                        Add Your First Channel
-                    </button>
-                </div>
-            ) : (
-                <div className="bg-white p-6 rounded-lg shadow-md">
-                    <h2 className="text-xl font-semibold mb-4">Configured Channels</h2>
-                    <ul className="divide-y divide-gray-200">
-                        {channels.map(channel => (
-                            <li key={channel.id} className="py-4 flex justify-between items-center">
-                                <div>
-                                    <span className="font-semibold text-lg">{channel.name}</span>
-                                    <span className="block text-sm text-gray-500 capitalize">{channel.channelType}</span>
-                                </div>
-                                <div className="space-x-2">
-                                    <button
-                                        onClick={() => handleOpenEditModal(channel)}
-                                        className="text-indigo-600 hover:text-indigo-900 font-medium"
-                                    >
-                                        Edit
-                                    </button>
-                                    <button
-                                        onClick={() => handleTestChannel(channel.id)}
-                                        className="text-green-600 hover:text-green-900 font-medium"
-                                    >
-                                        Test
-                                    </button>
-                                    <button
-                                        onClick={() => handleDeleteChannel(channel.id)}
-                                        className="text-red-600 hover:text-red-900 font-medium"
-                                    >
-                                        Delete
-                                    </button>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            )}
+            <NotificationChannelModal
+                isOpen={isModalOpen}
+                onOpenChange={setIsModalOpen}
+                onSubmit={handleModalSubmit}
+                templates={templates}
+                editingChannel={currentEditingChannel}
+            />
 
-            {isModalOpen && (
-                <NotificationChannelModal
-                    isOpen={isModalOpen}
-                    onClose={handleModalClose}
-                    onSubmit={handleModalSubmit}
-                    templates={templates}
-                    editingChannel={currentEditingChannel}
-                />
-            )}
+            <AlertDialog open={isDeleteAlertOpen} onOpenChange={setIsDeleteAlertOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete the notification channel.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel onClick={() => setDeletingChannelId(null)}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmDeleteChannel}>Delete</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 };

@@ -2,15 +2,20 @@ import React from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import type { VpsListItemResponse } from '../types';
 import {
-  PencilIcon,
-  RefreshCwIcon,
-  ClipboardIcon,
-  Trash2Icon,
-} from './Icons';
-import {
   calculateRenewalInfo,
   getVpsStatusAppearance,
 } from '../utils/vpsUtils';
+import { TableCell, TableRow } from '@/components/ui/table';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { MoreHorizontal, Pencil, RefreshCw, Copy, Trash2 } from 'lucide-react';
 
 interface ServerManagementTableRowProps {
   server: VpsListItemResponse;
@@ -22,9 +27,17 @@ interface ServerManagementTableRowProps {
   isSelected: boolean;
 }
 
-const ServerManagementTableRow: React.FC<ServerManagementTableRowProps> = ({ server, onEdit, onCopyCommand, onTriggerUpdate, onDelete, onSelectionChange, isSelected }) => {
-  const { tableRowBadgeClass, tableRowTextClass, icon } = getVpsStatusAppearance(server.status);
-
+const ServerManagementTableRow: React.FC<ServerManagementTableRowProps> = ({
+  server,
+  onEdit,
+  onCopyCommand,
+  onTriggerUpdate,
+  onDelete,
+  onSelectionChange,
+  isSelected,
+}) => {
+  const statusAppearance = getVpsStatusAppearance(server.status);
+  const IconComponent = statusAppearance.icon;
 
   const renewalInfo = calculateRenewalInfo(
     server.nextRenewalDate,
@@ -33,95 +46,82 @@ const ServerManagementTableRow: React.FC<ServerManagementTableRowProps> = ({ ser
     server.renewalCycle,
     server.renewalCycleCustomDays
   );
-  
+
   return (
-    <tr className="bg-white hover:bg-slate-50 transition-colors duration-150 border-b border-slate-200 last:border-b-0">
-      <td className="px-4 py-3 w-8">
-        <input
-          type="checkbox"
-          className="h-4 w-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"
+    <TableRow key={server.id}>
+      <TableCell className="w-8">
+        <Checkbox
           checked={isSelected}
-          onChange={(e) => onSelectionChange(server.id, e.target.checked)}
+          onCheckedChange={(checked) => onSelectionChange(server.id, !!checked)}
+          aria-label="Select row"
         />
-      </td>
-      <td className="px-4 py-3 text-sm font-medium text-slate-800">
-        <div className="truncate" title={server.name}>
-          <RouterLink to={`/vps/${server.id}`} className="text-indigo-600 hover:text-indigo-700 hover:underline">
-            {server.name}
-          </RouterLink>
-        </div>
-      </td>
-      <td className="px-4 py-3 text-sm">
-        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${tableRowBadgeClass} ${tableRowTextClass}`}>
-          {icon && <span className="mr-1.5">{icon}</span>}
+      </TableCell>
+      <TableCell className="font-medium">
+        <RouterLink to={`/vps/${server.id}`} className="text-primary hover:underline">
+          {server.name}
+        </RouterLink>
+      </TableCell>
+      <TableCell>
+        <Badge variant={statusAppearance.variant}>
+          <IconComponent className="w-3.5 h-3.5 mr-1.5" />
           {server.status.toUpperCase()}
-        </span>
-      </td>
-      <td className="px-4 py-3 text-sm text-slate-600">
+        </Badge>
+      </TableCell>
+      <TableCell>
         <div className="flex items-center">
           {server.metadata?.country_code && (
             <span className={`fi fi-${server.metadata.country_code.toLowerCase()} mr-2`}></span>
           )}
           {server.ipAddress || 'N/A'}
         </div>
-      </td>
-      <td className="px-4 py-3 text-sm text-slate-600 truncate" title={server.osType ?? 'N/A'}>
+      </TableCell>
+      <TableCell className="truncate" title={server.osType ?? 'N/A'}>
         {server.osType ?? 'N/A'}
-      </td>
-      <td className="px-4 py-3 text-sm text-slate-600">{server.agentVersion || 'N/A'}</td>
-      <td className="px-4 py-3 text-sm text-slate-600">{server.group || 'N/A'}</td>
-      <td className="px-4 py-3 text-sm text-slate-600">
-        {renewalInfo.isApplicable && renewalInfo.progressPercent !== null ? (
-          <div className="w-28"> {/* Fixed width for consistency */}
-            <div className="flex items-center justify-between text-xs mb-0.5">
-              <span className={`font-semibold ${renewalInfo.colorClass.replace('bg-', 'text-')}`}>{renewalInfo.statusText}</span>
-            </div>
-          </div>
+      </TableCell>
+      <TableCell>{server.agentVersion || 'N/A'}</TableCell>
+      <TableCell>{server.group || 'N/A'}</TableCell>
+      <TableCell>
+        {renewalInfo.isApplicable ? (
+          <Badge variant={renewalInfo.variant}>{renewalInfo.statusText}</Badge>
         ) : (
-          <span className="text-xs text-slate-400">未配置</span>
+          <span className="text-xs text-muted-foreground">未配置</span>
         )}
-      </td>
-      <td className="px-4 py-3 text-left">
-       <div className="flex items-center justify-start space-x-2">
-         <button
-           onClick={() => onEdit(server)}
-           className="text-slate-600 hover:text-slate-800 font-medium text-xs py-1 px-3 rounded-md hover:bg-slate-100 transition-colors flex items-center"
-           aria-label={`Edit ${server.name}`}
-         >
-           <PencilIcon className="w-3.5 h-3.5 mr-1" />
-           编辑
-         </button>
-         <button
-           onClick={() => onTriggerUpdate(server.id)}
-           className="text-slate-600 hover:text-slate-800 font-medium text-xs py-1 px-3 rounded-md hover:bg-slate-100 transition-colors flex items-center"
-           aria-label={`Update agent on ${server.name}`}
-           disabled={server.status !== 'online'}
-           title={server.status !== 'online' ? 'Agent is not online' : 'Trigger agent update'}
-         >
-           <RefreshCwIcon className={`w-3.5 h-3.5 mr-1 ${server.status === 'online' ? '' : 'text-slate-400'}`} />
-           更新
-         </button>
-         <button
-           onClick={() => onCopyCommand(server)}
-           className="text-slate-600 hover:text-slate-800 font-medium text-xs py-1 px-3 rounded-md hover:bg-slate-100 transition-colors flex items-center"
-           aria-label={`Copy install command for ${server.name}`}
-           title="Copy install command"
-         >
-           <ClipboardIcon className="w-3.5 h-3.5 mr-1" />
-           复制命令
-         </button>
-         <button
-           onClick={() => onDelete(server.id)}
-           className="text-red-600 hover:text-red-800 font-medium text-xs py-1 px-3 rounded-md hover:bg-red-100 transition-colors flex items-center"
-           aria-label={`Delete ${server.name}`}
-           title="Delete VPS"
-         >
-           <Trash2Icon className="w-3.5 h-3.5 mr-1" />
-           删除
-         </button>
-       </div>
-      </td>
-    </tr>
+      </TableCell>
+      <TableCell className="text-right">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" className="h-8 w-8 p-0">
+              <span className="sr-only">Open menu</span>
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => onEdit(server)}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => onTriggerUpdate(server.id)}
+              disabled={server.status !== 'online'}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Update Agent
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onCopyCommand(server)}>
+              <Copy className="mr-2 h-4 w-4" />
+              Copy Command
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => onDelete(server.id)}
+              className="text-destructive focus:text-destructive"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </TableCell>
+    </TableRow>
   );
 };
 

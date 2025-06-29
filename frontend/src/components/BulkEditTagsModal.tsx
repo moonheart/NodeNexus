@@ -1,127 +1,150 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import Select from 'react-select';
 import { useServerListStore } from '../store/serverListStore';
 import * as tagService from '../services/tagService';
-import { X } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { ChevronDown } from 'lucide-react';
+import { Badge } from './ui/badge';
 
 interface BulkEditTagsModalProps {
   isOpen: boolean;
   onClose: () => void;
   vpsIds: number[];
-  onTagsUpdated: () => void; // Callback to trigger potential refreshes
+  onTagsUpdated: () => void;
 }
 
 const BulkEditTagsModal: React.FC<BulkEditTagsModalProps> = ({ isOpen, onClose, vpsIds, onTagsUpdated }) => {
-  const [tagsToAdd, setTagsToAdd] = useState<{ value: number; label: string }[]>([]);
-  const [tagsToRemove, setTagsToRemove] = useState<{ value: number; label: string }[]>([]);
+  const [tagsToAdd, setTagsToAdd] = useState<number[]>([]);
+  const [tagsToRemove, setTagsToRemove] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const allTags = useServerListStore((state) => state.allTags);
   const fetchAllTags = useServerListStore((state) => state.fetchAllTags);
 
   useEffect(() => {
     if (isOpen) {
-      // Fetch the latest tags when the modal opens
       fetchAllTags();
-      // Reset state
       setTagsToAdd([]);
       setTagsToRemove([]);
-      setError(null);
       setIsLoading(false);
     }
   }, [isOpen, fetchAllTags]);
 
-  const tagOptions = useMemo(() => {
-    return allTags.map(tag => ({ value: tag.id, label: tag.name, color: tag.color }));
-  }, [allTags]);
-
-  // Ensure a tag cannot be in both "add" and "remove" lists
-  const addOptions = useMemo(() => tagOptions.filter(opt => !tagsToRemove.some(r => r.value === opt.value)), [tagOptions, tagsToRemove]);
-  const removeOptions = useMemo(() => tagOptions.filter(opt => !tagsToAdd.some(a => a.value === opt.value)), [tagOptions, tagsToAdd]);
+  const addOptions = useMemo(() => allTags.filter(tag => !tagsToRemove.includes(tag.id)), [allTags, tagsToRemove]);
+  const removeOptions = useMemo(() => allTags.filter(tag => !tagsToAdd.includes(tag.id)), [allTags, tagsToAdd]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
-    setError(null);
-
+    
     try {
       await tagService.bulkUpdateVpsTags({
         vpsIds: vpsIds,
-        addTagIds: tagsToAdd.map(t => t.value),
-        removeTagIds: tagsToRemove.map(t => t.value),
+        addTagIds: tagsToAdd,
+        removeTagIds: tagsToRemove,
       });
+      toast.success('Tags updated successfully!');
       onTagsUpdated();
       onClose();
     } catch (err) {
       console.error('Failed to bulk update tags:', err);
-      setError('An error occurred. Please try again.');
+      toast.error('An error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  if (!isOpen) {
-    return null;
-  }
+  const MultiSelectPopover = ({
+    label,
+    options,
+    selected,
+    onSelectedChange,
+  }: {
+    label: string;
+    options: typeof allTags;
+    selected: number[];
+    onSelectedChange: (selected: number[]) => void;
+  }) => (
+    <div>
+      <Label className="block text-sm font-medium text-slate-700 mb-1">{label}</Label>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="outline" className="w-full justify-between">
+            <span className="truncate">
+              {selected.length > 0 
+                ? `${selected.length} tag(s) selected` 
+                : `Select tags...`}
+            </span>
+            <ChevronDown className="h-4 w-4 ml-2" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+          <ScrollArea className="h-48">
+            <div className="p-4 space-y-2">
+              {options.map(tag => (
+                <div key={tag.id} className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`tag-${tag.id}-${label}`}
+                    checked={selected.includes(tag.id)}
+                    onCheckedChange={(checked) => {
+                      const newSelected = checked
+                        ? [...selected, tag.id]
+                        : selected.filter(id => id !== tag.id);
+                      onSelectedChange(newSelected);
+                    }}
+                  />
+                  <Label htmlFor={`tag-${tag.id}-${label}`} className="flex-grow">
+                    <Badge style={{ backgroundColor: tag.color, color: '#fff' }}>{tag.name}</Badge>
+                  </Label>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md m-4">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold text-slate-800">Bulk Edit Tags for {vpsIds.length} Servers</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Bulk Edit Tags</DialogTitle>
+          <DialogDescription>
+            Add or remove tags for {vpsIds.length} selected servers.
+          </DialogDescription>
+        </DialogHeader>
         <form onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="tagsToAdd" className="block text-sm font-medium text-slate-700 mb-1">Tags to Add</label>
-              <Select
-                isMulti
-                options={addOptions}
-                value={tagsToAdd}
-                onChange={(newValue) => setTagsToAdd(Array.from(newValue))}
-                placeholder="Select tags to add..."
-                closeMenuOnSelect={false}
-              />
-            </div>
-            <div>
-              <label htmlFor="tagsToRemove" className="block text-sm font-medium text-slate-700 mb-1">Tags to Remove</label>
-              <Select
-                isMulti
-                options={removeOptions}
-                value={tagsToRemove}
-                onChange={(newValue) => setTagsToRemove(Array.from(newValue))}
-                placeholder="Select tags to remove..."
-                closeMenuOnSelect={false}
-              />
-            </div>
+          <div className="space-y-4 py-4">
+            <MultiSelectPopover
+              label="Tags to Add"
+              options={addOptions}
+              selected={tagsToAdd}
+              onSelectedChange={setTagsToAdd}
+            />
+            <MultiSelectPopover
+              label="Tags to Remove"
+              options={removeOptions}
+              selected={tagsToRemove}
+              onSelectedChange={setTagsToRemove}
+            />
           </div>
-
-          {error && <p className="text-red-500 text-sm mt-4">Error: {error}</p>}
-
-          <div className="mt-6 flex justify-end space-x-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold py-2 px-4 rounded-lg shadow-sm"
-            >
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg shadow-sm disabled:bg-indigo-400"
-            >
+            </Button>
+            <Button type="submit" disabled={isLoading}>
               {isLoading ? 'Saving...' : 'Save Changes'}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 

@@ -1,10 +1,5 @@
-import React from 'react';
-import type { VpsListItemResponse, ServerStatus as ServerStatusType, Tag } from '../types';
-import {
-  CheckCircleIcon,
-  ExclamationTriangleIcon,
-  XCircleIcon,
-} from '../components/Icons';
+import type { VpsListItemResponse, ServerStatus as ServerStatusType } from '../types';
+import { CheckCircle, XCircle, AlertTriangle, Power, HelpCircle } from 'lucide-react';
 import { STATUS_ONLINE, STATUS_OFFLINE, STATUS_REBOOTING, STATUS_PROVISIONING, STATUS_ERROR, STATUS_UNKNOWN } from '../types';
 
 // Helper function to format bytes into a readable string (e.g., "10.5 GB")
@@ -22,28 +17,11 @@ export const formatBytesForDisplay = (bytes: number | null | undefined, decimals
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 };
 
-export const getUsageColorClass = (value: number): string => {
-  if (value > 90) return 'bg-red-500';
-  if (value > 70) return 'bg-yellow-500';
-  return 'bg-green-500';
-};
-
 export const formatNetworkSpeed = (bps: number | undefined | null): string => {
   if (typeof bps !== 'number' || bps === null) return 'N/A';
   if (bps < 1024) return `${bps.toFixed(0)} B/s`;
   if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KB/s`;
   return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
-};
-
-export const getContrastingTextColor = (hexColor: string): string => {
-  if (!hexColor) return '#000000';
-  const hex = hexColor.replace('#', '');
-  if (hex.length !== 6) return '#000000'; // Default for invalid hex
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
-  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
-  return (yiq >= 128) ? '#000000' : '#ffffff';
 };
 
 // Helper function to calculate remaining days and progress for renewal
@@ -57,11 +35,11 @@ export const calculateRenewalInfo = (
   remainingDays: number | null;
   progressPercent: number | null;
   statusText: string;
-  colorClass: string;
+  variant: 'default' | 'destructive' | 'secondary';
   isApplicable: boolean;
 } => {
   if (!nextRenewalDateStr) {
-    return { remainingDays: null, progressPercent: null, statusText: 'N/A', colorClass: 'bg-slate-300', isApplicable: false };
+    return { remainingDays: null, progressPercent: null, statusText: 'N/A', variant: 'secondary', isApplicable: false };
   }
 
   const today = new Date();
@@ -105,24 +83,24 @@ export const calculateRenewalInfo = (
   }
 
   let statusText = '';
-  let colorClass = 'bg-green-500';
+  let variant: 'default' | 'destructive' | 'secondary' = 'default';
 
   if (remainingDays === null) {
     statusText = 'N/A';
-    colorClass = 'bg-slate-300';
+    variant = 'secondary';
   } else if (remainingDays < 0) {
     statusText = `过期 ${Math.abs(remainingDays)}天`;
-    colorClass = 'bg-red-600';
+    variant = 'destructive';
     progressPercent = 100;
   } else if (remainingDays === 0) {
     statusText = '今天到期';
-    colorClass = 'bg-red-500';
+    variant = 'destructive';
   } else if (remainingDays <= 7) {
     statusText = `剩 ${remainingDays}天`;
-    colorClass = 'bg-red-500';
+    variant = 'destructive';
   } else if (remainingDays <= 15) {
     statusText = `剩 ${remainingDays}天`;
-    colorClass = 'bg-yellow-500';
+    variant = 'default'; // Yellow is not a standard variant
   } else {
     statusText = `剩 ${remainingDays}天`;
   }
@@ -131,7 +109,7 @@ export const calculateRenewalInfo = (
     remainingDays,
     progressPercent: progressPercent !== null ? Math.max(0, Math.min(progressPercent, 100)) : null,
     statusText,
-    colorClass,
+    variant,
     isApplicable: true,
   };
 };
@@ -165,123 +143,38 @@ export const calculateTrafficUsage = (
   return { usedTrafficBytes, trafficUsagePercent };
 };
 
-
 export interface VpsStatusAppearance {
-  icon: React.ReactNode;
-  tableRowBadgeClass: string;
-  tableRowTextClass: string;
+  icon: React.ElementType;
+  variant: 'default' | 'destructive' | 'secondary' | 'outline' | 'success';
   cardBorderClass: string;
-  cardBadgeBgClass: string;
-  cardTextClass: string; 
 }
 
 export const getVpsStatusAppearance = (status: ServerStatusType): VpsStatusAppearance => {
-  const iconProps = { className: "w-4 h-4" };
   switch (status) {
     case STATUS_ONLINE:
-      return {
-        icon: React.createElement(CheckCircleIcon, iconProps),
-        tableRowBadgeClass: 'bg-green-100',
-        tableRowTextClass: 'text-green-700',
-        cardBorderClass: 'border-green-500',
-        cardBadgeBgClass: 'bg-green-500',
-        cardTextClass: 'text-green-700',
-      };
+      return { icon: CheckCircle, variant: 'success', cardBorderClass: 'border-success' };
     case STATUS_OFFLINE:
-      return {
-        icon: React.createElement(XCircleIcon, iconProps),
-        tableRowBadgeClass: 'bg-red-100',
-        tableRowTextClass: 'text-red-700',
-        cardBorderClass: 'border-red-500',
-        cardBadgeBgClass: 'bg-red-500',
-        cardTextClass: 'text-red-700',
-      };
+      return { icon: XCircle, variant: 'destructive', cardBorderClass: 'border-destructive' };
     case STATUS_REBOOTING:
-      return {
-        icon: React.createElement(ExclamationTriangleIcon, iconProps),
-        tableRowBadgeClass: 'bg-yellow-100',
-        tableRowTextClass: 'text-yellow-700',
-        cardBorderClass: 'border-yellow-500',
-        cardBadgeBgClass: 'bg-yellow-500',
-        cardTextClass: 'text-yellow-700',
-      };
+      return { icon: Power, variant: 'secondary', cardBorderClass: 'border-warning' };
     case STATUS_PROVISIONING:
-      return {
-        icon: React.createElement(ExclamationTriangleIcon, iconProps),
-        tableRowBadgeClass: 'bg-blue-100',
-        tableRowTextClass: 'text-blue-700',
-        cardBorderClass: 'border-blue-500',
-        cardBadgeBgClass: 'bg-blue-500',
-        cardTextClass: 'text-blue-700',
-      };
+      return { icon: AlertTriangle, variant: 'secondary', cardBorderClass: 'border-primary' };
     case STATUS_ERROR:
-      return {
-        icon: React.createElement(XCircleIcon, iconProps),
-        tableRowBadgeClass: 'bg-red-200', 
-        tableRowTextClass: 'text-red-800', 
-        cardBorderClass: 'border-red-700', 
-        cardBadgeBgClass: 'bg-red-700',   
-        cardTextClass: 'text-red-800',
-      };
+      return { icon: XCircle, variant: 'destructive', cardBorderClass: 'border-destructive' };
     case STATUS_UNKNOWN:
     default:
-      return {
-        icon: React.createElement(ExclamationTriangleIcon, iconProps),
-        tableRowBadgeClass: 'bg-slate-100',
-        tableRowTextClass: 'text-slate-700',
-        cardBorderClass: 'border-slate-400',
-        cardBadgeBgClass: 'bg-slate-400',
-        cardTextClass: 'text-slate-700',
-      };
+      return { icon: HelpCircle, variant: 'outline', cardBorderClass: 'border-border' };
   }
 };
-
-interface SharedProgressBarProps {
-  value: number;
-  colorClass: string;
-  heightClass?: string; 
-}
-
-export const SharedProgressBar: React.FC<SharedProgressBarProps> = ({ value, colorClass, heightClass = 'h-2' }) => (
-  React.createElement("div", { className: `w-full bg-slate-200 rounded-full dark:bg-slate-700 ${heightClass}` },
-    React.createElement("div", { className: `${colorClass} ${heightClass} rounded-full`, style: { width: `${Math.max(0, Math.min(value, 100))}%` } })
-  )
-);
-
-
-interface RenderVpsTagsProps {
-  tags: Tag[] | undefined;
-}
-
-export const RenderVpsTags: React.FC<RenderVpsTagsProps> = ({ tags }) => {
-  if (!tags || tags.length === 0) {
-    return null;
+export const getProgressVariantClass = (value: number | null | undefined): string => {
+  if (value === null || typeof value === 'undefined') {
+    return '[&_[data-slot=progress-indicator]]:bg-muted';
   }
-
-  return (
-    React.createElement("div", { className: "mt-2 flex flex-wrap gap-1" },
-      tags.filter(tag => tag.isVisible).map(tag => {
-        const tagComponent = React.createElement("span",
-            {
-              key: `${tag.id}-span`,
-              className: "px-2 py-0.5 text-xs font-medium rounded-full",
-              style: {
-                backgroundColor: tag.color,
-                color: getContrastingTextColor(tag.color),
-              }
-            },
-            tag.name
-          );
-
-        if (tag.url) {
-          return (
-            React.createElement("a", { href: tag.url, target: "_blank", rel: "noopener noreferrer", key: tag.id },
-              tagComponent
-            )
-          );
-        }
-        return React.createElement("div", { key: tag.id }, tagComponent);
-      })
-    )
-  );
+  if (value >= 90) {
+    return '[&_[data-slot=progress-indicator]]:bg-destructive';
+  }
+  if (value >= 70) {
+    return '[&_[data-slot=progress-indicator]]:bg-warning';
+  }
+  return '[&_[data-slot=progress-indicator]]:bg-success';
 };

@@ -11,6 +11,7 @@ interface StatCardProps {
   onClick?: () => void;
   isActive?: boolean;
   className?: string;
+  valueClassName?: string;
 }
 
 const StatCard: React.FC<StatCardProps> = ({
@@ -22,6 +23,7 @@ const StatCard: React.FC<StatCardProps> = ({
   onClick,
   isActive,
   className,
+  valueClassName,
 }) => {
   const cardClasses = cn(
     "transition-all",
@@ -34,10 +36,10 @@ const StatCard: React.FC<StatCardProps> = ({
     <>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        {icon && <div className="text-muted-foreground">{icon}</div>}
+        {icon && <div className={cn("text-muted-foreground", valueClassName)}>{icon}</div>}
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">
+        <div className={cn("text-2xl font-bold", valueClassName)}>
           {value}
           {unit && <span className="text-base font-normal text-muted-foreground ml-1">{unit}</span>}
         </div>

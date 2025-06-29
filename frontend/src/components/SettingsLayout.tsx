@@ -1,6 +1,7 @@
 import React from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { SlidersHorizontal, Bell, AlertTriangle, Tags, ScrollText, User, KeyRound } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 const settingsGroups = [
   {
@@ -9,7 +10,6 @@ const settingsGroups = [
       { name: '全局配置', to: '/settings/global', icon: SlidersHorizontal },
       { name: '通知渠道', to: '/settings/notifications', icon: Bell },
       { name: 'OAuth 配置', to: '/settings/oauth', icon: KeyRound },
-      // { name: '用户管理', to: '/settings/users', icon: Users }, // Planned
     ],
   },
   {
@@ -24,44 +24,42 @@ const settingsGroups = [
     title: '个人设置',
     links: [
       { name: '账户信息', to: '/settings/account', icon: User },
-      // { name: 'API 密钥', to: '/settings/api-keys' }, // Planned
     ],
   },
 ];
 
 const SettingsLayout: React.FC = () => {
-  const baseLinkClass = "flex items-center px-3 py-2 text-slate-700 rounded-md text-sm font-medium";
-  const activeLinkClass = "bg-slate-200";
-  const inactiveLinkClass = "hover:bg-slate-100";
+  const location = useLocation();
 
   return (
-    <div className="container mx-auto p-4 flex space-x-8">
-      <aside className="w-1/4 lg:w-1/5 xl:w-1/6 flex-shrink-0">
-        <nav className="flex flex-col space-y-4">
+    <div className="grid md:grid-cols-[220px_1fr] lg:grid-cols-[280px_1fr] gap-8 items-start">
+      <aside className="hidden md:flex flex-col gap-4">
+        <nav className="grid gap-2 text-sm text-muted-foreground">
           {settingsGroups.map((group) => (
             <div key={group.title}>
-              <h3 className="px-3 text-xs font-semibold uppercase text-slate-500 tracking-wider mb-2">
+              <h3 className="px-4 text-xs font-semibold uppercase text-muted-foreground/80 tracking-wider mb-2">
                 {group.title}
               </h3>
-              <div className="space-y-1">
+              <div className="grid gap-1">
                 {group.links.map((link) => (
-                  <NavLink
+                  <Button
                     key={link.name}
-                    to={link.to}
-                    className={({ isActive }) =>
-                      `${baseLinkClass} ${isActive ? activeLinkClass : inactiveLinkClass}`
-                    }
+                    variant={location.pathname === link.to ? 'secondary' : 'ghost'}
+                    className="w-full justify-start"
+                    asChild
                   >
-                    <link.icon className="mr-3 h-5 w-5 text-slate-500" />
-                    <span>{link.name}</span>
-                  </NavLink>
+                    <NavLink to={link.to}>
+                      <link.icon className="mr-2 h-4 w-4" />
+                      {link.name}
+                    </NavLink>
+                  </Button>
                 ))}
               </div>
             </div>
           ))}
         </nav>
       </aside>
-      <main className="flex-1 bg-white p-6 rounded-lg shadow-md">
+      <main>
         <Outlet />
       </main>
     </div>
