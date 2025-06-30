@@ -104,3 +104,4 @@ $RECYCLE.BIN/
 # Compiled outputs (if any other than standard ones)
 # MyCompiledOutput/
 example/
+frontend/public/locales
