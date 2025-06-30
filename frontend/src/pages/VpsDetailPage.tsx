@@ -417,12 +417,12 @@ const VpsDetailPage: React.FC = () => {
       </Card>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
-        <StatCard title="CPU 使用率" value={metrics?.cpuUsagePercent?.toFixed(1) ?? 'N/A'} unit="%" icon={<Cpu />} valueClassName="text-blue-500" description={vpsDetail.status === 'offline' ? "离线" : `${metadata?.cpu_static_info?.brand || ''}`} />
-        <StatCard title="内存使用率" value={memTotal > 0 ? ((memUsed / memTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<MemoryStick />} valueClassName="text-purple-500" description={vpsDetail.status === 'offline' ? "离线" : `${formatBytes(memUsed)} / ${formatBytes(memTotal)}`} />
-        <StatCard title="磁盘使用率" value={diskTotal > 0 ? ((diskUsed / diskTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<HardDrive />} valueClassName="text-orange-500" description={vpsDetail.status === 'offline' ? "离线" : `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`} />
-        <StatCard title="上传" value={formatNetworkSpeed(metrics?.networkTxInstantBps)} icon={<ArrowUp />} valueClassName="text-green-500" description="当前出站" />
-        <StatCard title="下载" value={formatNetworkSpeed(metrics?.networkRxInstantBps)} icon={<ArrowDown />} valueClassName="text-sky-500" description="当前入站" />
-        <StatCard title="运行时间" value={formatUptime(metrics?.uptimeSeconds)} icon={<AlertTriangle />} valueClassName="text-teal-500" description="当前会话" />
+        <StatCard title="CPU 使用率" value={metrics?.cpuUsagePercent?.toFixed(1) ?? 'N/A'} unit="%" icon={<Cpu />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? "离线" : `${metadata?.cpu_static_info?.brand || ''}`} />
+        <StatCard title="内存使用率" value={memTotal > 0 ? ((memUsed / memTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<MemoryStick />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? "离线" : `${formatBytes(memUsed)} / ${formatBytes(memTotal)}`} />
+        <StatCard title="磁盘使用率" value={diskTotal > 0 ? ((diskUsed / diskTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<HardDrive />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? "离线" : `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`} />
+        <StatCard title="上传" value={formatNetworkSpeed(metrics?.networkTxInstantBps)} icon={<ArrowUp />} valueClassName="text-primary" description="当前出站" />
+        <StatCard title="下载" value={formatNetworkSpeed(metrics?.networkRxInstantBps)} icon={<ArrowDown />} valueClassName="text-primary" description="当前入站" />
+        <StatCard title="运行时间" value={formatUptime(metrics?.uptimeSeconds)} icon={<AlertTriangle />} valueClassName="text-primary" description="当前会话" />
       </div>
 
       {isAuthenticated && vpsDetail.trafficBillingRule && (
@@ -454,7 +454,7 @@ const VpsDetailPage: React.FC = () => {
           </div>
         </CardHeader>
         <CardContent>
-          {chartError && <p className="text-red-500 text-center">{chartError}</p>}
+          {chartError && <p className="text-destructive text-center">{chartError}</p>}
           {loadingChartMetrics ? <div className="h-72 flex justify-center items-center"><p>正在加载图表...</p></div> : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
               <ChartComponent title="CPU 使用率 (%)" data={cpuData} dataKey="cpuUsagePercent" stroke="#8884d8" yDomain={[0, 100]} />
@@ -475,7 +475,7 @@ const VpsDetailPage: React.FC = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {monitorError && <p className="text-red-500 text-center">{monitorError}</p>}
+            {monitorError && <p className="text-destructive text-center">{monitorError}</p>}
             {loadingMonitors ? <div className="h-72 flex justify-center items-center"><p>正在加载监控图表...</p></div> : (
               <ServiceMonitorChartComponent results={monitorResults} />
             )}
@@ -520,7 +520,7 @@ const VpsDetailPage: React.FC = () => {
           </CardHeader>
           <CardContent>
             {dismissReminderError && <p className="text-sm text-destructive bg-destructive/10 p-2 rounded-md mb-4">{dismissReminderError}</p>}
-            {dismissReminderSuccess && <p className="text-sm text-green-600 bg-green-100 p-2 rounded-md mb-4">{dismissReminderSuccess}</p>}
+            {dismissReminderSuccess && <p className="text-sm text-success bg-success/10 p-2 rounded-md mb-4">{dismissReminderSuccess}</p>}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6 text-sm">
               <InfoBlock title="续费周期" value={formatRenewalCycle(vpsDetail.renewalCycle, vpsDetail.renewalCycleCustomDays)} />
               <InfoBlock title="续费价格" value={vpsDetail.renewalPrice != null ? `${vpsDetail.renewalPrice} ${vpsDetail.renewalCurrency || ''}`.trim() : '未设置'} />

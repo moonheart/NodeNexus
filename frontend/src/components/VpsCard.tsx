@@ -128,7 +128,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server }) => {
                 label="续费"
                 value={renewalInfo.progressPercent}
                 usageText={renewalInfo.statusText}
-                iconClassName={renewalInfo.variant === 'destructive' ? 'text-red-500' : 'text-blue-500'}
+                iconClassName={`text-${renewalInfo.variant}`}
               />
           )}
         </CardContent>

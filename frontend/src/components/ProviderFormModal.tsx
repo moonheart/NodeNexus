@@ -110,15 +110,15 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ isOpen, onClose, 
             {/* Left Column */}
             <div className="space-y-4">
               <div>
-                <Label htmlFor="provider_name">Provider Name <span className="text-red-500">*</span></Label>
+                <Label htmlFor="provider_name">Provider Name <span className="text-destructive">*</span></Label>
                 <Controller name="provider_name" control={control} render={({ field }) => <Input id="provider_name" {...field} disabled={isEditing} />} />
               </div>
               <div>
-                <Label htmlFor="client_id">Client ID <span className="text-red-500">*</span></Label>
+                <Label htmlFor="client_id">Client ID <span className="text-destructive">*</span></Label>
                 <Controller name="client_id" control={control} render={({ field }) => <Input id="client_id" {...field} />} />
               </div>
               <div>
-                <Label htmlFor="client_secret">Client Secret {!isEditing && <span className="text-red-500">*</span>}</Label>
+                <Label htmlFor="client_secret">Client Secret {!isEditing && <span className="text-destructive">*</span>}</Label>
                 <Controller name="client_secret" control={control} render={({ field }) => <Input id="client_secret" type="password" placeholder={isEditing ? 'Leave blank to keep unchanged' : ''} {...field} />} />
               </div>
               <div>

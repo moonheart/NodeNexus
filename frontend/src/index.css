@@ -4,13 +4,7 @@
 @custom-variant dark (&:is(.dark *));
 
 @layer base {
-  html {
-    @apply overflow-y-scroll;
-  }
 
-  body[data-scroll-locked] {
-    margin-right: 0 !important;
-  }
 }
 :root {
   --background: oklch(0.9821 0 0);
@@ -29,6 +23,8 @@
   --accent-foreground: oklch(0.2435 0 0);
   --destructive: oklch(0.6271 0.1936 33.3390);
   --destructive-foreground: oklch(1.0000 0 0);
+  --success: oklch(0.65 0.2 150);
+  --warning: oklch(0.8 0.2 90);
   --border: oklch(0.8822 0 0);
   --input: oklch(0.8822 0 0);
   --ring: oklch(0.4341 0.0392 41.9938);
@@ -76,6 +72,8 @@
   --accent-foreground: oklch(0.9491 0 0);
   --destructive: oklch(0.6271 0.1936 33.3390);
   --destructive-foreground: oklch(1.0000 0 0);
+  --success: oklch(0.7 0.2 150);
+  --warning: oklch(0.85 0.2 90);
   --border: oklch(0.2351 0.0115 91.7467);
   --input: oklch(0.4017 0 0);
   --ring: oklch(0.9247 0.0524 66.1732);
@@ -123,6 +121,8 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

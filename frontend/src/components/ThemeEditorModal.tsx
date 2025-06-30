@@ -22,13 +22,17 @@ interface ThemeEditorModalProps {
 }
 
 const NEW_THEME_PLACEHOLDER = `:root {
-  /* Light mode variables here */
-  --background: oklch(1 0 0);
+  /* Paste your light mode theme here */
+  /* ... all your other variables */
+  --success: oklch(0.65 0.2 150);
+  --warning: oklch(0.8 0.2 90);
 }
 
 .dark {
-  /* Dark mode variables here */
-  --background: oklch(0.145 0 0);
+  /* Paste your dark mode theme here */
+  /* ... all your other variables */
+  --success: oklch(0.7 0.2 150);
+  --warning: oklch(0.85 0.2 90);
 }
 `;
 

@@ -131,7 +131,7 @@ const NotificationsPage: React.FC = () => {
     }
 
     if (error) {
-        return <div className="container mx-auto p-4 text-red-500">Error: {error}</div>;
+        return <div className="container mx-auto p-4 text-destructive">Error: {error}</div>;
     }
 
     return (

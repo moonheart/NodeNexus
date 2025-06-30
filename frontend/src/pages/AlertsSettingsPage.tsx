@@ -112,7 +112,7 @@ const AlertsSettingsPage: React.FC = () => {
     }
 
     if (error) {
-        return <div className="container mx-auto p-4 text-red-500">Error loading alert rules: {error}</div>;
+        return <div className="container mx-auto p-4 text-destructive">Error loading alert rules: {error}</div>;
     }
 
     return (

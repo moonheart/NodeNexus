@@ -204,7 +204,7 @@ const ServerManagementPage: React.FC = () => {
             <EditVpsModal isOpen={isEditModalOpen} onClose={handleCloseEditModal} vps={editingVps} allVps={vpsList} onVpsUpdated={handleVpsUpdated} />
             <CopyCommandModal isOpen={isCopyCommandModalOpen} onClose={handleCloseCopyCommandModal} vps={vpsForCommand} />
 
-            {statusMessage && <div className={`p-3 rounded-md text-sm text-center ${connectionStatus === 'error' || connectionStatus === 'permanently_failed' ? 'bg-destructive/10 text-destructive' : 'bg-yellow-100 text-yellow-800'}`}>{statusMessage}</div>}
+            {statusMessage && <div className={`p-3 rounded-md text-sm text-center ${connectionStatus === 'error' || connectionStatus === 'permanently_failed' ? 'bg-destructive/10 text-destructive' : 'bg-warning text-warning'}`}>{statusMessage}</div>}
 
             <Card>
                 <CardHeader>

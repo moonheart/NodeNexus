@@ -134,7 +134,7 @@ const ThemeSettingsPage = () => {
   };
 
   if (loading) return <div>Loading theme settings...</div>;
-  if (error) return <div className="text-red-500">Error: {error}</div>;
+  if (error) return <div className="text-destructive">Error: {error}</div>;
 
   return (
     <div className="space-y-6">
@@ -197,7 +197,7 @@ const ThemeSettingsPage = () => {
                   <TableCell className="text-right">
                     <Button variant="ghost" size="sm" onClick={() => { setEditingTheme(theme); setIsModalOpen(true); }}>Edit</Button>
                     {theme.id !== 'default' && (
-                      <Button variant="ghost" size="sm" className="text-red-500" onClick={() => setThemeToDelete(theme)}>Delete</Button>
+                      <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setThemeToDelete(theme)}>Delete</Button>
                     )}
                   </TableCell>
                 </TableRow>

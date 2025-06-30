@@ -192,7 +192,7 @@ const AdminOAuthProvidersPage: React.FC = () => {
                                                         <Edit className="mr-2 h-4 w-4" />
                                                         <span>Edit</span>
                                                     </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => handleDeleteProvider(provider.provider_name)} className="text-red-600 focus:text-red-600">
+                                                    <DropdownMenuItem onClick={() => handleDeleteProvider(provider.provider_name)} className="text-destructive focus:text-destructive">
                                                         <Trash2 className="mr-2 h-4 w-4" />
                                                         <span>Delete</span>
                                                     </DropdownMenuItem>

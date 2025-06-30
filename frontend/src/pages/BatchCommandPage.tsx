@@ -417,11 +417,11 @@ const BatchCommandPage: React.FC = () => {
                                                 if (!data) {
                                                     return (
                                                         <details key={vpsId} className="mb-2">
-                                                            <summary className="cursor-pointer font-semibold text-muted-foreground">{vpsName} - <span className="text-yellow-400">Pending...</span></summary>
+                                                            <summary className="cursor-pointer font-semibold text-muted-foreground">{vpsName} - <span className="text-warning">Pending...</span></summary>
                                                         </details>
                                                     );
                                                 }
-                                                const statusColor = data.status.toLowerCase().includes('success') || (data.exitCode === 0) ? 'text-green-400' : data.status.toLowerCase().includes('fail') || (typeof data.exitCode === 'number' && data.exitCode > 0) ? 'text-red-400' : 'text-yellow-400';
+                                                const statusColor = data.status.toLowerCase().includes('success') || (data.exitCode === 0) ? 'text-success' : data.status.toLowerCase().includes('fail') || (typeof data.exitCode === 'number' && data.exitCode > 0) ? 'text-destructive' : 'text-warning';
                                                 return (
                                                     <details key={vpsId} className="mb-2" open>
                                                         <summary className="cursor-pointer font-semibold">{data.name} - <span className={statusColor}>{data.status} (Exit: {data.exitCode ?? 'N/A'})</span></summary>

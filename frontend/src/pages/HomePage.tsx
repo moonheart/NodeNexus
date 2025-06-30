@@ -37,12 +37,12 @@ const selectHomePageData = (state: ServerListState): HomePageStateSlice => ({
 });
 
 const statusColorMap: Record<ServerStatusType, string> = {
-  [STATUS_ONLINE]: 'text-green-500',
-  [STATUS_OFFLINE]: 'text-red-500',
-  [STATUS_REBOOTING]: 'text-yellow-500',
-  [STATUS_PROVISIONING]: 'text-blue-500',
-  [STATUS_ERROR]: 'text-red-700',
-  [STATUS_UNKNOWN]: 'text-slate-500',
+  [STATUS_ONLINE]: 'text-success',
+  [STATUS_OFFLINE]: 'text-destructive',
+  [STATUS_REBOOTING]: 'text-warning',
+  [STATUS_PROVISIONING]: 'text-secondary',
+  [STATUS_ERROR]: 'text-destructive',
+  [STATUS_UNKNOWN]: 'text-muted',
 };
 
 const HomePage: React.FC = () => {
