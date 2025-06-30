@@ -53,5 +53,17 @@
       "updateLanguageSuccess": "语言更新成功！",
       "updateLanguageError": "更新语言失败。"
     }
+  },
+  "themeSettings": {
+    "editor": {
+      "viewTitle": "查看主题",
+      "editTitle": "编辑主题",
+      "createTitle": "创建新主题",
+      "readOnlyDescription": "默认主题无法编辑。您可以复制其配置以创建新的自定义主题。",
+      "description": "通过提供名称以及浅色 (:root) 和深色 (.dark) 模式的完整 CSS 来定义您的主题。您可以使用 <1>主题生成器</1> 来创建新主题。",
+      "nameLabel": "名称",
+      "cssLabel": "主题 CSS",
+      "saveButton": "保存主题"
+    }
   }
 }

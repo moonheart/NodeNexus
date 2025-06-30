@@ -42,6 +42,7 @@ interface ThemeProviderState {
   activeThemeId: string;
   setActiveThemeId: (themeId: string) => void;
   reloadTheme: () => void;
+  resolvedTheme: 'light' | 'dark';
 }
 
 const ThemeProviderContext = createContext<ThemeProviderState | undefined>(undefined);
@@ -54,6 +55,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   );
   const [activeThemeId, setActiveThemeIdState] = useState<string>('default');
   const [triggerReload, setTriggerReload] = useState(0);
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(getSystemTheme());
 
   const reloadTheme = useCallback(() => setTriggerReload(v => v + 1), []);
 
@@ -63,7 +65,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     const handleSystemThemeChange = () => {
       if (themeMode === 'system') {
-        updateThemeClass(getSystemTheme());
+        const newResolvedTheme = getSystemTheme();
+        updateThemeClass(newResolvedTheme);
+        setResolvedTheme(newResolvedTheme);
       }
     };
 
@@ -73,6 +77,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // Determine and apply light/dark mode
     const currentMode = themeMode === 'system' ? getSystemTheme() : themeMode;
     updateThemeClass(currentMode);
+    setResolvedTheme(currentMode);
 
     // Fetch and apply user's selected theme if logged in
     const applyUserTheme = async () => {
@@ -89,6 +94,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         
         const settings: UserThemeSettings = await settingsRes.json();
         if (!isMounted) return;
+
+        // Sync with backend state on load
+        if (settings.theme_mode && settings.theme_mode !== themeMode) {
+          setThemeModeState(settings.theme_mode);
+          // Also update localStorage to be in sync
+          localStorage.setItem(GUEST_THEME_STORAGE_KEY, settings.theme_mode);
+        }
 
         const themeIdToApply = settings.active_theme_id || 'default';
         setActiveThemeIdState(themeIdToApply);
@@ -122,9 +134,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const setThemeMode = useCallback(async (mode: ThemeMode) => {
     setThemeModeState(mode);
-    if (!token) {
-      localStorage.setItem(GUEST_THEME_STORAGE_KEY, mode);
-    } else {
+    localStorage.setItem(GUEST_THEME_STORAGE_KEY, mode);
+    if (token) {
       try {
         await fetch('/api/user/theme-settings', {
           method: 'PUT',
@@ -153,7 +164,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [token, reloadTheme]);
 
-  const value = { themeMode, setThemeMode, activeThemeId, setActiveThemeId, reloadTheme };
+  const value = { themeMode, setThemeMode, activeThemeId, setActiveThemeId, reloadTheme, resolvedTheme };
 
   return (
     <ThemeProviderContext.Provider value={value}>

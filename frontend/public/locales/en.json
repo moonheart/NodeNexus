@@ -53,5 +53,17 @@
       "updateLanguageSuccess": "Language updated successfully!",
       "updateLanguageError": "Failed to update language."
     }
+  },
+  "themeSettings": {
+    "editor": {
+      "viewTitle": "View Theme",
+      "editTitle": "Edit Theme",
+      "createTitle": "Create New Theme",
+      "readOnlyDescription": "The default theme cannot be edited. You can duplicate its configuration to create a new custom theme.",
+      "description": "Define your theme by providing a name and the full CSS for both light (:root) and dark (.dark) modes. You can use the <1>Theme Generator</1> to create a new theme.",
+      "nameLabel": "Name",
+      "cssLabel": "Theme CSS",
+      "saveButton": "Save Theme"
+    }
   }
 }
