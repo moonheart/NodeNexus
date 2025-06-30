@@ -55,6 +55,48 @@
     }
   },
   "themeSettings": {
+    "title": "外观设置",
+    "mode": "外观模式",
+    "modes": {
+      "light": "浅色",
+      "dark": "深色",
+      "system": "系统"
+    },
+    "theme": "主题",
+    "saveButton": "保存设置",
+    "libraryTitle": "主题库",
+    "createButton": "创建新主题",
+    "table": {
+      "name": "名称",
+      "actions": "操作"
+    },
+    "actions": {
+      "edit": "编辑",
+      "delete": "删除"
+    },
+    "deleteDialog": {
+      "title": "确定吗？",
+      "description": "此操作无法撤销。这将永久删除主题 \"%{themeName}\"。",
+      "confirm": "继续"
+    },
+    "notifications": {
+      "settingsSaved": "设置已成功保存！",
+      "themeSaved": "主题已成功%{status}！",
+      "themeDeleted": "主题已成功删除！"
+    },
+    "status": {
+      "created": "创建",
+      "updated": "更新"
+    },
+    "errors": {
+      "fetchFailed": "无法获取主题数据。",
+      "unknown": "发生未知错误。",
+      "saveFailed": "无法保存设置。",
+      "saveThemeFailed": "无法保存主题。",
+      "deleteFailed": "无法删除主题。"
+    },
+    "loading": "正在加载主题设置...",
+    "error": "错误: %{error}",
     "editor": {
       "viewTitle": "查看主题",
       "editTitle": "编辑主题",
@@ -63,7 +105,59 @@
       "description": "通过提供名称以及浅色 (:root) 和深色 (.dark) 模式的完整 CSS 来定义您的主题。您可以使用 <1>主题生成器</1> 来创建新主题。",
       "nameLabel": "名称",
       "cssLabel": "主题 CSS",
-      "saveButton": "保存主题"
+      "saveButton": "保存主题",
+      "themeGenerator": "主题生成器",
+      "createMessage": "创建或编辑主题。使用辅助按钮获取有关 CSS 变量的帮助。"
+    }
+  },
+  "scriptManagement": {
+    "title": "脚本管理",
+    "addNew": "添加新脚本",
+    "searchPlaceholder": "按名称搜索...",
+    "loading": "正在加载脚本...",
+    "error": "错误: %{error}",
+    "empty": {
+      "title": "未找到脚本",
+      "description": "从创建一个新脚本开始。",
+      "newButton": "新脚本"
+    },
+    "table": {
+      "name": "名称",
+      "description": "描述",
+      "language": "语言",
+      "actions": "操作"
+    },
+    "actions": {
+      "openMenu": "打开菜单",
+      "edit": "编辑",
+      "delete": "删除"
+    },
+    "deleteDialog": {
+      "title": "确定吗？",
+      "description": "此操作无法撤销。这将永久删除该脚本。"
+    },
+    "notifications": {
+      "fetchFailed": "获取脚本失败: %{error}",
+      "deleted": "脚本删除成功！",
+      "deleteFailed": "删除脚本失败: %{error}",
+      "updated": "脚本更新成功！",
+      "created": "脚本创建成功！",
+      "saveFailed": "保存脚本失败: %{error}"
+    },
+    "form": {
+      "editTitle": "编辑脚本",
+      "createTitle": "创建新脚本",
+      "description": "请填写以下命令脚本的详细信息。",
+      "nameLabel": "名称",
+      "descriptionLabel": "描述",
+      "languageLabel": "语言",
+      "languagePlaceholder": "选择语言",
+      "languages": {
+        "shell": "Shell",
+        "powershell": "PowerShell"
+      },
+      "workingDirectoryLabel": "工作目录",
+      "contentLabel": "脚本内容"
     }
   }
 }

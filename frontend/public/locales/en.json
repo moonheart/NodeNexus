@@ -55,6 +55,48 @@
     }
   },
   "themeSettings": {
+    "title": "Appearance Settings",
+    "mode": "Appearance Mode",
+    "modes": {
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    },
+    "theme": "Theme",
+    "saveButton": "Save Settings",
+    "libraryTitle": "Theme Library",
+    "createButton": "Create New Theme",
+    "table": {
+      "name": "Name",
+      "actions": "Actions"
+    },
+    "actions": {
+      "edit": "Edit",
+      "delete": "Delete"
+    },
+    "deleteDialog": {
+      "title": "Are you sure?",
+      "description": "This action cannot be undone. This will permanently delete the theme \"%{themeName}\".",
+      "confirm": "Continue"
+    },
+    "notifications": {
+      "settingsSaved": "Settings saved successfully!",
+      "themeSaved": "Theme %{status} successfully!",
+      "themeDeleted": "Theme deleted successfully!"
+    },
+    "status": {
+      "created": "created",
+      "updated": "updated"
+    },
+    "errors": {
+      "fetchFailed": "Failed to fetch theme data.",
+      "unknown": "An unknown error occurred.",
+      "saveFailed": "Failed to save settings.",
+      "saveThemeFailed": "Failed to save theme.",
+      "deleteFailed": "Failed to delete theme."
+    },
+    "loading": "Loading theme settings...",
+    "error": "Error: %{error}",
     "editor": {
       "viewTitle": "View Theme",
       "editTitle": "Edit Theme",
@@ -63,7 +105,59 @@
       "description": "Define your theme by providing a name and the full CSS for both light (:root) and dark (.dark) modes. You can use the <1>Theme Generator</1> to create a new theme.",
       "nameLabel": "Name",
       "cssLabel": "Theme CSS",
-      "saveButton": "Save Theme"
+      "saveButton": "Save Theme",
+      "themeGenerator": "Theme Generator",
+      "createMessage": "Create or edit a theme. Use the helper button for assistance with CSS variables."
+    }
+  },
+  "scriptManagement": {
+    "title": "Script Management",
+    "addNew": "Add New Script",
+    "searchPlaceholder": "Search by name...",
+    "loading": "Loading scripts...",
+    "error": "Error: %{error}",
+    "empty": {
+      "title": "No scripts found",
+      "description": "Get started by creating a new script.",
+      "newButton": "New Script"
+    },
+    "table": {
+      "name": "Name",
+      "description": "Description",
+      "language": "Language",
+      "actions": "Actions"
+    },
+    "actions": {
+      "openMenu": "Open menu",
+      "edit": "Edit",
+      "delete": "Delete"
+    },
+    "deleteDialog": {
+      "title": "Are you sure?",
+      "description": "This action cannot be undone. This will permanently delete the script."
+    },
+    "notifications": {
+      "fetchFailed": "Failed to fetch scripts: %{error}",
+      "deleted": "Script deleted successfully!",
+      "deleteFailed": "Failed to delete script: %{error}",
+      "updated": "Script updated successfully!",
+      "created": "Script created successfully!",
+      "saveFailed": "Failed to save script: %{error}"
+    },
+    "form": {
+      "editTitle": "Edit Script",
+      "createTitle": "Create New Script",
+      "description": "Fill in the details for your command script below.",
+      "nameLabel": "Name",
+      "descriptionLabel": "Description",
+      "languageLabel": "Language",
+      "languagePlaceholder": "Select language",
+      "languages": {
+        "shell": "Shell",
+        "powershell": "PowerShell"
+      },
+      "workingDirectoryLabel": "Working Directory",
+      "contentLabel": "Script Content"
     }
   }
 }

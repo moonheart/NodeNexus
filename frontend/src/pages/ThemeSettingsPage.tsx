@@ -8,6 +8,7 @@ import { useAuthStore } from "@/store/authStore";
 import ThemeEditorModal from "@/components/ThemeEditorModal";
 import { useTheme } from "@/components/ThemeProvider";
 import { builtInThemes, type Theme } from "@/lib/themes";
+import { useTranslation } from "react-i18next";
 
 // Updated types to match the new system
 export interface UserThemeSettings {
@@ -16,6 +17,7 @@ export interface UserThemeSettings {
 }
 
 const ThemeSettingsPage = () => {
+  const { t } = useTranslation();
   const [userThemes, setUserThemes] = useState<Theme[]>([]);
   const [settings, setSettings] = useState<UserThemeSettings | null>(null);
   const [themeToDelete, setThemeToDelete] = useState<Theme | null>(null);
@@ -41,7 +43,7 @@ const ThemeSettingsPage = () => {
         ]);
 
         if (!themesResponse.ok || !settingsResponse.ok) {
-          throw new Error('Failed to fetch theme data.');
+          throw new Error(t('themeSettings.errors.fetchFailed'));
         }
 
         const themesData: Theme[] = await themesResponse.json();
@@ -53,14 +55,14 @@ const ThemeSettingsPage = () => {
           active_theme_id: settingsData.active_theme_id || 'default',
         });
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : "An unknown error occurred.");
+        setError(err instanceof Error ? err.message : t('themeSettings.errors.unknown'));
       } finally {
         setLoading(false);
       }
     };
 
     fetchData();
-  }, [token]);
+  }, [token, t]);
 
   const handleSaveSettings = async () => {
     if (!settings) return;
@@ -73,9 +75,9 @@ const ThemeSettingsPage = () => {
       // Apply changes immediately via context
       setThemeMode(settings.theme_mode);
       setActiveThemeId(settings.active_theme_id || 'default');
-      alert('Settings saved successfully!');
+      alert(t('themeSettings.notifications.settingsSaved'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save settings.");
+      setError(err instanceof Error ? err.message : t('themeSettings.errors.saveFailed'));
     }
   };
 
@@ -93,7 +95,7 @@ const ThemeSettingsPage = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || `Failed to save theme.`);
+        throw new Error(errorData.message || t('themeSettings.errors.saveThemeFailed'));
       }
 
       const savedTheme: Theme = await response.json();
@@ -106,10 +108,10 @@ const ThemeSettingsPage = () => {
 
       setIsModalOpen(false);
       setEditingTheme(null);
-      alert(`Theme ${isUpdating ? 'updated' : 'created'} successfully!`);
+      alert(t('themeSettings.notifications.themeSaved', { status: isUpdating ? t('themeSettings.status.updated') : t('themeSettings.status.created') }));
       reloadTheme();
     } catch (err) {
-      setError(err instanceof Error ? err.message : `An unknown error occurred.`);
+      setError(err instanceof Error ? err.message : t('themeSettings.errors.unknown'));
     }
   };
 
@@ -122,43 +124,43 @@ const ThemeSettingsPage = () => {
       });
       setUserThemes(userThemes.filter(t => t.id !== themeToDelete.id));
       setThemeToDelete(null);
-      alert('Theme deleted successfully!');
+      alert(t('themeSettings.notifications.themeDeleted'));
       // If the deleted theme was active, switch to default
       if (activeThemeId === themeToDelete.id) {
         setActiveThemeId('default');
       }
       reloadTheme();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete theme.");
+      setError(err instanceof Error ? err.message : t('themeSettings.errors.deleteFailed'));
     }
   };
 
-  if (loading) return <div>Loading theme settings...</div>;
-  if (error) return <div className="text-destructive">Error: {error}</div>;
+  if (loading) return <div>{t('themeSettings.loading')}</div>;
+  if (error) return <div className="text-destructive">{t('themeSettings.error', { error: error })}</div>;
 
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader><CardTitle>Appearance Settings</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('themeSettings.title')}</CardTitle></CardHeader>
         <CardContent>
           {settings && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">Appearance Mode</label>
+                <label className="text-sm font-medium">{t('themeSettings.mode')}</label>
                 <Select
                   value={themeMode}
                   onValueChange={(value) => setThemeMode(value as UserThemeSettings['theme_mode'])}
                 >
                   <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="light">Light</SelectItem>
-                    <SelectItem value="dark">Dark</SelectItem>
-                    <SelectItem value="system">System</SelectItem>
+                    <SelectItem value="light">{t('themeSettings.modes.light')}</SelectItem>
+                    <SelectItem value="dark">{t('themeSettings.modes.dark')}</SelectItem>
+                    <SelectItem value="system">{t('themeSettings.modes.system')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">Theme</label>
+                <label className="text-sm font-medium">{t('themeSettings.theme')}</label>
                 <Select
                   value={activeThemeId}
                   onValueChange={(value) => setActiveThemeId(value)}
@@ -171,7 +173,7 @@ const ThemeSettingsPage = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <Button onClick={handleSaveSettings}>Save Settings</Button>
+              <Button onClick={handleSaveSettings}>{t('themeSettings.saveButton')}</Button>
             </div>
           )}
         </CardContent>
@@ -179,15 +181,15 @@ const ThemeSettingsPage = () => {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Theme Library</CardTitle>
-          <Button onClick={() => { setEditingTheme(null); setIsModalOpen(true); }}>Create New Theme</Button>
+          <CardTitle>{t('themeSettings.libraryTitle')}</CardTitle>
+          <Button onClick={() => { setEditingTheme(null); setIsModalOpen(true); }}>{t('themeSettings.createButton')}</Button>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>{t('themeSettings.table.name')}</TableHead>
+                <TableHead className="text-right">{t('themeSettings.table.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -195,9 +197,9 @@ const ThemeSettingsPage = () => {
                 <TableRow key={theme.id}>
                   <TableCell>{theme.name}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" onClick={() => { setEditingTheme(theme); setIsModalOpen(true); }}>Edit</Button>
+                    <Button variant="ghost" size="sm" onClick={() => { setEditingTheme(theme); setIsModalOpen(true); }}>{t('themeSettings.actions.edit')}</Button>
                     {theme.id !== 'default' && (
-                      <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setThemeToDelete(theme)}>Delete</Button>
+                      <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setThemeToDelete(theme)}>{t('themeSettings.actions.delete')}</Button>
                     )}
                   </TableCell>
                 </TableRow>
@@ -210,14 +212,14 @@ const ThemeSettingsPage = () => {
       <AlertDialog open={!!themeToDelete} onOpenChange={(open) => !open && setThemeToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogTitle>{t('themeSettings.deleteDialog.title')}</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the theme "{themeToDelete?.name}".
+              {t('themeSettings.deleteDialog.description', { themeName: themeToDelete?.name })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteTheme}>Continue</AlertDialogAction>
+            <AlertDialogCancel>{t('buttons.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteTheme}>{t('themeSettings.deleteDialog.confirm')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

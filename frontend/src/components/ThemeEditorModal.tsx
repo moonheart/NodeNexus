@@ -9,11 +9,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Editor } from '@monaco-editor/react';
 import { useTheme } from "@/components/ThemeProvider";
 import type { Theme } from "@/lib/themes";
-import { Trans, useTranslation } from "react-i18next";
+import { useTranslation } from "react-i18next";
 
 interface ThemeEditorModalProps {
   theme: Theme | null;
@@ -192,19 +193,7 @@ const ThemeEditorModal = ({ theme, isOpen, onClose, onSave }: ThemeEditorModalPr
           <DialogDescription>
             {isReadOnly
               ? t("themeSettings.editor.readOnlyDescription")
-              : (
-                <Trans
-                  i18nKey="themeSettings.editor.description"
-                  components={[
-                    <a
-                      href="https://tweakcn.com/editor/theme"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary underline"
-                    />,
-                  ]}
-                />
-              )}
+              : t("themeSettings.editor.createMessage")}
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4 py-4 flex-grow overflow-y-auto pr-6">
@@ -213,6 +202,14 @@ const ThemeEditorModal = ({ theme, isOpen, onClose, onSave }: ThemeEditorModalPr
               {t("themeSettings.editor.nameLabel")}
             </Label>
             <Input id="name" value={name} onChange={(e) => setName(e.target.value)} className="flex-1" disabled={isReadOnly} />
+            {!isReadOnly && (
+              <Button variant="outline" asChild>
+                <a href="https://tweakcn.com/editor/theme" target="_blank" rel="noopener noreferrer" className="flex items-center">
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  {t('themeSettings.editor.themeGenerator')}
+                </a>
+              </Button>
+            )}
           </div>
           <div className="flex flex-col gap-2 flex-grow min-h-0">
             <Label htmlFor="config">

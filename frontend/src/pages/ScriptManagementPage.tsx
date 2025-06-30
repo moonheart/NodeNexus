@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 import { scriptService, type CommandScript, type ScriptPayload } from '../services/scriptService';
 import ScriptFormModal from '../components/ScriptFormModal';
 import { Plus, Search, MoreHorizontal } from 'lucide-react';
@@ -26,6 +27,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const ScriptManagementPage: React.FC = () => {
+    const { t } = useTranslation();
     const [scripts, setScripts] = useState<CommandScript[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -44,7 +46,7 @@ const ScriptManagementPage: React.FC = () => {
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
             setError(errorMessage);
-            toast.error(`Failed to fetch scripts: ${errorMessage}`);
+            toast.error(t('scriptManagement.notifications.fetchFailed', { error: errorMessage }));
         } finally {
             setLoading(false);
         }
@@ -73,11 +75,11 @@ const ScriptManagementPage: React.FC = () => {
         if (scriptToDelete === null) return;
         try {
             await scriptService.deleteScript(scriptToDelete);
-            toast.success('Script deleted successfully!');
+            toast.success(t('scriptManagement.notifications.deleted'));
             fetchScripts();
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-            toast.error(`Failed to delete script: ${errorMessage}`);
+            toast.error(t('scriptManagement.notifications.deleteFailed', { error: errorMessage }));
         } finally {
             setIsAlertOpen(false);
             setScriptToDelete(null);
@@ -88,16 +90,16 @@ const ScriptManagementPage: React.FC = () => {
         try {
             if (editingScript) {
                 await scriptService.updateScript(editingScript.id, data);
-                toast.success('Script updated successfully!');
+                toast.success(t('scriptManagement.notifications.updated'));
             } else {
                 await scriptService.createScript(data);
-                toast.success('Script created successfully!');
+                toast.success(t('scriptManagement.notifications.created'));
             }
             setIsModalOpen(false);
             fetchScripts();
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-            toast.error(`Failed to save script: ${errorMessage}`);
+            toast.error(t('scriptManagement.notifications.saveFailed', { error: errorMessage }));
         }
     };
 
@@ -108,18 +110,18 @@ const ScriptManagementPage: React.FC = () => {
     }, [scripts, searchQuery]);
 
     const renderContent = () => {
-        if (loading) return <p>Loading scripts...</p>;
-        if (error) return <p className="text-destructive">Error: {error}</p>;
+        if (loading) return <p>{t('scriptManagement.loading')}</p>;
+        if (error) return <p className="text-destructive">{t('scriptManagement.error', { error })}</p>;
 
         if (scripts.length === 0) {
             return (
                 <div className="text-center py-10">
-                    <h3 className="text-lg font-medium">No scripts found</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">Get started by creating a new script.</p>
+                    <h3 className="text-lg font-medium">{t('scriptManagement.empty.title')}</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">{t('scriptManagement.empty.description')}</p>
                     <div className="mt-6">
                         <Button onClick={handleAdd}>
                             <Plus className="-ml-1 mr-2 h-5 w-5" />
-                            New Script
+                            {t('scriptManagement.empty.newButton')}
                         </Button>
                     </div>
                 </div>
@@ -132,10 +134,10 @@ const ScriptManagementPage: React.FC = () => {
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>Name</TableHead>
-                                <TableHead>Description</TableHead>
-                                <TableHead>Language</TableHead>
-                                <TableHead><span className="sr-only">Actions</span></TableHead>
+                                <TableHead>{t('scriptManagement.table.name')}</TableHead>
+                                <TableHead>{t('scriptManagement.table.description')}</TableHead>
+                                <TableHead>{t('scriptManagement.table.language')}</TableHead>
+                                <TableHead><span className="sr-only">{t('scriptManagement.table.actions')}</span></TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -152,13 +154,13 @@ const ScriptManagementPage: React.FC = () => {
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
                                                 <Button variant="ghost" className="h-8 w-8 p-0">
-                                                    <span className="sr-only">Open menu</span>
+                                                    <span className="sr-only">{t('scriptManagement.actions.openMenu')}</span>
                                                     <MoreHorizontal className="h-4 w-4" />
                                                 </Button>
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="end">
-                                                <DropdownMenuItem onClick={() => handleEdit(script)}>Edit</DropdownMenuItem>
-                                                <DropdownMenuItem onClick={() => confirmDelete(script.id)} className="text-destructive">Delete</DropdownMenuItem>
+                                                <DropdownMenuItem onClick={() => handleEdit(script)}>{t('scriptManagement.actions.edit')}</DropdownMenuItem>
+                                                <DropdownMenuItem onClick={() => confirmDelete(script.id)} className="text-destructive">{t('scriptManagement.actions.delete')}</DropdownMenuItem>
                                             </DropdownMenuContent>
                                         </DropdownMenu>
                                     </TableCell>
@@ -174,9 +176,9 @@ const ScriptManagementPage: React.FC = () => {
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
-                <h1 className="text-2xl font-bold">Script Management</h1>
+                <h1 className="text-2xl font-bold">{t('scriptManagement.title')}</h1>
                 {scripts.length > 0 && (
-                    <Button onClick={handleAdd}>Add New Script</Button>
+                    <Button onClick={handleAdd}>{t('scriptManagement.addNew')}</Button>
                 )}
             </div>
 
@@ -185,7 +187,7 @@ const ScriptManagementPage: React.FC = () => {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                     <Input
                         type="search"
-                        placeholder="Search by name..."
+                        placeholder={t('scriptManagement.searchPlaceholder')}
                         className="pl-10"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -205,14 +207,14 @@ const ScriptManagementPage: React.FC = () => {
             <AlertDialog open={isAlertOpen} onOpenChange={setIsAlertOpen}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
-                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                        <AlertDialogTitle>{t('scriptManagement.deleteDialog.title')}</AlertDialogTitle>
                         <AlertDialogDescription>
-                            This action cannot be undone. This will permanently delete the script.
+                            {t('scriptManagement.deleteDialog.description')}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                        <AlertDialogCancel>{t('buttons.cancel')}</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDelete}>{t('scriptManagement.actions.delete')}</AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
