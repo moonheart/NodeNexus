@@ -24,7 +24,7 @@ const Navbar: React.FC = () => {
           <div className="flex-shrink-0">
             <Link to="/" className="flex items-center space-x-2">
               <ServerIcon className="h-8 w-8 text-primary" />
-              <span className="text-xl font-semibold text-foreground">VPS Monitor</span>
+              <span className="text-xl font-semibold text-foreground">NodeNexus</span>
             </Link>
           </div>
           <nav className="hidden items-center space-x-1 md:flex">

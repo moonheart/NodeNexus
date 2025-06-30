@@ -1,4 +1,4 @@
-# VPS Monitor & Control Panel
+# NodeNexus
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/moonheart/NodeNexus)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

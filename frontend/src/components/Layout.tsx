@@ -10,7 +10,7 @@ const Layout: React.FC = () => {
         <Outlet />
       </main>
       <footer className="bg-background text-muted-foreground text-center p-4 text-sm mt-8 border-t">
-        © {new Date().getFullYear()} VPS Monitor. All rights reserved.
+        © {new Date().getFullYear()} NodeNexus. All rights reserved.
       </footer>
     </div>
   );
