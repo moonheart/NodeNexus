@@ -8,10 +8,9 @@ pub struct Model {
     pub id: Uuid,
     pub user_id: i32,
     pub name: String,
-    pub r#type: String, // 'type' is a keyword, so we use r#
     pub is_official: bool,
-    #[sea_orm(column_type = "JsonBinary")]
-    pub config: Json,
+    #[sea_orm(column_type = "Text")]
+    pub css: String,
     pub created_at: ChronoDateTimeUtc,
     pub updated_at: ChronoDateTimeUtc,
 }

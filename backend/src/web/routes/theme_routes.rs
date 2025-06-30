@@ -3,18 +3,17 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
-use sea_orm::{DatabaseConnection, EntityTrait};
+use sea_orm::{DatabaseConnection, EntityTrait, ActiveModelTrait, Set, ColumnTrait, QueryFilter, ModelTrait};
 use std::sync::Arc;
 use uuid::Uuid;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     db::entities::{theme, user},
     web::{error::AppError, models::AuthenticatedUser, AppState},
 };
 
-pub fn create_router(db: &DatabaseConnection) -> Router<Arc<AppState>> {
-    // Note: The router setup might need adjustment if AppState is not directly available here.
-    // This assumes AppState is constructed elsewhere and includes the db connection.
+pub fn create_router(_db: &DatabaseConnection) -> Router<Arc<AppState>> {
     Router::new()
         .route("/themes", get(list_themes).post(create_theme))
         .route(
@@ -25,11 +24,7 @@ pub fn create_router(db: &DatabaseConnection) -> Router<Arc<AppState>> {
             "/user/theme-settings",
             get(get_user_theme_settings).put(update_user_theme_settings),
         )
-        // The state should be Arc<AppState> if we follow the pattern
-        // .with_state(db.clone()) // This will likely change
 }
-
-use sea_orm::{ColumnTrait, QueryFilter};
 
 async fn list_themes(
     State(app_state): State<Arc<AppState>>,
@@ -43,14 +38,10 @@ async fn list_themes(
     Ok(Json(themes))
 }
 
-use sea_orm::{ActiveModelTrait, Set};
-
-// DTO for creating a new theme
 #[derive(Deserialize)]
 pub struct CreateThemePayload {
     pub name: String,
-    pub r#type: String,
-    pub config: serde_json::Value,
+    pub css: String,
 }
 
 async fn create_theme(
@@ -64,9 +55,8 @@ async fn create_theme(
         id: Set(Uuid::new_v4()),
         user_id: Set(authenticated_user.id),
         name: Set(payload.name),
-        r#type: Set(payload.r#type),
-        is_official: Set(false), // User-created themes are not official
-        config: Set(payload.config),
+        is_official: Set(false),
+        css: Set(payload.css),
         created_at: Set(chrono::Utc::now()),
         updated_at: Set(chrono::Utc::now()),
     };
@@ -91,12 +81,10 @@ async fn get_theme(
     Ok(Json(theme))
 }
 
-// DTO for updating an existing theme
 #[derive(Deserialize)]
 pub struct UpdateThemePayload {
     pub name: String,
-    pub r#type: String,
-    pub config: serde_json::Value,
+    pub css: String,
 }
 
 async fn update_theme(
@@ -114,18 +102,14 @@ async fn update_theme(
 
     let mut active_model: theme::ActiveModel = theme_to_update.into();
     
-    // Only update fields that are meant to be changed
     active_model.name = Set(payload.name);
-    active_model.r#type = Set(payload.r#type);
-    active_model.config = Set(payload.config);
+    active_model.css = Set(payload.css);
     active_model.updated_at = Set(chrono::Utc::now());
 
     let updated_theme = active_model.update(db).await?;
 
     Ok(Json(updated_theme))
 }
-
-use sea_orm::ModelTrait;
 
 async fn delete_theme(
     State(app_state): State<Arc<AppState>>,
@@ -144,19 +128,13 @@ async fn delete_theme(
     Ok(())
 }
 
-use serde::{Deserialize, Serialize};
-
-// DTO for sending only theme-related settings to the client
 #[derive(Serialize)]
 pub struct UserThemeSettingsDto {
     pub theme_mode: String,
     #[serde(serialize_with = "serialize_uuid_option_as_string")]
-    pub active_light_theme_id: Option<Uuid>,
-    #[serde(serialize_with = "serialize_uuid_option_as_string")]
-    pub active_dark_theme_id: Option<Uuid>,
+    pub active_theme_id: Option<Uuid>,
 }
 
-// Custom serializer for Option<Uuid>
 fn serialize_uuid_option_as_string<S>(uuid_option: &Option<Uuid>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
@@ -179,19 +157,16 @@ async fn get_user_theme_settings(
 
     let settings_dto = UserThemeSettingsDto {
         theme_mode: user.theme_mode,
-        active_light_theme_id: user.active_light_theme_id,
-        active_dark_theme_id: user.active_dark_theme_id,
+        active_theme_id: user.active_theme_id,
     };
 
     Ok(Json(settings_dto))
 }
 
-// DTO for receiving theme settings from the client
 #[derive(Deserialize)]
 pub struct UpdateThemeSettingsPayload {
-    pub theme_mode: String,
-    pub active_light_theme_id: Option<String>,
-    pub active_dark_theme_id: Option<String>,
+    pub theme_mode: Option<String>,
+    pub active_theme_id: Option<String>,
 }
 
 async fn update_user_theme_settings(
@@ -207,20 +182,22 @@ async fn update_user_theme_settings(
 
     let mut active_model: user::ActiveModel = user_to_update.into();
 
-    let light_theme_id = payload.active_light_theme_id.and_then(|id| Uuid::parse_str(&id).ok());
-    let dark_theme_id = payload.active_dark_theme_id.and_then(|id| Uuid::parse_str(&id).ok());
+    if let Some(theme_mode) = payload.theme_mode {
+        active_model.theme_mode = Set(theme_mode);
+    }
 
-    active_model.theme_mode = Set(payload.theme_mode);
-    active_model.active_light_theme_id = Set(light_theme_id);
-    active_model.active_dark_theme_id = Set(dark_theme_id);
+    if let Some(theme_id_str) = payload.active_theme_id {
+        let theme_id = Uuid::parse_str(&theme_id_str).ok();
+        active_model.active_theme_id = Set(theme_id);
+    }
+    
     active_model.updated_at = Set(chrono::Utc::now());
 
     let updated_user = active_model.update(db).await?;
 
     let settings_dto = UserThemeSettingsDto {
         theme_mode: updated_user.theme_mode,
-        active_light_theme_id: updated_user.active_light_theme_id,
-        active_dark_theme_id: updated_user.active_dark_theme_id,
+        active_theme_id: updated_user.active_theme_id,
     };
 
     Ok(Json(settings_dto))

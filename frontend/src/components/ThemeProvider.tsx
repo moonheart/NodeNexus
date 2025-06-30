@@ -1,124 +1,118 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { useAuthStore } from "@/store/authStore";
-import type { UserThemeSettings, Theme, ThemeConfig } from "@/pages/ThemeSettingsPage";
-import { defaultLightTheme, defaultDarkTheme } from "@/lib/themes";
+import type { UserThemeSettings } from "@/pages/ThemeSettingsPage";
+import type { Theme } from "@/lib/themes";
+
+// --- Constants ---
+const DYNAMIC_STYLE_ID = 'dynamic-theme-styles';
+const GUEST_THEME_STORAGE_KEY = 'vite-ui-theme-mode';
 
 // --- Helper Functions ---
+const getSystemTheme = () => (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
 
-const applyThemeToDOM = (config: ThemeConfig, type: 'light' | 'dark') => {
-  const styleId = 'dynamic-theme-styles';
-  let styleTag = document.getElementById(styleId) as HTMLStyleElement | null;
-
-  if (!styleTag) {
-    styleTag = document.createElement('style');
-    styleTag.id = styleId;
-    document.head.appendChild(styleTag);
-  }
-
-  const cssVariables = Object.entries(config)
-    .map(([key, value]) => `  ${key}: ${value};`)
-    .join('\n');
-
-  styleTag.innerHTML = `
-:root {
-${cssVariables}
-}
-  `;
-
+const updateThemeClass = (mode: 'light' | 'dark') => {
   const root = document.documentElement;
   root.classList.remove('light', 'dark');
-  root.classList.add(type);
+  root.classList.add(mode);
+};
+
+const applyCustomTheme = (css: string) => {
+  let styleTag = document.getElementById(DYNAMIC_STYLE_ID) as HTMLStyleElement | null;
+  if (!styleTag) {
+    styleTag = document.createElement('style');
+    styleTag.id = DYNAMIC_STYLE_ID;
+    document.head.appendChild(styleTag);
+  }
+  styleTag.innerHTML = css;
+};
+
+const clearCustomTheme = () => {
+  const styleTag = document.getElementById(DYNAMIC_STYLE_ID);
+  if (styleTag) {
+    styleTag.innerHTML = '';
+  }
 };
 
 // --- Types and Context ---
-
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 interface ThemeProviderState {
-  themeType: 'light' | 'dark';
   themeMode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => void;
+  activeThemeId: string;
+  setActiveThemeId: (themeId: string) => void;
   reloadTheme: () => void;
 }
 
 const ThemeProviderContext = createContext<ThemeProviderState | undefined>(undefined);
 
-const GUEST_THEME_STORAGE_KEY = 'vite-ui-theme-mode';
-
 // --- Provider Component ---
-
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { token } = useAuthStore();
-  const [themeType, setThemeType] = useState<'light' | 'dark'>('light');
   const [themeMode, setThemeModeState] = useState<ThemeMode>(
     () => (localStorage.getItem(GUEST_THEME_STORAGE_KEY) as ThemeMode) || 'system'
   );
+  const [activeThemeId, setActiveThemeIdState] = useState<string>('default');
   const [triggerReload, setTriggerReload] = useState(0);
 
-  const reloadTheme = useCallback(() => {
-    setTriggerReload(v => v + 1);
-  }, []);
+  const reloadTheme = useCallback(() => setTriggerReload(v => v + 1), []);
 
+  // Effect to handle theme application
   useEffect(() => {
     let isMounted = true;
 
     const handleSystemThemeChange = () => {
-      // Re-run the entire effect to determine the correct theme
-      if (isMounted) {
-        reloadTheme();
+      if (themeMode === 'system') {
+        updateThemeClass(getSystemTheme());
       }
     };
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     mediaQuery.addEventListener('change', handleSystemThemeChange);
 
-    // Unauthenticated User Logic
-    if (!token) {
-      const systemIsDark = mediaQuery.matches;
-      if (themeMode === 'system') {
-        applyThemeToDOM(systemIsDark ? defaultDarkTheme.config : defaultLightTheme.config, systemIsDark ? 'dark' : 'light');
-        if (isMounted) setThemeType(systemIsDark ? 'dark' : 'light');
-      } else {
-        applyThemeToDOM(themeMode === 'dark' ? defaultDarkTheme.config : defaultLightTheme.config, themeMode);
-        if (isMounted) setThemeType(themeMode);
+    // Determine and apply light/dark mode
+    const currentMode = themeMode === 'system' ? getSystemTheme() : themeMode;
+    updateThemeClass(currentMode);
+
+    // Fetch and apply user's selected theme if logged in
+    const applyUserTheme = async () => {
+      if (!token) {
+        setActiveThemeIdState('default');
+        clearCustomTheme();
+        return;
       }
-    }
-    // Authenticated User Logic
-    else {
-      const fetchAndApplyUserTheme = async () => {
-        try {
-          const headers = { 'Authorization': `Bearer ${token}` };
-          const settingsRes = await fetch('/api/user/theme-settings', { headers });
-          if (!settingsRes.ok) throw new Error('Failed to fetch user theme settings.');
-          const settings: UserThemeSettings = await settingsRes.json();
-          
-          if (!isMounted) return;
-          setThemeModeState(settings.theme_mode);
 
-          const systemIsDark = mediaQuery.matches;
-          const currentMode = settings.theme_mode === 'system' ? (systemIsDark ? 'dark' : 'light') : settings.theme_mode;
-          const activeThemeId = currentMode === 'dark' ? settings.active_dark_theme_id : settings.active_light_theme_id;
-          
-          setThemeType(currentMode);
+      try {
+        const headers = { 'Authorization': `Bearer ${token}` };
+        const settingsRes = await fetch('/api/user/theme-settings', { headers });
+        if (!settingsRes.ok) throw new Error('Failed to fetch user theme settings.');
+        
+        const settings: UserThemeSettings = await settingsRes.json();
+        if (!isMounted) return;
 
-          if (activeThemeId) {
-            const themeRes = await fetch(`/api/themes/${activeThemeId}`, { headers });
-            if (!themeRes.ok) throw new Error(`Failed to fetch theme: ${activeThemeId}`);
-            const theme: Theme = await themeRes.json();
-            if (isMounted) applyThemeToDOM(theme.config, theme.type);
-          } else {
-            // Fallback to built-in themes if no custom theme is selected
-            applyThemeToDOM(currentMode === 'dark' ? defaultDarkTheme.config : defaultLightTheme.config, currentMode);
+        const themeIdToApply = settings.active_theme_id || 'default';
+        setActiveThemeIdState(themeIdToApply);
+
+        if (themeIdToApply === 'default') {
+          clearCustomTheme();
+        } else {
+          const themeRes = await fetch(`/api/themes/${themeIdToApply}`, { headers });
+          if (!themeRes.ok) throw new Error(`Failed to fetch theme: ${themeIdToApply}`);
+          const theme: Theme = await themeRes.json();
+          if (isMounted && theme.css) {
+            applyCustomTheme(theme.css);
           }
-        } catch (error) {
-          console.error("Error applying user theme, falling back to default:", error);
-          // Fallback on error
-          const systemIsDark = mediaQuery.matches;
-          applyThemeToDOM(systemIsDark ? defaultDarkTheme.config : defaultLightTheme.config, systemIsDark ? 'dark' : 'light');
         }
-      };
-      fetchAndApplyUserTheme();
-    }
+      } catch (error) {
+        console.error("Error applying user theme, falling back to default:", error);
+        if (isMounted) {
+          setActiveThemeIdState('default');
+          clearCustomTheme();
+        }
+      }
+    };
+
+    applyUserTheme();
 
     return () => {
       isMounted = false;
@@ -127,37 +121,39 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [token, themeMode, triggerReload]);
 
   const setThemeMode = useCallback(async (mode: ThemeMode) => {
+    setThemeModeState(mode);
     if (!token) {
       localStorage.setItem(GUEST_THEME_STORAGE_KEY, mode);
-      setThemeModeState(mode);
-      return;
+    } else {
+      try {
+        await fetch('/api/user/theme-settings', {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ theme_mode: mode }),
+        });
+      } catch (error) {
+        console.error("Failed to save theme mode:", error);
+      }
     }
+  }, [token]);
 
-    // For logged-in users, update backend
-    try {
-      const headers = { 'Authorization': `Bearer ${token}` };
-      const settingsRes = await fetch('/api/user/theme-settings', { headers });
-      if (!settingsRes.ok) throw new Error('Failed to fetch settings before update.');
-      
-      const currentSettings = await settingsRes.json();
-      const payload = { ...currentSettings, theme_mode: mode };
-
-      const updateRes = await fetch('/api/user/theme-settings', {
-        method: 'PUT',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (!updateRes.ok) throw new Error('Failed to save theme mode.');
-      
-      setThemeModeState(mode); // Update state after successful API call
-      reloadTheme(); // Trigger effect to apply new theme
-    } catch (error) {
-      console.error("Failed to set theme mode:", error);
+  const setActiveThemeId = useCallback(async (themeId: string) => {
+    setActiveThemeIdState(themeId);
+    if (token) {
+      try {
+        await fetch('/api/user/theme-settings', {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ active_theme_id: themeId }),
+        });
+        reloadTheme(); // Reload to apply the new theme from backend
+      } catch (error) {
+        console.error("Failed to save active theme:", error);
+      }
     }
   }, [token, reloadTheme]);
 
-  const value = { themeType, themeMode, setThemeMode, reloadTheme };
+  const value = { themeMode, setThemeMode, activeThemeId, setActiveThemeId, reloadTheme };
 
   return (
     <ThemeProviderContext.Provider value={value}>

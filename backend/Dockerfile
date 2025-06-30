@@ -10,6 +10,7 @@ RUN npm install
 
 # Copy the rest of the frontend code
 COPY frontend/ ./
+COPY locales/ ../locales/
 
 # Build the frontend application
 RUN npm run build
@@ -36,6 +37,7 @@ COPY backend/src ./backend/src
 COPY backend/build.rs ./backend/build.rs
 COPY backend/proto ./backend/proto
 COPY backend/migrations ./backend/migrations
+COPY locales ./locales
 
 # Generate the chef recipe
 RUN cd backend && cargo chef prepare --recipe-path recipe.json
