@@ -44,7 +44,7 @@ const TagManagementPage: React.FC = () => {
       try {
         await fetchAllTags();
       } catch (err) {
-        toast.error(t('tagManagement.notifications.fetchFailed'));
+        toast.error(t('common.notifications.fetchFailed'));
         console.error(err);
       }
     };
@@ -77,9 +77,9 @@ const TagManagementPage: React.FC = () => {
         setTagToDelete(null);
       }),
       {
-        loading: t('tagManagement.notifications.deleting'),
-        success: t('tagManagement.notifications.deleted'),
-        error: t('tagManagement.notifications.deleteFailed'),
+        loading: t('common.status.deleting'),
+        success: t('common.notifications.deleted'),
+        error: t('common.notifications.deleteFailed'),
       }
     );
   };
@@ -101,11 +101,11 @@ const TagManagementPage: React.FC = () => {
         is_visible: isVisible,
       };
       await tagService.updateTag(tagId, payload);
-      toast.success(t('tagManagement.notifications.visibilityUpdated'));
+      toast.success(t('common.notifications.updated'));
       await fetchAllTags();
     } catch (error) {
       console.error("Failed to update visibility:", error);
-      toast.error(t('tagManagement.notifications.visibilityUpdateFailed'));
+      toast.error(t('common.notifications.updateFailed'));
       useServerListStore.setState({ allTags: originalTags });
     }
   };
@@ -128,7 +128,7 @@ const TagManagementPage: React.FC = () => {
 
   const renderContent = () => {
     if (!tags) {
-        return <div className="text-center py-10">{t('tagManagement.loading')}</div>;
+        return <div className="text-center py-10">{t('common.status.loading')}</div>;
     }
     if (tags.length === 0) {
       return (
@@ -145,17 +145,17 @@ const TagManagementPage: React.FC = () => {
       );
     }
     if (filteredTags.length === 0) {
-      return <div className="text-center py-10 text-muted-foreground">{t('tagManagement.noMatch')}</div>;
+      return <div className="text-center py-10 text-muted-foreground">{t('common.empty.title')}</div>;
     }
     return (
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>{t('tagManagement.table.name')}</TableHead>
-            <TableHead>{t('tagManagement.table.id')}</TableHead>
-            <TableHead className="text-center">{t('tagManagement.table.usageCount')}</TableHead>
-            <TableHead>{t('tagManagement.table.associatedUrl')}</TableHead>
-            <TableHead className="text-right">{t('tagManagement.table.actions')}</TableHead>
+            <TableHead>{t('common.table.name')}</TableHead>
+            <TableHead>{t('common.table.id')}</TableHead>
+            <TableHead className="text-center">{t('common.table.usageCount')}</TableHead>
+            <TableHead>{t('common.table.associatedUrl')}</TableHead>
+            <TableHead className="text-right">{t('common.table.actions')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -186,7 +186,7 @@ const TagManagementPage: React.FC = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
               <Input
                 type="text"
-                placeholder={t('tagManagement.searchPlaceholder')}
+                placeholder={t('common.placeholders.search')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10"
@@ -213,7 +213,7 @@ const TagManagementPage: React.FC = () => {
       <AlertDialog open={!!tagToDelete} onOpenChange={() => setTagToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('tagManagement.deleteDialog.title')}</AlertDialogTitle>
+            <AlertDialogTitle>{t('common.dialogs.delete.title')}</AlertDialogTitle>
             <AlertDialogDescription>
               {tagToDelete && (tagToDelete.vpsCount ?? 0) > 0
                 ? t('tagManagement.deleteDialog.descriptionWithCount', { count: tagToDelete.vpsCount })
@@ -221,8 +221,8 @@ const TagManagementPage: React.FC = () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setTagToDelete(null)}>{t('buttons.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>{t('tagManagement.deleteDialog.confirm')}</AlertDialogAction>
+            <AlertDialogCancel onClick={() => setTagToDelete(null)}>{t('common.actions.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>{t('common.actions.continue')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

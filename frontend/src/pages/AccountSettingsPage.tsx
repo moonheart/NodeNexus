@@ -71,7 +71,7 @@ const AccountSettingsPage: React.FC = () => {
 
     const handleUpdateUsername = async (e: React.FormEvent) => {
         e.preventDefault();
-        const toastId = toast.loading(t('accountSettings.updatingUsername'));
+        const toastId = toast.loading(t('common.status.updating'));
         try {
             const updatedUser = await userService.updateUsername(username);
             toast.success(t('accountSettings.updateUsernameSuccess'), { id: toastId });
@@ -86,10 +86,10 @@ const AccountSettingsPage: React.FC = () => {
     const handleChangePassword = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newPassword !== confirmPassword) {
-            toast.error(t('accountSettings.passwordMismatch'));
+            toast.error(t('common.errors.passwordMismatch'));
             return;
         }
-        const toastId = toast.loading(t('accountSettings.changingPassword'));
+        const toastId = toast.loading(t('common.status.changing'));
         try {
             await userService.updatePassword({ current_password: currentPassword, new_password: newPassword });
             toast.success(t('accountSettings.changePasswordSuccess'), { id: toastId });
@@ -108,7 +108,7 @@ const AccountSettingsPage: React.FC = () => {
 
     const confirmUnlinkAccount = async () => {
         if (!unlinkingProvider) return;
-        const toastId = toast.loading(t('accountSettings.unlinkingAccount', { provider: unlinkingProvider }));
+        const toastId = toast.loading(t('common.status.unlinking', { provider: unlinkingProvider }));
         try {
             await userService.unlinkProvider(unlinkingProvider);
             toast.success(t('accountSettings.unlinkSuccess', { provider: unlinkingProvider }), { id: toastId });
@@ -123,7 +123,7 @@ const AccountSettingsPage: React.FC = () => {
 
     const handleLanguageChange = async (lang: string) => {
         setSelectedLanguage(lang);
-        const toastId = toast.loading(t('accountSettings.updatingLanguage'));
+        const toastId = toast.loading(t('common.status.updating'));
         try {
             await userService.updateUserLanguage(lang);
             if (lang === 'auto') {
@@ -162,14 +162,14 @@ const AccountSettingsPage: React.FC = () => {
             <AlertDialog open={isAlertOpen} onOpenChange={setIsAlertOpen}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
-                        <AlertDialogTitle>{t('accountSettings.unlinkConfirmTitle')}</AlertDialogTitle>
+                        <AlertDialogTitle>{t('common.dialogs.unlink.title')}</AlertDialogTitle>
                         <AlertDialogDescription>
-                            {t('accountSettings.unlinkConfirmDescription')}
+                            {t('common.dialogs.unlink.description')}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel onClick={() => setUnlinkingProvider(null)}>{t('buttons.cancel')}</AlertDialogCancel>
-                        <AlertDialogAction onClick={confirmUnlinkAccount}>{t('accountSettings.confirmButton')}</AlertDialogAction>
+                        <AlertDialogCancel onClick={() => setUnlinkingProvider(null)}>{t('common.actions.cancel')}</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmUnlinkAccount}>{t('common.actions.confirm')}</AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
@@ -190,7 +190,7 @@ const AccountSettingsPage: React.FC = () => {
                                     onChange={(e) => setUsername(e.target.value)}
                                     className="rounded-r-none"
                                 />
-                                <Button type="submit" className="rounded-l-none">{t('buttons.save')}</Button>
+                                <Button type="submit" className="rounded-l-none">{t('common.actions.save')}</Button>
                             </div>
                         </div>
                     </form>
@@ -208,7 +208,7 @@ const AccountSettingsPage: React.FC = () => {
                         <h3 className="text-lg font-medium">{t('accountSettings.changePasswordTitle')}</h3>
                         <div className="space-y-4">
                             <div className="space-y-2">
-                                <Label htmlFor="current-password">{t('accountSettings.currentPasswordLabel')}</Label>
+                                <Label htmlFor="current-password">{t('common.labels.currentPassword')}</Label>
                                 <Input
                                     type="password"
                                     id="current-password"
@@ -218,7 +218,7 @@ const AccountSettingsPage: React.FC = () => {
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div className="space-y-2">
-                                    <Label htmlFor="new-password">{t('accountSettings.newPasswordLabel')}</Label>
+                                    <Label htmlFor="new-password">{t('common.labels.newPassword')}</Label>
                                     <Input
                                         type="password"
                                         id="new-password"
@@ -227,7 +227,7 @@ const AccountSettingsPage: React.FC = () => {
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="confirm-password">{t('accountSettings.confirmNewPasswordLabel')}</Label>
+                                    <Label htmlFor="confirm-password">{t('common.labels.confirmNewPassword')}</Label>
                                     <Input
                                         type="password"
                                         id="confirm-password"
@@ -238,7 +238,7 @@ const AccountSettingsPage: React.FC = () => {
                             </div>
                         </div>
                         <CardFooter className="px-0 pt-4">
-                            <Button type="submit">{t('accountSettings.changePasswordButton')}</Button>
+                            <Button type="submit">{t('common.actions.change')}</Button>
                         </CardFooter>
                     </form>
 
@@ -248,7 +248,7 @@ const AccountSettingsPage: React.FC = () => {
                     <div className="space-y-4">
                         <h3 className="text-lg font-medium">{t('accountSettings.connectedAccountsTitle')}</h3>
                         {loading ? (
-                            <p className="text-muted-foreground">{t('accountSettings.loadingConnectedAccounts')}</p>
+                            <p className="text-muted-foreground">{t('common.status.loading')}</p>
                         ) : (
                             <div className="space-y-4">
                                 {connectedAccounts.length > 0 ? (
@@ -262,7 +262,7 @@ const AccountSettingsPage: React.FC = () => {
                                                 </div>
                                             </div>
                                             <Button variant="destructive" size="sm" onClick={() => handleUnlinkClick(account.provider_name)}>
-                                                {t('accountSettings.unlinkButton')}
+                                                {t('common.actions.unlink')}
                                             </Button>
                                         </div>
                                     ))
@@ -280,7 +280,7 @@ const AccountSettingsPage: React.FC = () => {
                                                         <p className="font-semibold capitalize">{provider.name}</p>
                                                     </div>
                                                     <Button variant="outline" size="sm" onClick={() => handleLinkAccount(provider.name)}>
-                                                        {t('accountSettings.linkButton')}
+                                                        {t('common.actions.link')}
                                                     </Button>
                                                 </div>
                                             ))}

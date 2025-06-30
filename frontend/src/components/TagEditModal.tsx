@@ -88,16 +88,16 @@ const TagEditModal: React.FC<TagEditModalProps> = ({ isOpen, onClose, onTagSaved
 
       if (tag) {
         await tagService.updateTag(tag.id, payload as UpdateTagPayload);
-        toast.success(t('tagManagement.form.notifications.updated'));
+        toast.success(t('common.notifications.updated'));
       } else {
         await tagService.createTag(payload as CreateTagPayload);
-        toast.success(t('tagManagement.form.notifications.created'));
+        toast.success(t('common.notifications.created'));
       }
       onTagSaved();
       onClose();
     } catch (err) {
       console.error('Failed to save tag:', err);
-      toast.error(t('tagManagement.form.notifications.saveFailed'));
+      toast.error(t('common.notifications.saveFailed'));
     }
   };
 
@@ -105,7 +105,7 @@ const TagEditModal: React.FC<TagEditModalProps> = ({ isOpen, onClose, onTagSaved
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>{tag ? t('tagManagement.form.editTitle') : t('tagManagement.form.createTitle')}</DialogTitle>
+          <DialogTitle>{tag ? t('common.form.editTitle') : t('common.form.createTitle')}</DialogTitle>
           <DialogDescription>
             {tag ? t('tagManagement.form.editDescription') : t('tagManagement.form.createDescription')}
           </DialogDescription>
@@ -114,11 +114,11 @@ const TagEditModal: React.FC<TagEditModalProps> = ({ isOpen, onClose, onTagSaved
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="name" className="text-right">
-                {t('tagManagement.form.nameLabel')}
+                {t('common.labels.name')}
               </Label>
               <Input
                 id="name"
-                {...register('name', { required: t('tagManagement.form.validation.nameRequired') })}
+                {...register('name', { required: t('common.errors.validation.nameRequired') })}
                 className={`col-span-3 ${errors.name ? 'border-destructive' : ''}`}
               />
               {errors.name && <p className="col-span-4 text-destructive text-xs text-right">{errors.name.message}</p>}
@@ -126,7 +126,7 @@ const TagEditModal: React.FC<TagEditModalProps> = ({ isOpen, onClose, onTagSaved
 
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="color" className="text-right">
-                {t('tagManagement.form.colorLabel')}
+                {t('common.labels.color')}
               </Label>
               <div className="col-span-3 flex items-center gap-2">
                 <Input
@@ -141,7 +141,7 @@ const TagEditModal: React.FC<TagEditModalProps> = ({ isOpen, onClose, onTagSaved
                   {...register('color', {
                     pattern: {
                       value: /^#([0-9A-Fa-f]{6})$/i,
-                      message: t('tagManagement.form.validation.invalidColor')
+                      message: t('common.errors.validation.invalidColor')
                     }
                   })}
                   className={`flex-grow ${errors.color ? 'border-destructive' : ''}`}
@@ -153,7 +153,7 @@ const TagEditModal: React.FC<TagEditModalProps> = ({ isOpen, onClose, onTagSaved
 
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="icon" className="text-right">
-                {t('tagManagement.form.iconLabel')}
+                {t('common.labels.icon')}
               </Label>
               <div className="col-span-3">
                 <IconPicker
@@ -165,7 +165,7 @@ const TagEditModal: React.FC<TagEditModalProps> = ({ isOpen, onClose, onTagSaved
 
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="url" className="text-right">
-                {t('tagManagement.form.urlLabel')}
+                {t('common.labels.url')}
               </Label>
               <Input
                 id="url"
@@ -178,7 +178,7 @@ const TagEditModal: React.FC<TagEditModalProps> = ({ isOpen, onClose, onTagSaved
 
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="is_visible" className="text-right">
-                {t('tagManagement.form.visibleLabel')}
+                {t('common.labels.visible')}
               </Label>
               <div className="col-span-3">
                 <Controller
@@ -196,9 +196,9 @@ const TagEditModal: React.FC<TagEditModalProps> = ({ isOpen, onClose, onTagSaved
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>{t('buttons.cancel')}</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('common.actions.cancel')}</Button>
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? t('tagManagement.form.saving') : (tag ? t('tagManagement.form.updateButton') : t('tagManagement.form.createButton'))}
+              {isSubmitting ? t('common.status.saving') : (tag ? t('common.actions.update') : t('common.actions.create'))}
             </Button>
           </DialogFooter>
         </form>

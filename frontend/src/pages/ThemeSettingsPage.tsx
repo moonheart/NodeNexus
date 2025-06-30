@@ -43,7 +43,7 @@ const ThemeSettingsPage = () => {
         ]);
 
         if (!themesResponse.ok || !settingsResponse.ok) {
-          throw new Error(t('themeSettings.errors.fetchFailed'));
+          throw new Error(t('common.notifications.fetchFailed'));
         }
 
         const themesData: Theme[] = await themesResponse.json();
@@ -55,7 +55,7 @@ const ThemeSettingsPage = () => {
           active_theme_id: settingsData.active_theme_id || 'default',
         });
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : t('themeSettings.errors.unknown'));
+        setError(err instanceof Error ? err.message : t('common.errors.unknown'));
       } finally {
         setLoading(false);
       }
@@ -75,9 +75,9 @@ const ThemeSettingsPage = () => {
       // Apply changes immediately via context
       setThemeMode(settings.theme_mode);
       setActiveThemeId(settings.active_theme_id || 'default');
-      alert(t('themeSettings.notifications.settingsSaved'));
+      alert(t('common.notifications.saved'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('themeSettings.errors.saveFailed'));
+      setError(err instanceof Error ? err.message : t('common.notifications.saveFailed'));
     }
   };
 
@@ -95,7 +95,7 @@ const ThemeSettingsPage = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || t('themeSettings.errors.saveThemeFailed'));
+        throw new Error(errorData.message || t('common.notifications.saveFailed'));
       }
 
       const savedTheme: Theme = await response.json();
@@ -111,7 +111,7 @@ const ThemeSettingsPage = () => {
       alert(t('themeSettings.notifications.themeSaved', { status: isUpdating ? t('themeSettings.status.updated') : t('themeSettings.status.created') }));
       reloadTheme();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('themeSettings.errors.unknown'));
+      setError(err instanceof Error ? err.message : t('common.errors.unknown'));
     }
   };
 
@@ -124,19 +124,19 @@ const ThemeSettingsPage = () => {
       });
       setUserThemes(userThemes.filter(t => t.id !== themeToDelete.id));
       setThemeToDelete(null);
-      alert(t('themeSettings.notifications.themeDeleted'));
+      alert(t('common.notifications.deleted'));
       // If the deleted theme was active, switch to default
       if (activeThemeId === themeToDelete.id) {
         setActiveThemeId('default');
       }
       reloadTheme();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('themeSettings.errors.deleteFailed'));
+      setError(err instanceof Error ? err.message : t('common.notifications.deleteFailed'));
     }
   };
 
-  if (loading) return <div>{t('themeSettings.loading')}</div>;
-  if (error) return <div className="text-destructive">{t('themeSettings.error', { error: error })}</div>;
+  if (loading) return <div>{t('common.status.loading')}</div>;
+  if (error) return <div className="text-destructive">{t('common.notifications.error', { error: error })}</div>;
 
   return (
     <div className="space-y-6">
@@ -173,7 +173,7 @@ const ThemeSettingsPage = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <Button onClick={handleSaveSettings}>{t('themeSettings.saveButton')}</Button>
+              <Button onClick={handleSaveSettings}>{t('common.actions.save')}</Button>
             </div>
           )}
         </CardContent>
@@ -182,14 +182,14 @@ const ThemeSettingsPage = () => {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>{t('themeSettings.libraryTitle')}</CardTitle>
-          <Button onClick={() => { setEditingTheme(null); setIsModalOpen(true); }}>{t('themeSettings.createButton')}</Button>
+          <Button onClick={() => { setEditingTheme(null); setIsModalOpen(true); }}>{t('common.actions.create')}</Button>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{t('themeSettings.table.name')}</TableHead>
-                <TableHead className="text-right">{t('themeSettings.table.actions')}</TableHead>
+                <TableHead>{t('common.table.name')}</TableHead>
+                <TableHead className="text-right">{t('common.table.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -197,9 +197,9 @@ const ThemeSettingsPage = () => {
                 <TableRow key={theme.id}>
                   <TableCell>{theme.name}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" onClick={() => { setEditingTheme(theme); setIsModalOpen(true); }}>{t('themeSettings.actions.edit')}</Button>
+                    <Button variant="ghost" size="sm" onClick={() => { setEditingTheme(theme); setIsModalOpen(true); }}>{t('common.actions.edit')}</Button>
                     {theme.id !== 'default' && (
-                      <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setThemeToDelete(theme)}>{t('themeSettings.actions.delete')}</Button>
+                      <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setThemeToDelete(theme)}>{t('common.actions.delete')}</Button>
                     )}
                   </TableCell>
                 </TableRow>
@@ -212,14 +212,14 @@ const ThemeSettingsPage = () => {
       <AlertDialog open={!!themeToDelete} onOpenChange={(open) => !open && setThemeToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('themeSettings.deleteDialog.title')}</AlertDialogTitle>
+            <AlertDialogTitle>{t('common.dialogs.delete.title')}</AlertDialogTitle>
             <AlertDialogDescription>
               {t('themeSettings.deleteDialog.description', { themeName: themeToDelete?.name })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('buttons.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteTheme}>{t('themeSettings.deleteDialog.confirm')}</AlertDialogAction>
+            <AlertDialogCancel>{t('common.actions.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteTheme}>{t('common.actions.continue')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

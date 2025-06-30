@@ -72,26 +72,26 @@ const ScriptFormModal: React.FC<ScriptFormModalProps> = ({ isOpen, onClose, onSa
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col">
                 <DialogHeader>
-                    <DialogTitle>{initialData ? t('scriptManagement.form.editTitle') : t('scriptManagement.form.createTitle')}</DialogTitle>
+                    <DialogTitle>{initialData ? t('common.form.editTitle') : t('common.form.createTitle')}</DialogTitle>
                     <DialogDescription>
                         {t('scriptManagement.form.description')}
                     </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="flex-grow flex flex-col space-y-4 overflow-y-auto min-h-0 p-1">
                     <div className="grid gap-2">
-                        <Label htmlFor="name">{t('scriptManagement.form.nameLabel')}</Label>
+                        <Label htmlFor="name">{t('common.labels.name')}</Label>
                         <Input id="name" name="name" value={formData.name} onChange={handleChange} required />
                     </div>
                     <div className="grid gap-2">
-                        <Label htmlFor="description">{t('scriptManagement.form.descriptionLabel')}</Label>
+                        <Label htmlFor="description">{t('common.labels.description')}</Label>
                         <Textarea id="description" name="description" value={formData.description || ''} onChange={handleChange} rows={2} />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="grid gap-2">
-                            <Label htmlFor="language">{t('scriptManagement.form.languageLabel')}</Label>
+                            <Label htmlFor="language">{t('common.labels.language')}</Label>
                             <Select name="language" value={formData.language} onValueChange={(value) => handleSelectChange('language', value)}>
                                 <SelectTrigger>
-                                    <SelectValue placeholder={t('scriptManagement.form.languagePlaceholder')} />
+                                    <SelectValue placeholder={t('common.placeholders.selectLanguage')} />
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="shell">{t('scriptManagement.form.languages.shell')}</SelectItem>
@@ -100,12 +100,12 @@ const ScriptFormModal: React.FC<ScriptFormModalProps> = ({ isOpen, onClose, onSa
                             </Select>
                         </div>
                         <div className="grid gap-2">
-                            <Label htmlFor="working_directory">{t('scriptManagement.form.workingDirectoryLabel')}</Label>
+                            <Label htmlFor="working_directory">{t('common.labels.workingDirectory')}</Label>
                             <Input id="working_directory" name="working_directory" value={formData.working_directory} onChange={handleChange} required />
                         </div>
                     </div>
                     <div className="flex-grow flex flex-col min-h-0">
-                        <Label htmlFor="script_content" className="mb-2">{t('scriptManagement.form.contentLabel')}</Label>
+                        <Label htmlFor="script_content" className="mb-2">{t('common.labels.content')}</Label>
                         <div className="border rounded-md overflow-hidden flex-grow h-48">
                             <Editor
                                 height="100%"
@@ -119,8 +119,8 @@ const ScriptFormModal: React.FC<ScriptFormModalProps> = ({ isOpen, onClose, onSa
                     </div>
                 </form>
                  <DialogFooter className="pt-4">
-                    <Button type="button" variant="outline" onClick={onClose}>{t('buttons.cancel')}</Button>
-                    <Button type="submit" onClick={handleSubmit}>{t('buttons.save')}</Button>
+                    <Button type="button" variant="outline" onClick={onClose}>{t('common.actions.cancel')}</Button>
+                    <Button type="submit" onClick={handleSubmit}>{t('common.actions.save')}</Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>

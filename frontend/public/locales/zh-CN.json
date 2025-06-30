@@ -1,42 +1,119 @@
 {
-  "buttons": {
-    "save": "保存",
-    "cancel": "取消"
-  },
-  "errors": {
-    "notFound": "页面 '%{page}' 未找到。"
+  "common": {
+    "actions": {
+      "save": "保存",
+      "cancel": "取消",
+      "create": "创建",
+      "edit": "编辑",
+      "delete": "删除",
+      "confirm": "确定",
+      "update": "更新",
+      "unlink": "解除关联",
+      "link": "关联",
+      "change": "修改",
+      "continue": "继续",
+      "openMenu": "打开菜单"
+    },
+    "labels": {
+      "name": "名称",
+      "description": "描述",
+      "language": "语言",
+      "username": "用户名",
+      "password": "密码",
+      "newPassword": "新密码",
+      "confirmNewPassword": "确认新密码",
+      "currentPassword": "当前密码",
+      "workingDirectory": "工作目录",
+      "content": "脚本内容",
+      "color": "颜色",
+      "icon": "图标",
+      "url": "URL",
+      "visible": "可见",
+      "id": "ID",
+      "usageCount": "使用次数",
+      "associatedUrl": "关联 URL",
+      "css": "主题 CSS"
+    },
+    "placeholders": {
+      "search": "搜索...",
+      "selectLanguage": "选择语言"
+    },
+    "dialogs": {
+      "delete": {
+        "title": "确定吗？",
+        "description": "此操作无法撤销。这将永久删除该项目。",
+        "confirm": "继续"
+      },
+      "unlink": {
+        "title": "确定要解除关联吗？",
+        "description": "此操作无法撤销。您可能需要重新进行身份验证才能再次关联。",
+        "confirm": "确定"
+      }
+    },
+    "notifications": {
+      "saved": "保存成功！",
+      "created": "创建成功！",
+      "updated": "更新成功！",
+      "deleted": "删除成功！",
+      "unlinked": "解除关联成功！",
+      "error": "发生错误: %{error}",
+      "fetchFailed": "获取数据失败。",
+      "saveFailed": "保存失败。",
+      "deleteFailed": "删除失败。",
+      "updateFailed": "更新失败。",
+      "unlinkFailed": "解除关联失败。"
+    },
+    "status": {
+      "loading": "正在加载...",
+      "saving": "正在保存...",
+      "updating": "正在更新...",
+      "deleting": "正在删除...",
+      "unlinking": "正在解除关联...",
+      "changing": "正在修改..."
+    },
+    "errors": {
+      "notFound": "页面 '%{page}' 未找到。",
+      "unknown": "发生未知错误。",
+      "passwordMismatch": "新密码不匹配！",
+      "validation": {
+        "nameRequired": "名称是必填项",
+        "invalidColor": "无效的十六进制颜色 (例如, #RRGGBB)"
+      }
+    },
+    "empty": {
+      "title": "未找到任何项目",
+      "description": "从创建一个新项目开始。"
+    },
+    "table": {
+      "name": "名称",
+      "description": "描述",
+      "language": "语言",
+      "actions": "操作",
+      "id": "ID",
+      "usageCount": "使用次数",
+      "associatedUrl": "关联 URL"
+    },
+    "form": {
+      "editTitle": "编辑",
+      "createTitle": "创建新的",
+      "description": "请填写以下详细信息。"
+    }
   },
   "accountSettings": {
     "title": "账户信息",
     "description": "管理您的公开个人资料信息。",
-    "usernameLabel": "用户名",
-    "saveButton": "保存",
     "securityTitle": "安全设置",
     "securityDescription": "管理您的密码和账户安全设置。",
     "changePasswordTitle": "修改密码",
-    "currentPasswordLabel": "当前密码",
-    "newPasswordLabel": "新密码",
-    "confirmNewPasswordLabel": "确认新密码",
-    "changePasswordButton": "修改密码",
     "connectedAccountsTitle": "关联账户",
-    "loadingConnectedAccounts": "正在加载关联账户...",
     "noConnectedAccounts": "没有已关联的第三方账户。",
     "linkNewAccountTitle": "关联新账户",
-    "unlinkButton": "解除关联",
-    "linkButton": "关联",
-    "unlinkConfirmTitle": "确定要解除关联吗？",
-    "unlinkConfirmDescription": "此操作无法撤销。您可能需要重新进行身份验证才能再次关联。",
-    "confirmButton": "确定",
     "fetchError": "无法获取账户数据。",
     "linkSuccess": "账户关联成功！",
-    "updatingUsername": "正在更新用户名...",
     "updateUsernameSuccess": "用户名更新成功！",
     "updateUsernameError": "更新用户名失败。",
-    "passwordMismatch": "新密码不匹配！",
-    "changingPassword": "正在修改密码...",
     "changePasswordSuccess": "密码修改成功！",
     "changePasswordError": "修改密码失败。",
-    "unlinkingAccount": "正在解除 %{provider} 账户关联...",
     "unlinkSuccess": "%{provider} 账户解除关联成功！",
     "unlinkError": "解除 %{provider} 账户关联失败。",
     "linkedAs": "已关联为 %{id}",
@@ -49,7 +126,6 @@
         "en": "English",
         "zh-CN": "简体中文"
       },
-      "updatingLanguage": "正在更新语言...",
       "updateLanguageSuccess": "语言更新成功！",
       "updateLanguageError": "更新语言失败。"
     }
@@ -63,24 +139,11 @@
       "system": "系统"
     },
     "theme": "主题",
-    "saveButton": "保存设置",
     "libraryTitle": "主题库",
-    "createButton": "创建新主题",
-    "table": {
-      "name": "名称",
-      "actions": "操作"
-    },
-    "actions": {
-      "edit": "编辑",
-      "delete": "删除"
-    },
     "deleteDialog": {
-      "title": "确定吗？",
-      "description": "此操作无法撤销。这将永久删除主题 \"%{themeName}\"。",
-      "confirm": "继续"
+      "description": "此操作无法撤销。这将永久删除主题 \"%{themeName}\"。"
     },
     "notifications": {
-      "settingsSaved": "设置已成功保存！",
       "themeSaved": "主题已成功%{status}！",
       "themeDeleted": "主题已成功删除！"
     },
@@ -88,24 +151,12 @@
       "created": "创建",
       "updated": "更新"
     },
-    "errors": {
-      "fetchFailed": "无法获取主题数据。",
-      "unknown": "发生未知错误。",
-      "saveFailed": "无法保存设置。",
-      "saveThemeFailed": "无法保存主题。",
-      "deleteFailed": "无法删除主题。"
-    },
-    "loading": "正在加载主题设置...",
-    "error": "错误: %{error}",
     "editor": {
       "viewTitle": "查看主题",
       "editTitle": "编辑主题",
       "createTitle": "创建新主题",
       "readOnlyDescription": "默认主题无法编辑。您可以复制其配置以创建新的自定义主题。",
       "description": "通过提供名称以及浅色 (:root) 和深色 (.dark) 模式的完整 CSS 来定义您的主题。您可以使用 <1>主题生成器</1> 来创建新主题。",
-      "nameLabel": "名称",
-      "cssLabel": "主题 CSS",
-      "saveButton": "保存主题",
       "themeGenerator": "主题生成器",
       "createMessage": "创建或编辑主题。使用辅助按钮获取有关 CSS 变量的帮助。"
     }
@@ -113,108 +164,44 @@
   "scriptManagement": {
     "title": "脚本管理",
     "addNew": "添加新脚本",
-    "searchPlaceholder": "按名称搜索...",
-    "loading": "正在加载脚本...",
-    "error": "错误: %{error}",
     "empty": {
       "title": "未找到脚本",
       "description": "从创建一个新脚本开始。",
       "newButton": "新脚本"
     },
-    "table": {
-      "name": "名称",
-      "description": "描述",
-      "language": "语言",
-      "actions": "操作"
-    },
-    "actions": {
-      "openMenu": "打开菜单",
-      "edit": "编辑",
-      "delete": "删除"
-    },
     "deleteDialog": {
-      "title": "确定吗？",
       "description": "此操作无法撤销。这将永久删除该脚本。"
     },
-    "notifications": {
-      "fetchFailed": "获取脚本失败: %{error}",
-      "deleted": "脚本删除成功！",
-      "deleteFailed": "删除脚本失败: %{error}",
-      "updated": "脚本更新成功！",
-      "created": "脚本创建成功！",
-      "saveFailed": "保存脚本失败: %{error}"
-    },
     "form": {
-      "editTitle": "编辑脚本",
-      "createTitle": "创建新脚本",
       "description": "请填写以下命令脚本的详细信息。",
-      "nameLabel": "名称",
-      "descriptionLabel": "描述",
-      "languageLabel": "语言",
-      "languagePlaceholder": "选择语言",
       "languages": {
         "shell": "Shell",
         "powershell": "PowerShell"
-      },
-      "workingDirectoryLabel": "工作目录",
-      "contentLabel": "脚本内容"
+      }
     }
   },
   "tagManagement": {
     "title": "标签管理",
     "description": "创建、编辑和管理您的所有标签。",
     "addNew": "创建标签",
-    "searchPlaceholder": "搜索标签...",
-    "loading": "正在加载标签...",
     "noMatch": "没有与您的搜索匹配的标签。",
     "empty": {
       "title": "未找到标签",
       "description": "从创建您的第一个标签开始。",
       "newButton": "创建标签"
     },
-    "table": {
-      "name": "名称",
-      "id": "ID",
-      "usageCount": "使用次数",
-      "associatedUrl": "关联 URL",
-      "actions": "操作"
-    },
     "deleteDialog": {
       "title": "您确定吗？",
       "description": "此操作无法撤销。这将永久删除该标签。",
-      "descriptionWithCount": "此标签正被 {{count}} 个 VPS 使用。删除它将从这些 VPS 中移除该标签。此操作无法撤销。",
-      "confirm": "继续"
+      "descriptionWithCount": "此标签正被 {{count}} 个 VPS 使用。删除它将从这些 VPS 中移除该标签。此操作无法撤销。"
     },
     "notifications": {
-      "fetchFailed": "加载标签失败。",
-      "deleting": "正在删除标签...",
-      "deleted": "标签删除成功！",
-      "deleteFailed": "删除标签失败。",
       "visibilityUpdated": "标签可见性已更新。",
       "visibilityUpdateFailed": "更新标签可见性失败。"
     },
     "form": {
-      "editTitle": "编辑标签",
-      "createTitle": "创建新标签",
       "editDescription": "更新您现有标签的详细信息。",
-      "createDescription": "创建一个新标签来组织您的资源。",
-      "nameLabel": "名称",
-      "colorLabel": "颜色",
-      "iconLabel": "图标",
-      "urlLabel": "URL",
-      "visibleLabel": "可见",
-      "saving": "正在保存...",
-      "updateButton": "更新标签",
-      "createButton": "创建标签",
-      "validation": {
-        "nameRequired": "名称是必填项",
-        "invalidColor": "无效的十六进制颜色 (例如, #RRGGBB)"
-      },
-      "notifications": {
-        "updated": "标签更新成功！",
-        "created": "标签创建成功！",
-        "saveFailed": "保存标签失败。请再试一次。"
-      }
+      "createDescription": "创建一个新标签来组织您的资源。"
     }
   }
 }

@@ -199,7 +199,7 @@ const ThemeEditorModal = ({ theme, isOpen, onClose, onSave }: ThemeEditorModalPr
         <div className="flex flex-col gap-4 py-4 flex-grow overflow-y-auto pr-6">
           <div className="flex items-center gap-4">
             <Label htmlFor="name" className="w-16 text-right">
-              {t("themeSettings.editor.nameLabel")}
+              {t("common.labels.name")}
             </Label>
             <Input id="name" value={name} onChange={(e) => setName(e.target.value)} className="flex-1" disabled={isReadOnly} />
             {!isReadOnly && (
@@ -213,7 +213,7 @@ const ThemeEditorModal = ({ theme, isOpen, onClose, onSave }: ThemeEditorModalPr
           </div>
           <div className="flex flex-col gap-2 flex-grow min-h-0">
             <Label htmlFor="config">
-              {t("themeSettings.editor.cssLabel")}
+              {t("common.labels.css")}
             </Label>
             <div className="border rounded-md overflow-hidden flex-grow h-[400px]">
               <Editor
@@ -232,8 +232,8 @@ const ThemeEditorModal = ({ theme, isOpen, onClose, onSave }: ThemeEditorModalPr
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t("buttons.cancel")}</Button>
-          <Button onClick={handleSave} disabled={isReadOnly}>{t("themeSettings.editor.saveButton")}</Button>
+          <Button variant="outline" onClick={onClose}>{t("common.actions.cancel")}</Button>
+          <Button onClick={handleSave} disabled={isReadOnly}>{t("common.actions.save")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
