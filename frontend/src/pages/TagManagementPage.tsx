@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { PlusCircle, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import * as tagService from '../services/tagService';
@@ -29,6 +30,7 @@ import {
 } from "@/components/ui/table";
 
 const TagManagementPage: React.FC = () => {
+  const { t } = useTranslation();
   const tags = useServerListStore((state) => state.allTags);
   const fetchAllTags = useServerListStore((state) => state.fetchAllTags);
 
@@ -42,7 +44,7 @@ const TagManagementPage: React.FC = () => {
       try {
         await fetchAllTags();
       } catch (err) {
-        toast.error('Failed to load tags.');
+        toast.error(t('tagManagement.notifications.fetchFailed'));
         console.error(err);
       }
     };
@@ -75,9 +77,9 @@ const TagManagementPage: React.FC = () => {
         setTagToDelete(null);
       }),
       {
-        loading: 'Deleting tag...',
-        success: 'Tag deleted successfully!',
-        error: 'Failed to delete tag.',
+        loading: t('tagManagement.notifications.deleting'),
+        success: t('tagManagement.notifications.deleted'),
+        error: t('tagManagement.notifications.deleteFailed'),
       }
     );
   };
@@ -99,11 +101,11 @@ const TagManagementPage: React.FC = () => {
         is_visible: isVisible,
       };
       await tagService.updateTag(tagId, payload);
-      toast.success(`Tag visibility updated.`);
+      toast.success(t('tagManagement.notifications.visibilityUpdated'));
       await fetchAllTags();
     } catch (error) {
       console.error("Failed to update visibility:", error);
-      toast.error('Failed to update visibility.');
+      toast.error(t('tagManagement.notifications.visibilityUpdateFailed'));
       useServerListStore.setState({ allTags: originalTags });
     }
   };
@@ -126,34 +128,34 @@ const TagManagementPage: React.FC = () => {
 
   const renderContent = () => {
     if (!tags) {
-        return <div className="text-center py-10">Loading tags...</div>;
+        return <div className="text-center py-10">{t('tagManagement.loading')}</div>;
     }
     if (tags.length === 0) {
       return (
         <EmptyState
-          title="No Tags Found"
-          message="Get started by creating your first tag."
+          title={t('tagManagement.empty.title')}
+          message={t('tagManagement.empty.description')}
           action={
             <Button onClick={handleCreateClick}>
               <PlusCircle className="w-4 h-4 mr-2" />
-              Create Tag
+              {t('tagManagement.empty.newButton')}
             </Button>
           }
         />
       );
     }
     if (filteredTags.length === 0) {
-      return <div className="text-center py-10 text-muted-foreground">No tags match your search.</div>;
+      return <div className="text-center py-10 text-muted-foreground">{t('tagManagement.noMatch')}</div>;
     }
     return (
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>ID</TableHead>
-            <TableHead className="text-center">Usage Count</TableHead>
-            <TableHead>Associated URL</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead>{t('tagManagement.table.name')}</TableHead>
+            <TableHead>{t('tagManagement.table.id')}</TableHead>
+            <TableHead className="text-center">{t('tagManagement.table.usageCount')}</TableHead>
+            <TableHead>{t('tagManagement.table.associatedUrl')}</TableHead>
+            <TableHead className="text-right">{t('tagManagement.table.actions')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -176,15 +178,15 @@ const TagManagementPage: React.FC = () => {
       <Card>
         <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <CardTitle>Tag Management</CardTitle>
-            <p className="text-muted-foreground text-sm mt-1">Create, edit, and manage all your tags.</p>
+            <CardTitle>{t('tagManagement.title')}</CardTitle>
+            <p className="text-muted-foreground text-sm mt-1">{t('tagManagement.description')}</p>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <div className="relative w-full sm:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
               <Input
                 type="text"
-                placeholder="Search tags..."
+                placeholder={t('tagManagement.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10"
@@ -192,7 +194,7 @@ const TagManagementPage: React.FC = () => {
             </div>
             <Button onClick={handleCreateClick}>
               <PlusCircle className="w-5 h-5 mr-2" />
-              <span>Create Tag</span>
+              <span>{t('tagManagement.addNew')}</span>
             </Button>
           </div>
         </CardHeader>
@@ -211,16 +213,16 @@ const TagManagementPage: React.FC = () => {
       <AlertDialog open={!!tagToDelete} onOpenChange={() => setTagToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogTitle>{t('tagManagement.deleteDialog.title')}</AlertDialogTitle>
             <AlertDialogDescription>
               {tagToDelete && (tagToDelete.vpsCount ?? 0) > 0
-                ? `This tag is used by ${tagToDelete.vpsCount} VPS(s). Deleting it will remove it from them. This action cannot be undone.`
-                : 'This action cannot be undone. This will permanently delete the tag.'}
+                ? t('tagManagement.deleteDialog.descriptionWithCount', { count: tagToDelete.vpsCount })
+                : t('tagManagement.deleteDialog.description')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setTagToDelete(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>Continue</AlertDialogAction>
+            <AlertDialogCancel onClick={() => setTagToDelete(null)}>{t('buttons.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>{t('tagManagement.deleteDialog.confirm')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

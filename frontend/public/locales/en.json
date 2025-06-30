@@ -159,5 +159,62 @@
       "workingDirectoryLabel": "Working Directory",
       "contentLabel": "Script Content"
     }
+  },
+  "tagManagement": {
+    "title": "Tag Management",
+    "description": "Create, edit, and manage all your tags.",
+    "addNew": "Create Tag",
+    "searchPlaceholder": "Search tags...",
+    "loading": "Loading tags...",
+    "noMatch": "No tags match your search.",
+    "empty": {
+      "title": "No Tags Found",
+      "description": "Get started by creating your first tag.",
+      "newButton": "Create Tag"
+    },
+    "table": {
+      "name": "Name",
+      "id": "ID",
+      "usageCount": "Usage Count",
+      "associatedUrl": "Associated URL",
+      "actions": "Actions"
+    },
+    "deleteDialog": {
+      "title": "Are you absolutely sure?",
+      "description": "This action cannot be undone. This will permanently delete the tag.",
+      "descriptionWithCount": "This tag is used by {{count}} VPS(s). Deleting it will remove it from them. This action cannot be undone.",
+      "confirm": "Continue"
+    },
+    "notifications": {
+      "fetchFailed": "Failed to load tags.",
+      "deleting": "Deleting tag...",
+      "deleted": "Tag deleted successfully!",
+      "deleteFailed": "Failed to delete tag.",
+      "visibilityUpdated": "Tag visibility updated.",
+      "visibilityUpdateFailed": "Failed to update visibility."
+    },
+    "form": {
+      "editTitle": "Edit Tag",
+      "createTitle": "Create New Tag",
+      "editDescription": "Update the details of your existing tag.",
+      "createDescription": "Create a new tag to organize your resources.",
+      "nameLabel": "Name",
+      "colorLabel": "Color",
+      "iconLabel": "Icon",
+      "urlLabel": "URL",
+      "visibleLabel": "Visible",
+      "saving": "Saving...",
+      "updateButton": "Update Tag",
+      "createButton": "Create Tag",
+      "validation": {
+        "nameRequired": "Name is required",
+        "invalidColor": "Invalid hex color (e.g., #RRGGBB)"
+      },
+      "notifications": {
+        "updated": "Tag updated successfully!",
+        "created": "Tag created successfully!",
+        "saveFailed": "Failed to save tag. Please try again."
+      }
+    }
   }
 }

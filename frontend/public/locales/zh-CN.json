@@ -159,5 +159,62 @@
       "workingDirectoryLabel": "工作目录",
       "contentLabel": "脚本内容"
     }
+  },
+  "tagManagement": {
+    "title": "标签管理",
+    "description": "创建、编辑和管理您的所有标签。",
+    "addNew": "创建标签",
+    "searchPlaceholder": "搜索标签...",
+    "loading": "正在加载标签...",
+    "noMatch": "没有与您的搜索匹配的标签。",
+    "empty": {
+      "title": "未找到标签",
+      "description": "从创建您的第一个标签开始。",
+      "newButton": "创建标签"
+    },
+    "table": {
+      "name": "名称",
+      "id": "ID",
+      "usageCount": "使用次数",
+      "associatedUrl": "关联 URL",
+      "actions": "操作"
+    },
+    "deleteDialog": {
+      "title": "您确定吗？",
+      "description": "此操作无法撤销。这将永久删除该标签。",
+      "descriptionWithCount": "此标签正被 {{count}} 个 VPS 使用。删除它将从这些 VPS 中移除该标签。此操作无法撤销。",
+      "confirm": "继续"
+    },
+    "notifications": {
+      "fetchFailed": "加载标签失败。",
+      "deleting": "正在删除标签...",
+      "deleted": "标签删除成功！",
+      "deleteFailed": "删除标签失败。",
+      "visibilityUpdated": "标签可见性已更新。",
+      "visibilityUpdateFailed": "更新标签可见性失败。"
+    },
+    "form": {
+      "editTitle": "编辑标签",
+      "createTitle": "创建新标签",
+      "editDescription": "更新您现有标签的详细信息。",
+      "createDescription": "创建一个新标签来组织您的资源。",
+      "nameLabel": "名称",
+      "colorLabel": "颜色",
+      "iconLabel": "图标",
+      "urlLabel": "URL",
+      "visibleLabel": "可见",
+      "saving": "正在保存...",
+      "updateButton": "更新标签",
+      "createButton": "创建标签",
+      "validation": {
+        "nameRequired": "名称是必填项",
+        "invalidColor": "无效的十六进制颜色 (例如, #RRGGBB)"
+      },
+      "notifications": {
+        "updated": "标签更新成功！",
+        "created": "标签创建成功！",
+        "saveFailed": "保存标签失败。请再试一次。"
+      }
+    }
   }
 }
