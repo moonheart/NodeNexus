@@ -126,7 +126,13 @@ const AccountSettingsPage: React.FC = () => {
         const toastId = toast.loading(t('accountSettings.updatingLanguage'));
         try {
             await userService.updateUserLanguage(lang);
-            i18n.changeLanguage(lang);
+            if (lang === 'auto') {
+                localStorage.removeItem('i18nextLng');
+                // After removing the item, we need to instruct i18next to re-detect the language
+                i18n.changeLanguage(undefined);
+            } else {
+                i18n.changeLanguage(lang);
+            }
             toast.success(t('accountSettings.preferences.updateLanguageSuccess'), { id: toastId });
         } catch (error) {
             toast.error(error instanceof Error ? error.message : t('accountSettings.updateLanguageError'), { id: toastId });
