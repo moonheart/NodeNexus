@@ -6,6 +6,7 @@ import type { Theme } from "@/lib/themes";
 // --- Constants ---
 const DYNAMIC_STYLE_ID = 'dynamic-theme-styles';
 const GUEST_THEME_STORAGE_KEY = 'vite-ui-theme-mode';
+const ACTIVE_THEME_CSS_STORAGE_KEY = 'active-theme-css';
 
 // --- Helper Functions ---
 const getSystemTheme = () => (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
@@ -17,19 +18,63 @@ const updateThemeClass = (mode: 'light' | 'dark') => {
 };
 
 const applyCustomTheme = (css: string) => {
+  // Phase 2: Transition from preloaded inline styles to a style tag.
+  // 1. Clear any inline styles set by the flicker-prevention script.
+  if (document.documentElement.dataset.preloadedTheme) {
+    const style = document.documentElement.style;
+    for (let i = style.length - 1; i >= 0; i--) {
+      const propName = style[i];
+      if (propName.startsWith('--')) {
+        style.removeProperty(propName);
+      }
+    }
+    delete document.documentElement.dataset.preloadedTheme;
+  }
+
+  // 2. Use the robust <style> tag method for the running app.
   let styleTag = document.getElementById(DYNAMIC_STYLE_ID) as HTMLStyleElement | null;
   if (!styleTag) {
     styleTag = document.createElement('style');
     styleTag.id = DYNAMIC_STYLE_ID;
-    document.head.appendChild(styleTag);
   }
+  
   styleTag.innerHTML = css;
+  // Append to ensure it's last and has precedence over other stylesheets.
+  document.head.appendChild(styleTag);
+
+  // 3. Save to localStorage for the next initial load.
+  try {
+    localStorage.setItem(ACTIVE_THEME_CSS_STORAGE_KEY, css);
+  } catch (e) {
+    console.error("Failed to save theme CSS to localStorage", e);
+  }
 };
 
 const clearCustomTheme = () => {
+  // Clear both potential theme application methods.
+  // 1. Clear inline styles.
+  if (document.documentElement.dataset.preloadedTheme) {
+    const style = document.documentElement.style;
+    for (let i = style.length - 1; i >= 0; i--) {
+      const propName = style[i];
+      if (propName.startsWith('--')) {
+        style.removeProperty(propName);
+      }
+    }
+    delete document.documentElement.dataset.preloadedTheme;
+  }
+
+  // 2. Clear style tag.
   const styleTag = document.getElementById(DYNAMIC_STYLE_ID);
   if (styleTag) {
     styleTag.innerHTML = '';
+  }
+
+  // 3. Clear from storage.
+  try {
+    localStorage.removeItem(ACTIVE_THEME_CSS_STORAGE_KEY);
+  } catch (e) {
+    console.error("Failed to remove theme CSS from localStorage", e);
   }
 };
 
@@ -74,10 +119,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     mediaQuery.addEventListener('change', handleSystemThemeChange);
 
-    // Determine and apply light/dark mode
-    const currentMode = themeMode === 'system' ? getSystemTheme() : themeMode;
-    updateThemeClass(currentMode);
-    setResolvedTheme(currentMode);
+    // Set initial resolved theme based on the class set by the inline script
+    const initialResolvedTheme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+    setResolvedTheme(initialResolvedTheme);
 
     // Fetch and apply user's selected theme if logged in
     const applyUserTheme = async () => {
@@ -112,7 +156,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
           if (!themeRes.ok) throw new Error(`Failed to fetch theme: ${themeIdToApply}`);
           const theme: Theme = await themeRes.json();
           if (isMounted && theme.css) {
-            applyCustomTheme(theme.css);
+            applyCustomTheme(theme.css); // This will also save it to localStorage
           }
         }
       } catch (error) {
@@ -130,11 +174,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       isMounted = false;
       mediaQuery.removeEventListener('change', handleSystemThemeChange);
     };
-  }, [token, themeMode, triggerReload]);
+  }, [token, triggerReload, themeMode]);
 
   const setThemeMode = useCallback(async (mode: ThemeMode) => {
     setThemeModeState(mode);
     localStorage.setItem(GUEST_THEME_STORAGE_KEY, mode);
+
+    // Update class immediately for responsiveness
+    const newResolvedTheme = mode === 'system' ? getSystemTheme() : mode;
+    updateThemeClass(newResolvedTheme);
+    setResolvedTheme(newResolvedTheme);
+
     if (token) {
       try {
         await fetch('/api/user/theme-settings', {

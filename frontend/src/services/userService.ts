@@ -1,21 +1,4 @@
-import { useAuthStore } from '../store/authStore';
-
-const getAuthHeaders = () => {
-    const token = useAuthStore.getState().token;
-    return {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-    };
-};
-
-// A helper function to handle API responses
-async function handleResponse<T>(response: Response): Promise<T> {
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'An unknown error occurred.' }));
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-    }
-    return response.json();
-}
+import apiClient from './apiClient';
 
 export interface User {
     id: number;
@@ -33,49 +16,30 @@ export interface OAuthProvider {
 }
 
 export const updateUsername = async (username: string): Promise<User> => {
-    const response = await fetch('/api/user/username', {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ username }),
-    });
-    return handleResponse<User>(response);
+    const response = await apiClient.put<User>('/user/username', { username });
+    return response.data;
 };
 
 export const updatePassword = async (passwordData: object): Promise<{ message: string }> => {
-    const response = await fetch('/api/user/password', {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(passwordData),
-    });
-    return handleResponse<{ message: string }>(response);
+    const response = await apiClient.put<{ message: string }>('/user/password', passwordData);
+    return response.data;
 };
 
 export const getConnectedAccounts = async (): Promise<ConnectedAccount[]> => {
-    const response = await fetch('/api/user/connected-accounts', {
-        headers: getAuthHeaders(),
-    });
-    return handleResponse<ConnectedAccount[]>(response);
+    const response = await apiClient.get<ConnectedAccount[]>('/user/connected-accounts');
+    return response.data;
 };
 
 export const unlinkProvider = async (providerName: string) => {
-    const response = await fetch(`/api/user/connected-accounts/${providerName}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-    });
-    return handleResponse(response);
+    const response = await apiClient.delete(`/user/connected-accounts/${providerName}`);
+    return response.data;
 };
 export const getAvailableProviders = async (): Promise<OAuthProvider[]> => {
-    const response = await fetch('/api/auth/providers', {
-        headers: getAuthHeaders(),
-    });
-    return handleResponse<OAuthProvider[]>(response);
+    const response = await apiClient.get<OAuthProvider[]>('/auth/providers');
+    return response.data;
 };
 
 export const updateUserLanguage = async (language: string): Promise<{ message: string }> => {
-    const response = await fetch('/api/user/preference', {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ language }),
-    });
-    return handleResponse<{ message: string }>(response);
+    const response = await apiClient.put<{ message: string }>('/user/preference', { language });
+    return response.data;
 };

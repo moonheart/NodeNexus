@@ -5,9 +5,44 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vite + React + TS</title>
+    <script>
+      // Prevents theme flicker
+      (function() {
+        try {
+          // 1. Apply light/dark mode
+          const themeMode = localStorage.getItem('vite-ui-theme-mode') || 'system';
+          const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          const resolvedTheme = themeMode === 'system' ? systemTheme : themeMode;
+          document.documentElement.classList.add(resolvedTheme);
+
+          // 2. Apply custom theme CSS as inline variables to prevent FOUC and ensure precedence
+          const themeCss = localStorage.getItem('active-theme-css');
+          if (themeCss) {
+            // This regex finds all CSS custom properties (--*) inside the first { ... } block.
+            const varRegex = /--([a-zA-Z0-9-]+)\s*:\s*([^;]+);/g;
+            const styleBlockMatch = themeCss.match(/{([^}]+)}/);
+            if (styleBlockMatch) {
+              const styleBlock = styleBlockMatch[1];
+              let match;
+              while ((match = varRegex.exec(styleBlock)) !== null) {
+                try {
+                  document.documentElement.style.setProperty(`--${match[1]}`, match[2].trim());
+                } catch (e) {
+                  console.error("Failed to apply inline theme variable", e);
+                }
+              }
+              // Add a marker to know that inline styles were applied
+              document.documentElement.dataset.preloadedTheme = 'true';
+            }
+          }
+        } catch (e) {
+          console.error("Flicker-prevention script failed", e);
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@7.3.2/css/flag-icons.min.css" />
   </head>
-  <body>
+  <body class="bg-background text-foreground">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

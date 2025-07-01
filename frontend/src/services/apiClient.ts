@@ -29,11 +29,12 @@ apiClient.interceptors.response.use(
     if (error.response && error.response.status === 401) { // Check if error.response exists
       // Handle 401, e.g., redirect to login, clear token
       useAuthStore.getState().logout(); // Example: logout user
-      // window.location.href = '/login'; // Or redirect
+      window.location.href = '/login'; // Or redirect
       console.error('Unauthorized, logging out.');
     }
     return Promise.reject(error);
   }
 );
 
+export { axios };
 export default apiClient;

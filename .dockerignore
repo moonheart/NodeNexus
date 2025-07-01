@@ -16,3 +16,5 @@ release/
 
 # IDE specific
 .vscode/
+
+frontend/public/locales

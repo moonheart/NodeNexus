@@ -26,7 +26,7 @@ const ThemeSettingsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { token } = useAuthStore();
-  const { reloadTheme, activeThemeId, setActiveThemeId, themeMode, setThemeMode } = useTheme();
+  const { reloadTheme, activeThemeId, setActiveThemeId } = useTheme();
 
   const allThemes = [...builtInThemes, ...userThemes];
 
@@ -72,9 +72,8 @@ const ThemeSettingsPage = () => {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(settings),
       });
-      // Apply changes immediately via context
-      setThemeMode(settings.theme_mode);
-      setActiveThemeId(settings.active_theme_id || 'default');
+      // The theme provider will fetch the latest settings and apply them
+      reloadTheme();
       alert(t('common.notifications.saved'));
     } catch (err) {
       setError(err instanceof Error ? err.message : t('common.notifications.saveFailed'));
@@ -148,8 +147,10 @@ const ThemeSettingsPage = () => {
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium">{t('themeSettings.mode')}</label>
                 <Select
-                  value={themeMode}
-                  onValueChange={(value) => setThemeMode(value as UserThemeSettings['theme_mode'])}
+                  value={settings.theme_mode}
+                  onValueChange={(value) => {
+                    setSettings(s => s ? { ...s, theme_mode: value as UserThemeSettings['theme_mode'] } : null);
+                  }}
                 >
                   <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -162,8 +163,10 @@ const ThemeSettingsPage = () => {
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium">{t('themeSettings.theme')}</label>
                 <Select
-                  value={activeThemeId}
-                  onValueChange={(value) => setActiveThemeId(value)}
+                  value={settings.active_theme_id || ''}
+                  onValueChange={(value) => {
+                    setSettings(s => s ? { ...s, active_theme_id: value } : null);
+                  }}
                 >
                   <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
                   <SelectContent>

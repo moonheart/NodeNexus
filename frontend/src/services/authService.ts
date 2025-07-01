@@ -1,8 +1,7 @@
 // 类型定义需要与 backend/src/http_server/auth_logic.rs 中的结构体对齐
 // 为了减少跨模块直接导入的复杂性，我们在这里重新定义或从共享类型文件导入（如果未来创建的话）
 
-import axios from "axios";
-import apiClient from "./apiClient";
+import apiClient, { axios } from "./apiClient";
 
 export interface RegisterRequest {
     username: string;

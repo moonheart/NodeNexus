@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
-import { scriptService, type CommandScript, type ScriptPayload } from '../services/scriptService';
+import { scriptService, type ScriptPayload } from '../services/scriptService';
+import type { CommandScript } from '../types';
 import ScriptFormModal from '../components/ScriptFormModal';
 import { Plus, Search, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
