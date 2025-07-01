@@ -34,7 +34,7 @@ const StatCard: React.FC<StatCardProps> = ({
 
   const content = (
     <>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
         {icon && <div className={cn("text-muted-foreground", valueClassName)}>{icon}</div>}
       </CardHeader>

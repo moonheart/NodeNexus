@@ -45,7 +45,7 @@ const SettingsLayout: React.FC = () => {
                 {group.links.map((link) => (
                   <Button
                     key={link.name}
-                    variant={location.pathname === link.to ? 'secondary' : 'ghost'}
+                    variant={location.pathname === link.to ? 'default' : 'ghost'}
                     className="w-full justify-start"
                     asChild
                   >

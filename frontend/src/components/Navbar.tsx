@@ -36,7 +36,7 @@ const Navbar: React.FC = () => {
                     to={link.to}
                     className={({ isActive }) =>
                       cn(
-                        buttonVariants({ variant: isActive ? 'secondary' : 'ghost', size: 'sm' }),
+                        buttonVariants({ variant: isActive ? 'default' : 'ghost', size: 'sm' }),
                         'h-8',
                       )
                     }

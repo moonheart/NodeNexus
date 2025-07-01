@@ -240,8 +240,8 @@ const HomePage: React.FC = () => {
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <CardTitle>服务器列表</CardTitle>
             <ToggleGroup type="single" value={viewMode} onValueChange={(value) => value && setViewMode(value as ViewMode)} aria-label="View mode">
-              <ToggleGroupItem value="card" aria-label="Card view"><LayoutGrid className="h-4 w-4 mr-2" />卡片</ToggleGroupItem>
-              <ToggleGroupItem value="list" aria-label="List view"><List className="h-4 w-4 mr-2" />列表</ToggleGroupItem>
+              <ToggleGroupItem value="card" aria-label="Card view" className={"px-2"}><LayoutGrid className="h-4 w-4" />卡片</ToggleGroupItem>
+              <ToggleGroupItem value="list" aria-label="List view" className={"px-2"}><List className="h-4 w-4" />列表</ToggleGroupItem>
             </ToggleGroup>
           </div>
         </CardHeader>
@@ -252,7 +252,7 @@ const HomePage: React.FC = () => {
                 <span className="text-sm font-medium">分组:</span>
                 <ToggleGroup type="single" value={selectedGroup} onValueChange={(value) => value && setSelectedGroup(value)} aria-label="Group filter">
                   {uniqueGroups.map(group => (
-                    <ToggleGroupItem key={group} value={group}>{group === 'ALL' ? '全部分组' : group}</ToggleGroupItem>
+                    <ToggleGroupItem key={group} value={group} className={"px-4"}>{group === 'ALL' ? '全部分组' : group}</ToggleGroupItem>
                   ))}
                 </ToggleGroup>
               </div>
