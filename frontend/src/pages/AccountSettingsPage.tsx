@@ -182,7 +182,7 @@ const AccountSettingsPage: React.FC = () => {
                 <CardContent>
                     <form onSubmit={handleUpdateUsername} className="space-y-4">
                         <div className="space-y-2">
-                            <Label htmlFor="username">{t('accountSettings.usernameLabel')}</Label>
+                            <Label htmlFor="username">{t('common.labels.username')}</Label>
                             <div className="flex">
                                 <Input
                                     id="username"

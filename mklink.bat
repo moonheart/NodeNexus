@@ -1,0 +1,1 @@
+mklink /D /J ".\frontend\public\locales" ".\locales"
