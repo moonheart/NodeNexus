@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getAllAlertRules, deleteAlertRule, updateAlertRuleStatus } from '../services/alertService';
 import { getAllVpsListItems } from '../services/vpsService';
 import type { VpsListItemResponse, AlertRule } from '../types';
@@ -24,6 +25,7 @@ import { RefreshCwIcon as SpinnerIcon } from '@/components/Icons';
 import EmptyState from '@/components/EmptyState';
 
 const AlertsSettingsPage: React.FC = () => {
+    const { t } = useTranslation();
     const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
     const [vpsList, setVpsList] = useState<VpsListItemResponse[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -44,8 +46,8 @@ const AlertsSettingsPage: React.FC = () => {
             setVpsList(vpsData);
             setError(null);
         } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'Failed to load alert rules or VPS list.';
-            console.error(errorMessage, err);
+            const errorMessage = err instanceof Error ? err.message : t('alertSettings.notifications.loadFailed');
+            console.error(t('alertSettings.notifications.loadFailed'), err);
             setError(errorMessage);
             toast.error(errorMessage);
         } finally {
@@ -68,7 +70,7 @@ const AlertsSettingsPage: React.FC = () => {
     };
 
     const handleRuleSaved = () => {
-        toast.success(`Alert rule ${currentEditingAlertRule ? 'updated' : 'created'} successfully!`);
+        toast.success(t(currentEditingAlertRule ? 'alertSettings.notifications.updateSuccess' : 'alertSettings.notifications.createSuccess'));
         fetchAlertsData();
     };
 
@@ -79,14 +81,14 @@ const AlertsSettingsPage: React.FC = () => {
 
     const confirmDeleteAlertRule = async () => {
         if (deletingRuleId === null) return;
-        const toastId = toast.loading('Deleting alert rule...');
+        const toastId = toast.loading(t('alertSettings.notifications.deleting'));
         try {
             await deleteAlertRule(deletingRuleId);
-            toast.success('Alert rule deleted successfully!', { id: toastId });
+            toast.success(t('alertSettings.notifications.deleteSuccess'), { id: toastId });
             fetchAlertsData();
         } catch (err) {
-            console.error('Failed to delete alert rule:', err);
-            toast.error('Failed to delete alert rule.', { id: toastId });
+            console.error(t('alertSettings.notifications.deleteError'), err);
+            toast.error(t('alertSettings.notifications.deleteError'), { id: toastId });
         } finally {
             setIsDeleteAlertOpen(false);
             setDeletingRuleId(null);
@@ -94,16 +96,16 @@ const AlertsSettingsPage: React.FC = () => {
     };
 
     const handleToggleAlertRuleStatus = async (rule: AlertRule) => {
-        const toastId = toast.loading(`Updating status for "${rule.name}"...`);
+        const toastId = toast.loading(t('alertSettings.notifications.updatingStatus', { ruleName: rule.name }));
         try {
             const updatedRule = await updateAlertRuleStatus(rule.id, !rule.isActive);
             setAlertRules(prevRules =>
                 prevRules.map(r => r.id === updatedRule.id ? updatedRule : r)
             );
-            toast.success(`Rule "${updatedRule.name}" ${updatedRule.isActive ? 'enabled' : 'disabled'}.`, { id: toastId });
+            toast.success(t(updatedRule.isActive ? 'alertSettings.notifications.enabledSuccess' : 'alertSettings.notifications.disabledSuccess', { ruleName: updatedRule.name }), { id: toastId });
         } catch (err) {
-            console.error('Failed to update alert rule status:', err);
-            toast.error('Failed to update alert rule status.', { id: toastId });
+            console.error(t('alertSettings.notifications.updateStatusError'), err);
+            toast.error(t('alertSettings.notifications.updateStatusError'), { id: toastId });
         }
     };
 
@@ -112,7 +114,7 @@ const AlertsSettingsPage: React.FC = () => {
     }
 
     if (error) {
-        return <div className="container mx-auto p-4 text-destructive">Error loading alert rules: {error}</div>;
+        return <div className="container mx-auto p-4 text-destructive">{t('alertSettings.errorLoading', { error: error })}</div>;
     }
 
     return (
@@ -120,29 +122,29 @@ const AlertsSettingsPage: React.FC = () => {
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
                     <div>
-                        <CardTitle>Alert Rules</CardTitle>
-                        <CardDescription>Manage rules to get notified about important events.</CardDescription>
+                        <CardTitle>{t('alertSettings.title')}</CardTitle>
+                        <CardDescription>{t('alertSettings.description')}</CardDescription>
                     </div>
                     <Button onClick={handleOpenCreateAlertModal}>
-                        <PlusCircle size={18} className="mr-2" /> Add New Rule
+                        <PlusCircle size={18} className="mr-2" /> {t('alertSettings.addNewRule')}
                     </Button>
                 </CardHeader>
                 <CardContent>
                     {alertRules.length === 0 ? (
                         <EmptyState
-                            title="No Alert Rules"
-                            message="Get started by creating a new alert rule."
-                            action={<Button onClick={handleOpenCreateAlertModal}><PlusCircle size={18} className="mr-2" /> Add New Rule</Button>}
+                            title={t('alertSettings.empty.title')}
+                            message={t('alertSettings.empty.message')}
+                            action={<Button onClick={handleOpenCreateAlertModal}><PlusCircle size={18} className="mr-2" /> {t('alertSettings.addNewRule')}</Button>}
                         />
                     ) : (
                         <Table>
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead>Name</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Condition</TableHead>
-                                    <TableHead className="text-center">Enabled</TableHead>
-                                    <TableHead className="text-right">Actions</TableHead>
+                                    <TableHead>{t('alertSettings.table.name')}</TableHead>
+                                    <TableHead>{t('alertSettings.table.status')}</TableHead>
+                                    <TableHead>{t('alertSettings.table.condition')}</TableHead>
+                                    <TableHead className="text-center">{t('alertSettings.table.enabled')}</TableHead>
+                                    <TableHead className="text-right">{t('alertSettings.table.actions')}</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -151,20 +153,20 @@ const AlertsSettingsPage: React.FC = () => {
                                         <TableCell className="font-medium">{rule.name}</TableCell>
                                         <TableCell>
                                             <Badge variant={rule.isActive ? 'success' : 'secondary'}>
-                                                {rule.isActive ? 'Active' : 'Inactive'}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell>
-                                            <div className="text-sm">
-                                                <span className="font-semibold">{rule.metricType.replace(/_/g, ' ')}</span>
-                                                <span> {rule.comparisonOperator} </span>
-                                                <span className="font-semibold">{rule.threshold}</span>
-                                                <span> for </span>
-                                                <span className="font-semibold">{rule.durationSeconds}s</span>
-                                            </div>
-                                            <div className="text-xs text-muted-foreground">
-                                                Cooldown: {rule.cooldownSeconds}s
-                                            </div>
+                                                {rule.isActive ? t('alertSettings.status.active') : t('alertSettings.status.inactive')}
+                                           </Badge>
+                                       </TableCell>
+                                       <TableCell>
+                                           <div className="text-sm">
+                                               <span className="font-semibold">{t(`alertSettings.metrics.${rule.metricType}` as const)}</span>
+                                               <span> {rule.comparisonOperator} </span>
+                                               <span className="font-semibold">{rule.threshold}</span>
+                                               <span> {t('alertSettings.condition.for')} </span>
+                                               <span className="font-semibold">{t('alertSettings.condition.seconds', { count: rule.durationSeconds })}</span>
+                                           </div>
+                                           <div className="text-xs text-muted-foreground">
+                                               {t('alertSettings.condition.cooldown', { count: rule.cooldownSeconds })}
+                                           </div>
                                         </TableCell>
                                         <TableCell className="text-center">
                                             <Switch
@@ -200,14 +202,14 @@ const AlertsSettingsPage: React.FC = () => {
             <AlertDialog open={isDeleteAlertOpen} onOpenChange={setIsDeleteAlertOpen}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
-                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                        <AlertDialogTitle>{t('common.dialogs.delete.title')}</AlertDialogTitle>
                         <AlertDialogDescription>
-                            This action cannot be undone. This will permanently delete the alert rule.
+                            {t('alertSettings.deleteDialog.description')}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel onClick={() => setDeletingRuleId(null)}>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={confirmDeleteAlertRule}>Delete</AlertDialogAction>
+                        <AlertDialogCancel onClick={() => setDeletingRuleId(null)}>{t('common.actions.cancel')}</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmDeleteAlertRule}>{t('common.actions.delete')}</AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>

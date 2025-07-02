@@ -193,7 +193,7 @@
     "deleteDialog": {
       "title": "Are you absolutely sure?",
       "description": "This action cannot be undone. This will permanently delete the tag.",
-      "descriptionWithCount": "This tag is used by {{count}} VPS(s). Deleting it will remove it from them. This action cannot be undone."
+      "descriptionWithCount": "This tag is used by %{count} VPS(s). Deleting it will remove it from them. This action cannot be undone."
     },
     "notifications": {
       "visibilityUpdated": "Tag visibility updated.",
@@ -202,6 +202,54 @@
     "form": {
       "editDescription": "Update the details of your existing tag.",
       "createDescription": "Create a new tag to organize your resources."
+    }
+  },
+  "alertSettings": {
+    "title": "Alert Rules",
+    "description": "Manage rules to get notified about important events.",
+    "addNewRule": "Add New Rule",
+    "errorLoading": "Error loading alert rules: %{error}",
+    "empty": {
+      "title": "No Alert Rules",
+      "message": "Get started by creating a new alert rule."
+    },
+    "table": {
+      "name": "Name",
+      "status": "Status",
+      "condition": "Condition",
+      "enabled": "Enabled",
+      "actions": "Actions"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "condition": {
+      "for": "for",
+      "seconds": "%{count}s",
+      "cooldown": "Cooldown: %{count}s"
+    },
+    "metrics": {
+      "cpu_usage": "CPU Usage",
+      "memory_usage": "Memory Usage",
+      "disk_usage": "Disk Usage",
+      "network_in": "Network In",
+      "network_out": "Network Out"
+    },
+    "deleteDialog": {
+      "description": "This action cannot be undone. This will permanently delete the alert rule."
+    },
+    "notifications": {
+      "loadFailed": "Failed to load alert rules or VPS list.",
+      "createSuccess": "Alert rule created successfully!",
+      "updateSuccess": "Alert rule updated successfully!",
+      "deleting": "Deleting alert rule...",
+      "deleteSuccess": "Alert rule deleted successfully!",
+      "deleteError": "Failed to delete alert rule.",
+      "updatingStatus": "Updating status for \"%{ruleName}\"...",
+      "enabledSuccess": "Rule \"%{ruleName}\" enabled.",
+      "disabledSuccess": "Rule \"%{ruleName}\" disabled.",
+      "updateStatusError": "Failed to update alert rule status."
     }
   }
 }

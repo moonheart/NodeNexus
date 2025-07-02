@@ -42,6 +42,7 @@
       "delete": {
         "title": "确定吗？",
         "description": "此操作无法撤销。这将永久删除该项目。",
+        "description_alert": "此操作无法撤销。这将永久删除该警报规则。",
         "confirm": "继续"
       },
       "unlink": {
@@ -193,7 +194,7 @@
     "deleteDialog": {
       "title": "您确定吗？",
       "description": "此操作无法撤销。这将永久删除该标签。",
-      "descriptionWithCount": "此标签正被 {{count}} 个 VPS 使用。删除它将从这些 VPS 中移除该标签。此操作无法撤销。"
+      "descriptionWithCount": "此标签正被 %{count} 个 VPS 使用。删除它将从这些 VPS 中移除该标签。此操作无法撤销。"
     },
     "notifications": {
       "visibilityUpdated": "标签可见性已更新。",
@@ -202,6 +203,54 @@
     "form": {
       "editDescription": "更新您现有标签的详细信息。",
       "createDescription": "创建一个新标签来组织您的资源。"
+    }
+  },
+  "alertSettings": {
+    "title": "警报规则",
+    "description": "管理规则以获取重要事件的通知。",
+    "addNewRule": "添加新规则",
+    "errorLoading": "加载警报规则时出错: %{error}",
+    "empty": {
+      "title": "无警报规则",
+      "message": "从创建新的警报规则开始。"
+    },
+    "table": {
+      "name": "名称",
+      "status": "状态",
+      "condition": "条件",
+      "enabled": "已启用",
+      "actions": "操作"
+    },
+    "status": {
+      "active": "活动",
+      "inactive": "非活动"
+    },
+    "condition": {
+      "for": "持续",
+      "seconds": "%{count}秒",
+      "cooldown": "冷却: %{count}秒"
+    },
+    "metrics": {
+      "cpu_usage": "CPU 使用率",
+      "memory_usage": "内存使用率",
+      "disk_usage": "磁盘使用率",
+      "network_in": "网络入站",
+      "network_out": "网络出站"
+    },
+    "deleteDialog": {
+      "description": "此操作无法撤销。这将永久删除该警报规则。"
+    },
+    "notifications": {
+      "loadFailed": "无法加载警报规则或 VPS 列表。",
+      "createSuccess": "警报规则创建成功！",
+      "updateSuccess": "警报规则更新成功！",
+      "deleting": "正在删除警报规则...",
+      "deleteSuccess": "警报规则删除成功！",
+      "deleteError": "删除警报规则失败。",
+      "updatingStatus": "正在更新“%{ruleName}”的状态...",
+      "enabledSuccess": "规则“%{ruleName}”已启用。",
+      "disabledSuccess": "规则“%{ruleName}”已禁用。",
+      "updateStatusError": "更新警报规则状态失败。"
     }
   }
 }
