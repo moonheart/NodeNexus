@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { VpsListItemResponse, ServerStatus as ServerStatusType, ViewMode, Tag } from '../types';
 import { useServerListStore, type ServerListState, type ConnectionStatus } from '../store/serverListStore';
 import { useAuthStore } from '../store/authStore';
@@ -46,6 +47,7 @@ const statusColorMap: Record<ServerStatusType, string> = {
 };
 
 const HomePage: React.FC = () => {
+  const { t } = useTranslation();
   const { isAuthenticated } = useAuthStore();
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<ServerStatusType | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<string>('ALL');
@@ -176,31 +178,31 @@ const HomePage: React.FC = () => {
     return `${(bps / (1024 * 1024 * 1024)).toFixed(1)} GBps`;
   };
 
-  const sortOptions = [
-    { key: 'id', label: '默认' },
-    { key: 'name', label: '名称' },
-    { key: 'status', label: '状态' },
-    { key: 'ipAddress', label: 'IP 地址' },
-    { key: 'osType', label: '操作系统' },
-    { key: 'cpu', label: 'CPU' },
-    { key: 'memory', label: '内存' },
-    { key: 'traffic', label: '流量使用' },
-    { key: 'networkUp', label: '上传' },
-    { key: 'networkDown', label: '下载' },
-  ];
+  const sortOptions = useMemo(() => [
+    { key: 'id', label: t('homePage.serverList.sorting.options.default') },
+    { key: 'name', label: t('homePage.serverList.sorting.options.name') },
+    { key: 'status', label: t('homePage.serverList.sorting.options.status') },
+    { key: 'ipAddress', label: t('homePage.serverList.sorting.options.ipAddress') },
+    { key: 'osType', label: t('homePage.serverList.sorting.options.os') },
+    { key: 'cpu', label: t('homePage.serverList.sorting.options.cpu') },
+    { key: 'memory', label: t('homePage.serverList.sorting.options.memory') },
+    { key: 'traffic', label: t('homePage.serverList.sorting.options.trafficUsage') },
+    { key: 'networkUp', label: t('homePage.serverList.sorting.options.networkUp') },
+    { key: 'networkDown', label: t('homePage.serverList.sorting.options.networkDown') },
+  ], [t]);
 
   if (isLoadingServers && vpsList.length === 0) {
-    return <div className="flex flex-col items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="mt-4 text-muted-foreground">正在加载服务器...</p></div>;
+    return <div className="flex flex-col items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="mt-4 text-muted-foreground">{t('homePage.loadingServers')}</p></div>;
   }
 
   let statusMessage = '';
   let statusVariant: 'default' | 'destructive' = 'default';
   if (connectionStatus === 'connecting') {
-    statusMessage = '正在连接到实时服务器...';
+    statusMessage = t('homePage.connection.connecting');
   } else if (connectionStatus === 'reconnecting') {
-    statusMessage = '连接已断开，正在尝试重新连接...';
+    statusMessage = t('homePage.connection.reconnecting');
   } else if (wsError && (connectionStatus === 'error' || connectionStatus === 'permanently_failed')) {
-    statusMessage = `无法连接到实时服务器: ${wsError}`;
+    statusMessage = t('homePage.connection.error', { error: wsError });
     statusVariant = 'destructive';
   }
 
@@ -220,17 +222,17 @@ const HomePage: React.FC = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle>概览</CardTitle>
+          <CardTitle>{t('homePage.overview.title')}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 md:gap-6">
-            <StatCard title="总服务器数" value={serverStats.total} icon={<Server className="w-6 h-6" />} valueClassName="text-primary" onClick={() => setSelectedStatusFilter(null)} isActive={selectedStatusFilter === null} />
-            <StatCard title="在线" value={serverStats[STATUS_ONLINE]} icon={<CheckCircle className="w-6 h-6" />} valueClassName={statusColorMap[STATUS_ONLINE]} onClick={() => setSelectedStatusFilter(STATUS_ONLINE)} isActive={selectedStatusFilter === STATUS_ONLINE} />
-            <StatCard title="离线" value={serverStats[STATUS_OFFLINE]} icon={<XCircle className="w-6 h-6" />} valueClassName={statusColorMap[STATUS_OFFLINE]} onClick={() => setSelectedStatusFilter(STATUS_OFFLINE)} isActive={selectedStatusFilter === STATUS_OFFLINE} />
-            {serverStats[STATUS_REBOOTING] > 0 && <StatCard title="重启中" value={serverStats[STATUS_REBOOTING]} icon={<Power className="w-6 h-6" />} valueClassName={statusColorMap[STATUS_REBOOTING]} onClick={() => setSelectedStatusFilter(STATUS_REBOOTING)} isActive={selectedStatusFilter === STATUS_REBOOTING} />}
-            {serverStats[STATUS_ERROR] > 0 && <StatCard title="错误" value={serverStats[STATUS_ERROR]} icon={<AlertTriangle className="w-6 h-6" />} valueClassName={statusColorMap[STATUS_ERROR]} onClick={() => setSelectedStatusFilter(STATUS_ERROR)} isActive={selectedStatusFilter === STATUS_ERROR} />}
-            <StatCard title="总上传" value={formatNetworkSpeedForDisplay(totalNetworkUp)} icon={<ArrowUp className="w-6 h-6" />} valueClassName="text-emerald-500" description="在线服务器" />
-            <StatCard title="总下载" value={formatNetworkSpeedForDisplay(totalNetworkDown)} icon={<ArrowDown className="w-6 h-6" />} valueClassName="text-sky-500" description="在线服务器" />
+            <StatCard title={t('homePage.overview.totalServers')} value={serverStats.total} icon={<Server className="w-6 h-6" />} valueClassName="text-primary" onClick={() => setSelectedStatusFilter(null)} isActive={selectedStatusFilter === null} />
+            <StatCard title={t('homePage.overview.online')} value={serverStats[STATUS_ONLINE]} icon={<CheckCircle className="w-6 h-6" />} valueClassName={statusColorMap[STATUS_ONLINE]} onClick={() => setSelectedStatusFilter(STATUS_ONLINE)} isActive={selectedStatusFilter === STATUS_ONLINE} />
+            <StatCard title={t('homePage.overview.offline')} value={serverStats[STATUS_OFFLINE]} icon={<XCircle className="w-6 h-6" />} valueClassName={statusColorMap[STATUS_OFFLINE]} onClick={() => setSelectedStatusFilter(STATUS_OFFLINE)} isActive={selectedStatusFilter === STATUS_OFFLINE} />
+            {serverStats[STATUS_REBOOTING] > 0 && <StatCard title={t('homePage.overview.rebooting')} value={serverStats[STATUS_REBOOTING]} icon={<Power className="w-6 h-6" />} valueClassName={statusColorMap[STATUS_REBOOTING]} onClick={() => setSelectedStatusFilter(STATUS_REBOOTING)} isActive={selectedStatusFilter === STATUS_REBOOTING} />}
+            {serverStats[STATUS_ERROR] > 0 && <StatCard title={t('homePage.overview.error')} value={serverStats[STATUS_ERROR]} icon={<AlertTriangle className="w-6 h-6" />} valueClassName={statusColorMap[STATUS_ERROR]} onClick={() => setSelectedStatusFilter(STATUS_ERROR)} isActive={selectedStatusFilter === STATUS_ERROR} />}
+            <StatCard title={t('homePage.overview.totalUpload')} value={formatNetworkSpeedForDisplay(totalNetworkUp)} icon={<ArrowUp className="w-6 h-6" />} valueClassName="text-emerald-500" description={t('homePage.overview.onlineServers')} />
+            <StatCard title={t('homePage.overview.totalDownload')} value={formatNetworkSpeedForDisplay(totalNetworkDown)} icon={<ArrowDown className="w-6 h-6" />} valueClassName="text-sky-500" description={t('homePage.overview.onlineServers')} />
           </div>
         </CardContent>
       </Card>
@@ -238,10 +240,10 @@ const HomePage: React.FC = () => {
       <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <CardTitle>服务器列表</CardTitle>
+            <CardTitle>{t('homePage.serverList.title')}</CardTitle>
             <ToggleGroup type="single" value={viewMode} onValueChange={(value) => value && setViewMode(value as ViewMode)} aria-label="View mode">
-              <ToggleGroupItem value="card" aria-label="Card view" className={"px-2"}><LayoutGrid className="h-4 w-4" />卡片</ToggleGroupItem>
-              <ToggleGroupItem value="list" aria-label="List view" className={"px-2"}><List className="h-4 w-4" />列表</ToggleGroupItem>
+              <ToggleGroupItem value="card" aria-label="Card view" className={"px-2"}><LayoutGrid className="h-4 w-4" />{t('homePage.serverList.viewMode.card')}</ToggleGroupItem>
+              <ToggleGroupItem value="list" aria-label="List view" className={"px-2"}><List className="h-4 w-4" />{t('homePage.serverList.viewMode.list')}</ToggleGroupItem>
             </ToggleGroup>
           </div>
         </CardHeader>
@@ -249,10 +251,10 @@ const HomePage: React.FC = () => {
           <div className="flex flex-wrap gap-4 items-center justify-between p-4 border rounded-lg mb-6">
             <div className="flex flex-wrap gap-4 items-center">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">分组:</span>
+                <span className="text-sm font-medium">{t('homePage.serverList.filters.group')}</span>
                 <ToggleGroup type="single" value={selectedGroup} onValueChange={(value) => value && setSelectedGroup(value)} aria-label="Group filter">
                   {uniqueGroups.map(group => (
-                    <ToggleGroupItem key={group} value={group} className={"px-4"}>{group === 'ALL' ? '全部分组' : group}</ToggleGroupItem>
+                    <ToggleGroupItem key={group} value={group} className={"px-4"}>{group === 'ALL' ? t('homePage.serverList.filters.allGroups') : group}</ToggleGroupItem>
                   ))}
                 </ToggleGroup>
               </div>
@@ -262,11 +264,11 @@ const HomePage: React.FC = () => {
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline">
                         <TagIcon className="mr-2 h-4 w-4" />
-                        按标签筛选 {selectedTagIds.size > 0 && `(${selectedTagIds.size})`}
+                        {t('homePage.serverList.filters.filterByTag')} {selectedTagIds.size > 0 && `(${selectedTagIds.size})`}
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent className="w-56">
-                      <DropdownMenuLabel>可见标签</DropdownMenuLabel>
+                      <DropdownMenuLabel>{t('homePage.serverList.filters.visibleTags')}</DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       {currentAvailableTags.map(tag => (
                         <DropdownMenuCheckboxItem
@@ -286,7 +288,7 @@ const HomePage: React.FC = () => {
             <div className="flex items-center gap-2">
               <Select value={sortKey} onValueChange={setSortKey}>
                 <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="排序方式" />
+                  <SelectValue placeholder={t('homePage.sorting.placeholder')} />
                 </SelectTrigger>
                 <SelectContent>
                   {sortOptions.map(option => (
@@ -321,7 +323,7 @@ const HomePage: React.FC = () => {
 
           {displayedServers.length === 0 && !isLoadingServers ? (
             <div className="text-center py-12 text-muted-foreground">
-              <p>没有找到符合当前筛选条件的服务器。</p>
+              <p>{t('homePage.serverList.empty')}</p>
             </div>
           ) : viewMode === 'card' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -332,16 +334,16 @@ const HomePage: React.FC = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>名称</TableHead>
-                    <TableHead>状态</TableHead>
-                    <TableHead>IP 地址</TableHead>
-                    <TableHead>操作系统</TableHead>
-                    <TableHead>CPU</TableHead>
-                    <TableHead>内存</TableHead>
-                    <TableHead>流量</TableHead>
-                    <TableHead>续费</TableHead>
-                    <TableHead>上传</TableHead>
-                    <TableHead>下载</TableHead>
+                    <TableHead>{t('homePage.serverList.table.name')}</TableHead>
+                    <TableHead>{t('homePage.serverList.table.status')}</TableHead>
+                    <TableHead>{t('homePage.serverList.table.ipAddress')}</TableHead>
+                    <TableHead>{t('homePage.serverList.table.os')}</TableHead>
+                    <TableHead>{t('homePage.serverList.table.cpu')}</TableHead>
+                    <TableHead>{t('homePage.serverList.table.memory')}</TableHead>
+                    <TableHead>{t('homePage.serverList.table.traffic')}</TableHead>
+                    <TableHead>{t('homePage.serverList.table.renewal')}</TableHead>
+                    <TableHead>{t('homePage.serverList.table.upload')}</TableHead>
+                    <TableHead>{t('homePage.serverList.table.download')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

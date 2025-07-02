@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link as RouterLink } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import type { VpsListItemResponse } from '../types';
 import { Cpu, MemoryStick, HardDrive, ArrowUp, ArrowDown, Signal, CalendarClock } from 'lucide-react';
 import {
@@ -21,6 +22,7 @@ interface VpsCardProps {
 }
 
 const VpsCard: React.FC<VpsCardProps> = ({ server }) => {
+  const { t } = useTranslation();
   const { icon: StatusIcon, variant: statusVariant, cardBorderClass } = getVpsStatusAppearance(server.status);
   const metrics = server.latestMetrics;
 
@@ -54,7 +56,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server }) => {
               {server.metadata?.country_code && (
                 <span className={`fi fi-${server.metadata.country_code.toLowerCase()} mr-1.5`}></span>
               )}
-              {server.ipAddress || 'No IP Address'}
+              {server.ipAddress || t('vps.noIpAddress')}
             </div>
           </CardHeader>
         </RouterLink>
@@ -63,7 +65,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server }) => {
           
           <UsageProgress
             Icon={Cpu}
-            label="CPU"
+            label={t('vps.cpu')}
             value={cpuUsage}
             usageText={`${cpuUsage?.toFixed(1)}%`}
             iconClassName="text-indigo-500"
@@ -74,7 +76,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server }) => {
               <div>
                 <UsageProgress
                   Icon={MemoryStick}
-                  label="RAM"
+                  label={t('vps.ram')}
                   value={memoryUsagePercent}
                   usageText={`${memoryUsagePercent?.toFixed(1)}%`}
                   iconClassName="text-purple-500"
@@ -91,7 +93,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server }) => {
               <div>
                 <UsageProgress
                   Icon={HardDrive}
-                  label="Disk"
+                  label={t('vps.disk')}
                   value={diskUsagePercent}
                   usageText={`${diskUsagePercent?.toFixed(1)}%`}
                   iconClassName="text-orange-500"
@@ -109,7 +111,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server }) => {
                 <div>
                   <UsageProgress
                     Icon={Signal}
-                    label="流量"
+                    label={t('vps.traffic')}
                     value={trafficUsagePercent}
                     usageText={`${trafficUsagePercent?.toFixed(1)}%`}
                     iconClassName="text-cyan-500"
@@ -125,7 +127,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server }) => {
           {renewalInfo.isApplicable && (
              <UsageProgress
                 Icon={CalendarClock}
-                label="续费"
+                label={t('vps.renewal')}
                 value={renewalInfo.progressPercent}
                 usageText={renewalInfo.statusText}
                 iconClassName={`text-${renewalInfo.variant}`}

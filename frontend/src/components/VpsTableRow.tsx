@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link as RouterLink } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import type { VpsListItemResponse } from '../types';
 import { ArrowUp, ArrowDown } from 'lucide-react';
 import {
@@ -47,12 +48,13 @@ const UsageCell: React.FC<{ value: number | null, text: string, tooltipContent?:
 };
 
 const VpsTableRow: React.FC<VpsTableRowProps> = ({ server }) => {
+  const { t } = useTranslation();
   const { icon: StatusIcon, variant: statusVariant } = getVpsStatusAppearance(server.status);
   const metrics = server.latestMetrics;
 
   const memUsagePercent = metrics && metrics.memoryTotalBytes > 0 ? (metrics.memoryUsageBytes / metrics.memoryTotalBytes) * 100 : null;
-  const upSpeed = metrics ? formatNetworkSpeed(metrics.networkTxInstantBps) : 'N/A';
-  const downSpeed = metrics ? formatNetworkSpeed(metrics.networkRxInstantBps) : 'N/A';
+  const upSpeed = metrics ? formatNetworkSpeed(metrics.networkTxInstantBps) : t('vps.na');
+  const downSpeed = metrics ? formatNetworkSpeed(metrics.networkRxInstantBps) : t('vps.na');
 
   const { usedTrafficBytes, trafficUsagePercent } = calculateTrafficUsage(server);
   const renewalInfo = calculateRenewalInfo(server.nextRenewalDate, server.lastRenewalDate, server.serviceStartDate, server.renewalCycle, server.renewalCycleCustomDays);
@@ -79,14 +81,14 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server }) => {
             {server.metadata?.country_code && (
               <span className={`fi fi-${server.metadata.country_code.toLowerCase()} mr-2`}></span>
             )}
-            {server.ipAddress || 'N/A'}
+            {server.ipAddress || t('vps.na')}
           </div>
         </TableCell>
-        <TableCell className="truncate" title={server.osType ?? 'N/A'}>{server.osType ?? 'N/A'}</TableCell>
+        <TableCell className="truncate" title={server.osType ?? t('vps.na')}>{server.osType ?? t('vps.na')}</TableCell>
         <TableCell>
           {metrics ? (
             <UsageCell value={metrics.cpuUsagePercent} text={`${metrics.cpuUsagePercent.toFixed(1)}%`} />
-          ) : <span className="text-xs text-muted-foreground">N/A</span>}
+          ) : <span className="text-xs text-muted-foreground">{t('vps.na')}</span>}
         </TableCell>
         <TableCell>
           {memUsagePercent !== null && metrics ? (
@@ -95,7 +97,7 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server }) => {
               text={`${memUsagePercent.toFixed(1)}%`}
               tooltipContent={`${formatBytesForDisplay(metrics.memoryUsageBytes, 0)} / ${formatBytesForDisplay(metrics.memoryTotalBytes, 0)}`}
             />
-          ) : <span className="text-xs text-muted-foreground">N/A</span>}
+          ) : <span className="text-xs text-muted-foreground">{t('vps.na')}</span>}
         </TableCell>
         <TableCell>
           {server.trafficLimitBytes && server.trafficLimitBytes > 0 ? (
@@ -105,8 +107,8 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server }) => {
                 text={`${trafficUsagePercent.toFixed(1)}%`}
                 tooltipContent={`${formatBytesForDisplay(usedTrafficBytes, 0)} / ${formatBytesForDisplay(server.trafficLimitBytes, 0)}`}
               />
-            ) : <span className="text-xs text-muted-foreground">计算中...</span>
-          ) : <span className="text-xs text-muted-foreground">未配置</span>}
+            ) : <span className="text-xs text-muted-foreground">{t('vps.calculating')}</span>
+          ) : <span className="text-xs text-muted-foreground">{t('vps.notConfigured')}</span>}
         </TableCell>
         <TableCell>
           {renewalInfo.isApplicable ? (
@@ -114,7 +116,7 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server }) => {
               value={renewalInfo.progressPercent}
               text={renewalInfo.statusText}
             />
-          ) : <span className="text-xs text-muted-foreground">未配置</span>}
+          ) : <span className="text-xs text-muted-foreground">{t('vps.notConfigured')}</span>}
         </TableCell>
         <TableCell className="whitespace-nowrap">
           <div className="flex items-center">

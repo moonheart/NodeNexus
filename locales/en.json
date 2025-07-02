@@ -429,5 +429,76 @@
       "na": "N/A",
       "none": "None"
     }
+  },
+  "homePage": {
+    "loadingServers": "Loading servers...",
+    "connection": {
+      "connecting": "Connecting to real-time server...",
+      "reconnecting": "Connection lost, attempting to reconnect...",
+      "error": "Failed to connect to real-time server: {{error}}"
+    },
+    "overview": {
+      "title": "Overview",
+      "totalServers": "Total Servers",
+      "online": "Online",
+      "offline": "Offline",
+      "rebooting": "Rebooting",
+      "error": "Error",
+      "totalUpload": "Total Upload",
+      "totalDownload": "Total Download",
+      "onlineServers": "Online Servers"
+    },
+    "serverList": {
+      "title": "Server List",
+      "viewMode": {
+        "card": "Card",
+        "list": "List"
+      },
+      "filters": {
+        "group": "Group:",
+        "allGroups": "All Groups",
+        "filterByTag": "Filter by tag",
+        "visibleTags": "Visible Tags"
+      },
+      "sorting": {
+        "placeholder": "Sort by",
+        "options": {
+          "default": "Default",
+          "name": "Name",
+          "status": "Status",
+          "ipAddress": "IP Address",
+          "os": "Operating System",
+          "cpu": "CPU",
+          "memory": "Memory",
+          "trafficUsage": "Traffic Usage",
+          "networkUp": "Upload",
+          "networkDown": "Download"
+        }
+      },
+      "empty": "No servers found matching the current filters.",
+      "table": {
+        "name": "Name",
+        "status": "Status",
+        "ipAddress": "IP Address",
+        "os": "Operating System",
+        "cpu": "CPU",
+        "memory": "Memory",
+        "traffic": "Traffic",
+        "renewal": "Renewal",
+        "upload": "Upload",
+        "download": "Download"
+      }
+    }
+  },
+  "vps": {
+    "noIpAddress": "No IP Address",
+    "cpu": "CPU",
+    "ram": "RAM",
+    "disk": "Disk",
+    "traffic": "Traffic",
+    "renewal": "Renewal",
+    "na": "N/A",
+    "calculating": "Calculating...",
+    "notConfigured": "Not Configured"
   }
 }

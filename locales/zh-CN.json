@@ -430,5 +430,76 @@
       "na": "不适用",
       "none": "无"
     }
+  },
+  "homePage": {
+    "loadingServers": "正在加载服务器...",
+    "connection": {
+      "connecting": "正在连接到实时服务器...",
+      "reconnecting": "连接已断开，正在尝试重新连接...",
+      "error": "无法连接到实时服务器: {{error}}"
+    },
+    "overview": {
+      "title": "概览",
+      "totalServers": "总服务器数",
+      "online": "在线",
+      "offline": "离线",
+      "rebooting": "重启中",
+      "error": "错误",
+      "totalUpload": "总上传",
+      "totalDownload": "总下载",
+      "onlineServers": "在线服务器"
+    },
+    "serverList": {
+      "title": "服务器列表",
+      "viewMode": {
+        "card": "卡片",
+        "list": "列表"
+      },
+      "filters": {
+        "group": "分组:",
+        "allGroups": "全部分组",
+        "filterByTag": "按标签筛选",
+        "visibleTags": "可见标签"
+      },
+      "sorting": {
+        "placeholder": "排序方式",
+        "options": {
+          "default": "默认",
+          "name": "名称",
+          "status": "状态",
+          "ipAddress": "IP 地址",
+          "os": "操作系统",
+          "cpu": "CPU",
+          "memory": "内存",
+          "trafficUsage": "流量使用",
+          "networkUp": "上传",
+          "networkDown": "下载"
+        }
+      },
+      "empty": "没有找到符合当前筛选条件的服务器。",
+      "table": {
+        "name": "名称",
+        "status": "状态",
+        "ipAddress": "IP 地址",
+        "os": "操作系统",
+        "cpu": "CPU",
+        "memory": "内存",
+        "traffic": "流量",
+        "renewal": "续费",
+        "upload": "上传",
+        "download": "下载"
+      }
+    }
+  },
+  "vps": {
+    "noIpAddress": "无 IP 地址",
+    "cpu": "CPU",
+    "ram": "内存",
+    "disk": "磁盘",
+    "traffic": "流量",
+    "renewal": "续费",
+    "na": "N/A",
+    "calculating": "计算中...",
+    "notConfigured": "未配置"
   }
 }
