@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import type { SubmitHandler } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import type { ChannelTemplate, ChannelResponse, CreateChannelRequest, UpdateChannelRequest } from '../types';
 import DynamicForm from './DynamicForm';
 import { Button } from '@/components/ui/button';
@@ -32,6 +33,7 @@ const NotificationChannelModal: React.FC<NotificationChannelModalProps> = ({
   templates,
   editingChannel,
 }) => {
+  const { t } = useTranslation();
   const {
     control,
     handleSubmit,
@@ -71,15 +73,17 @@ const NotificationChannelModal: React.FC<NotificationChannelModalProps> = ({
   }, [isOpen, editingChannel, templates, reset]);
 
   useEffect(() => {
-    // Reset config when template changes
-    const newConfig: Record<string, unknown> = {};
-    if (selectedTemplate) {
-      selectedTemplate.fields.forEach(field => {
-        newConfig[field.name] = ''; // Or a default value
-      });
+    if (!editingChannel) {
+      // Reset config when template changes only in create mode
+      const newConfig: Record<string, unknown> = {};
+      if (selectedTemplate) {
+        selectedTemplate.fields.forEach(field => {
+          newConfig[field.name] = ''; // Or a default value
+        });
+      }
+      setValue('config', newConfig);
     }
-    setValue('config', newConfig);
-  }, [selectedTemplate, setValue]);
+  }, [selectedTemplate, setValue, editingChannel]);
 
   const handleDynamicFormChange = (fieldName: string, value: unknown) => {
     setValue(`config.${fieldName}`, value);
@@ -113,29 +117,29 @@ const NotificationChannelModal: React.FC<NotificationChannelModalProps> = ({
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{editingChannel ? 'Edit' : 'Add New'} Notification Channel</DialogTitle>
+          <DialogTitle>{t(editingChannel ? 'notificationsPage.modal.editTitle' : 'notificationsPage.modal.createTitle')}</DialogTitle>
           <DialogDescription>
-            Select a channel type and fill in the required details.
+            {t('notificationsPage.modal.description')}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-6 py-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Channel Name</Label>
-            <Input id="name" {...register('name', { required: 'Channel name is required' })} />
+            <Label htmlFor="name">{t('notificationsPage.modal.labels.channelName')}</Label>
+            <Input id="name" {...register('name', { required: t('notificationsPage.modal.errors.nameRequired') })} />
             {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
           </div>
 
           {!editingChannel && (
             <div className="space-y-2">
-              <Label htmlFor="channelType">Channel Type</Label>
+              <Label htmlFor="channelType">{t('notificationsPage.modal.labels.channelType')}</Label>
               <Controller
                 name="channelType"
                 control={control}
-                rules={{ required: 'Please select a channel type' }}
+                rules={{ required: t('notificationsPage.modal.errors.typeRequired') }}
                 render={({ field }) => (
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select a type" />
+                      <SelectValue placeholder={t('notificationsPage.modal.placeholders.selectType')} />
                     </SelectTrigger>
                     <SelectContent>
                       {templates.map(template => (
@@ -165,15 +169,15 @@ const NotificationChannelModal: React.FC<NotificationChannelModalProps> = ({
             />
           ) : !editingChannel ? (
             <Alert>
-              <AlertDescription>Please select a channel type to see its configuration options.</AlertDescription>
+              <AlertDescription>{t('notificationsPage.modal.selectTypePrompt')}</AlertDescription>
             </Alert>
           ) : null}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('common.actions.cancel')}</Button>
             <Button type="submit" disabled={isSubmitting || !selectedTemplate}>
               {isSubmitting && <SpinnerIcon className="mr-2 h-4 w-4 animate-spin" />}
-              {isSubmitting ? 'Saving...' : (editingChannel ? 'Save Changes' : 'Create Channel')}
+              {isSubmitting ? t('common.status.saving') : (editingChannel ? t('common.actions.save') : t('notificationsPage.modal.actions.create'))}
             </Button>
           </DialogFooter>
         </form>

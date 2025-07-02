@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     getChannelTemplates,
     getAllChannels,
@@ -23,12 +24,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, PlusCircle, Send, Trash2, Edit } from 'lucide-react';
+import { PlusCircle, Send, Trash2, Edit } from 'lucide-react';
 import { RefreshCwIcon as SpinnerIcon } from '@/components/Icons';
 import EmptyState from '@/components/EmptyState';
 
 const NotificationsPage: React.FC = () => {
+    const { t } = useTranslation();
     const [channels, setChannels] = useState<ChannelResponse[]>([]);
     const [templates, setTemplates] = useState<ChannelTemplate[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -50,14 +51,14 @@ const NotificationsPage: React.FC = () => {
             setChannels(channelsData);
             setError(null);
         } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'Failed to load data.';
+            const errorMessage = err instanceof Error ? err.message : t('common.notifications.fetchFailed');
             setError(errorMessage);
             console.error(err);
             toast.error(errorMessage);
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [t]);
 
     useEffect(() => {
         fetchAllData();
@@ -75,18 +76,18 @@ const NotificationsPage: React.FC = () => {
 
     const handleModalSubmit = async (data: CreateChannelRequest | UpdateChannelRequest) => {
         const isEditing = !!currentEditingChannel;
-        const toastId = toast.loading(isEditing ? 'Updating channel...' : 'Creating channel...');
+        const toastId = toast.loading(isEditing ? t('notificationsPage.status.updating') : t('notificationsPage.status.creating'));
         try {
             if (isEditing) {
                 await updateChannel(currentEditingChannel.id, data as UpdateChannelRequest);
             } else {
                 await createChannel(data as CreateChannelRequest);
             }
-            toast.success(`Channel ${isEditing ? 'updated' : 'created'} successfully!`, { id: toastId });
+            toast.success(t('notificationsPage.notifications.saveSuccess'), { id: toastId });
             fetchAllData();
         } catch (err) {
             console.error('Failed to save channel:', err);
-            toast.error(`Failed to ${isEditing ? 'update' : 'create'} channel.`, { id: toastId });
+            toast.error(t('notificationsPage.notifications.saveFailed'), { id: toastId });
             throw err;
         }
     };
@@ -98,14 +99,14 @@ const NotificationsPage: React.FC = () => {
 
     const confirmDeleteChannel = async () => {
         if (deletingChannelId === null) return;
-        const toastId = toast.loading('Deleting channel...');
+        const toastId = toast.loading(t('notificationsPage.status.deleting'));
         try {
             await deleteChannel(deletingChannelId);
-            toast.success('Channel deleted successfully!', { id: toastId });
+            toast.success(t('notificationsPage.notifications.deleteSuccess'), { id: toastId });
             fetchAllData();
         } catch (err) {
             console.error('Failed to delete channel:', err);
-            toast.error('Failed to delete channel.', { id: toastId });
+            toast.error(t('notificationsPage.notifications.deleteFailed'), { id: toastId });
         } finally {
             setIsDeleteAlertOpen(false);
             setDeletingChannelId(null);
@@ -114,13 +115,13 @@ const NotificationsPage: React.FC = () => {
 
     const handleTestChannel = async (id: number) => {
         setTestingChannelId(id);
-        const toastId = toast.loading('Sending test message...');
+        const toastId = toast.loading(t('notificationsPage.status.testing'));
         try {
             await testChannel(id, 'This is a test message from the dashboard.');
-            toast.success('Test message sent successfully!', { id: toastId });
+            toast.success(t('notificationsPage.notifications.testSuccess'), { id: toastId });
         } catch (err) {
             console.error('Failed to send test message:', err);
-            toast.error('Failed to send test message.', { id: toastId });
+            toast.error(t('notificationsPage.notifications.testFailed'), { id: toastId });
         } finally {
             setTestingChannelId(null);
         }
@@ -131,7 +132,7 @@ const NotificationsPage: React.FC = () => {
     }
 
     if (error) {
-        return <div className="container mx-auto p-4 text-destructive">Error: {error}</div>;
+        return <div className="container mx-auto p-4 text-destructive">{t('common.notifications.error', { error: error })}</div>;
     }
 
     return (
@@ -139,27 +140,27 @@ const NotificationsPage: React.FC = () => {
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
                     <div>
-                        <CardTitle>Notification Channels</CardTitle>
-                        <CardDescription>Manage channels to receive alerts and notifications.</CardDescription>
+                        <CardTitle>{t('notificationsPage.title')}</CardTitle>
+                        <CardDescription>{t('notificationsPage.description')}</CardDescription>
                     </div>
                     <Button onClick={handleOpenCreateModal}>
-                        <PlusCircle size={18} className="mr-2" /> Add New Channel
+                        <PlusCircle size={18} className="mr-2" /> {t('notificationsPage.addNew')}
                     </Button>
                 </CardHeader>
                 <CardContent>
                     {channels.length === 0 ? (
                         <EmptyState
-                            title="No Notification Channels"
-                            message="Get started by creating your first notification channel."
-                            action={<Button onClick={handleOpenCreateModal}><PlusCircle size={18} className="mr-2" /> Add New Channel</Button>}
+                            title={t('notificationsPage.empty.title')}
+                            message={t('notificationsPage.empty.message')}
+                            action={<Button onClick={handleOpenCreateModal}><PlusCircle size={18} className="mr-2" /> {t('notificationsPage.addNew')}</Button>}
                         />
                     ) : (
                         <Table>
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead>Name</TableHead>
-                                    <TableHead>Type</TableHead>
-                                    <TableHead className="text-right">Actions</TableHead>
+                                    <TableHead>{t('notificationsPage.table.name')}</TableHead>
+                                    <TableHead>{t('notificationsPage.table.type')}</TableHead>
+                                    <TableHead className="text-right">{t('notificationsPage.table.actions')}</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -167,29 +168,16 @@ const NotificationsPage: React.FC = () => {
                                     <TableRow key={channel.id}>
                                         <TableCell className="font-medium">{channel.name}</TableCell>
                                         <TableCell className="capitalize text-muted-foreground">{channel.channelType}</TableCell>
-                                        <TableCell className="text-right">
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" className="h-8 w-8 p-0">
-                                                        <span className="sr-only">Open menu</span>
-                                                        <MoreHorizontal className="h-4 w-4" />
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
-                                                    <DropdownMenuItem onClick={() => handleOpenEditModal(channel)}>
-                                                        <Edit className="mr-2 h-4 w-4" />
-                                                        <span>Edit</span>
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => handleTestChannel(channel.id)} disabled={testingChannelId === channel.id}>
-                                                        {testingChannelId === channel.id ? <SpinnerIcon className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                                                        <span>Test</span>
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => handleDeleteClick(channel.id)} className="text-destructive">
-                                                        <Trash2 className="mr-2 h-4 w-4" />
-                                                        <span>Delete</span>
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
+                                        <TableCell className="text-right space-x-1">
+                                            <Button variant="ghost" size="icon" onClick={() => handleOpenEditModal(channel)}>
+                                                <Edit className="h-4 w-4" />
+                                            </Button>
+                                            <Button variant="ghost" size="icon" onClick={() => handleTestChannel(channel.id)} disabled={testingChannelId === channel.id}>
+                                                {testingChannelId === channel.id ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                                            </Button>
+                                            <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(channel.id)}>
+                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                            </Button>
                                         </TableCell>
                                     </TableRow>
                                 ))}
@@ -210,14 +198,14 @@ const NotificationsPage: React.FC = () => {
             <AlertDialog open={isDeleteAlertOpen} onOpenChange={setIsDeleteAlertOpen}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
-                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                        <AlertDialogTitle>{t('common.dialogs.delete.title')}</AlertDialogTitle>
                         <AlertDialogDescription>
-                            This action cannot be undone. This will permanently delete the notification channel.
+                            {t('notificationsPage.deleteDialog.description')}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel onClick={() => setDeletingChannelId(null)}>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={confirmDeleteChannel}>Delete</AlertDialogAction>
+                        <AlertDialogCancel onClick={() => setDeletingChannelId(null)}>{t('common.actions.cancel')}</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmDeleteChannel}>{t('common.actions.delete')}</AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>

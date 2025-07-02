@@ -251,5 +251,127 @@
       "disabledSuccess": "Rule \"%{ruleName}\" disabled.",
       "updateStatusError": "Failed to update alert rule status."
     }
+  },
+  "adminOAuthProviders": {
+    "title": "OAuth Provider Management",
+    "description": "Manage third-party login providers for your application.",
+    "addNew": "Add New Provider",
+    "table": {
+      "provider": "Provider",
+      "clientId": "Client ID",
+      "enabled": "Enabled",
+      "actions": "Actions"
+    },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "empty": {
+      "title": "No providers configured."
+    },
+    "deleteDialog": {
+      "title": "Are you sure?",
+      "description": "Are you sure you want to delete the provider \"%{providerName}\"?"
+    },
+    "notifications": {
+      "providerDeleted": "Provider deleted successfully!",
+      "providerSaved": "Provider %{status} successfully!",
+      "status": {
+        "created": "created",
+        "updated": "updated"
+      }
+    }
+  },
+  "providerForm": {
+    "title": {
+      "add": "Add New OAuth Provider",
+      "edit": "Edit OAuth Provider"
+    },
+    "description": "Configure an OAuth provider for user authentication.",
+    "labels": {
+      "providerName": "Provider Name",
+      "clientId": "Client ID",
+      "clientSecret": "Client Secret",
+      "scopes": "Scopes (comma-separated)",
+      "iconUrl": "Icon URL",
+      "authUrl": "Authorization URL",
+      "tokenUrl": "Token URL",
+      "userInfoUrl": "User Info URL",
+      "userInfoMapping": "User Info Field Mapping",
+      "userInfoMappingDesc": "Specify the field names from the provider's user info endpoint.",
+      "idField": "ID Field",
+      "usernameField": "Username/Name Field",
+      "enabled": "Enabled"
+    },
+    "placeholders": {
+      "unchanged": "Leave blank to keep unchanged",
+      "idField": "e.g., id, sub",
+      "usernameField": "e.g., name, login"
+    },
+    "validation": {
+      "providerNameRequired": "Provider Name is required",
+      "clientIdRequired": "Client ID is required"
+    },
+    "notifications": {
+      "saved": "Provider %{status} successfully!",
+      "status": {
+        "created": "created",
+        "updated": "updated"
+      }
+    }
+  },
+  "notificationsPage": {
+    "title": "Notification Channels",
+    "description": "Manage channels to receive alerts and notifications.",
+    "addNew": "Add New Channel",
+    "table": {
+      "name": "Name",
+      "type": "Type",
+      "actions": "Actions"
+    },
+    "empty": {
+      "title": "No Notification Channels",
+      "message": "Get started by creating your first notification channel."
+    },
+    "deleteDialog": {
+      "description": "This action cannot be undone. This will permanently delete the notification channel."
+    },
+    "actions": {
+      "test": "Test"
+    },
+    "status": {
+      "updating": "Updating channel...",
+      "creating": "Creating channel...",
+      "deleting": "Deleting channel...",
+      "testing": "Sending test message..."
+    },
+    "notifications": {
+      "saveSuccess": "Channel saved successfully!",
+      "saveFailed": "Failed to save channel.",
+      "deleteSuccess": "Channel deleted successfully!",
+      "deleteFailed": "Failed to delete channel.",
+      "testSuccess": "Test message sent successfully!",
+      "testFailed": "Failed to send test message."
+    },
+    "modal": {
+      "createTitle": "Add New Notification Channel",
+      "editTitle": "Edit Notification Channel",
+      "description": "Select a channel type and fill in the required details.",
+      "labels": {
+        "channelName": "Channel Name",
+        "channelType": "Channel Type"
+      },
+      "errors": {
+        "nameRequired": "Channel name is required",
+        "typeRequired": "Please select a channel type"
+      },
+      "placeholders": {
+        "selectType": "Select a type"
+      },
+      "selectTypePrompt": "Please select a channel type to see its configuration options.",
+      "actions": {
+        "create": "Create Channel"
+      }
+    }
   }
 }

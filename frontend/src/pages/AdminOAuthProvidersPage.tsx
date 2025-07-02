@@ -7,9 +7,9 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { MoreHorizontal, Trash2, Edit } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Trash2, Edit } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useTranslation } from 'react-i18next';
 
 export interface OAuthProvider {
     provider_name: string;
@@ -28,6 +28,7 @@ export interface OAuthProvider {
 }
 
 const AdminOAuthProvidersPage: React.FC = () => {
+    const { t } = useTranslation();
     const [providers, setProviders] = useState<OAuthProvider[]>([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -71,7 +72,7 @@ const AdminOAuthProvidersPage: React.FC = () => {
     };
 
     const handleDeleteProvider = async (providerName: string) => {
-        if (!window.confirm(`Are you sure you want to delete the provider "${providerName}"?`)) return;
+        if (!window.confirm(t('adminOAuthProviders.deleteDialog.description', { providerName }))) return;
         try {
             const response = await fetch(`/api/admin/oauth/providers/${providerName}`, {
                 method: 'DELETE',
@@ -81,7 +82,7 @@ const AdminOAuthProvidersPage: React.FC = () => {
                 const errorData = await response.json();
                 throw new Error(errorData.message || 'Failed to delete provider.');
             }
-            toast.success('Provider deleted successfully!');
+            toast.success(t('adminOAuthProviders.notifications.providerDeleted'));
             fetchProviders();
         } catch (error) {
             toast.error(error instanceof Error ? error.message : 'An unknown error occurred.');
@@ -110,7 +111,9 @@ const AdminOAuthProvidersPage: React.FC = () => {
                 const errorData = await response.json();
                 throw new Error(errorData.message || 'Failed to save provider.');
             }
-            toast.success(`Provider ${isEditing ? 'updated' : 'created'} successfully!`);
+            toast.success(t('adminOAuthProviders.notifications.providerSaved', {
+                status: isEditing ? t('adminOAuthProviders.notifications.status.updated') : t('adminOAuthProviders.notifications.status.created')
+            }));
             setIsModalOpen(false);
             fetchProviders();
         } catch (error) {
@@ -123,7 +126,7 @@ const AdminOAuthProvidersPage: React.FC = () => {
             <TableCell><Skeleton className="h-6 w-32" /></TableCell>
             <TableCell><Skeleton className="h-6 w-48" /></TableCell>
             <TableCell><Skeleton className="h-6 w-16" /></TableCell>
-            <TableCell><Skeleton className="h-8 w-8" /></TableCell>
+            <TableCell><Skeleton className="h-8 w-24" /></TableCell>
         </TableRow>
     );
 
@@ -139,20 +142,20 @@ const AdminOAuthProvidersPage: React.FC = () => {
                 <CardHeader>
                     <div className="flex justify-between items-center">
                         <div>
-                            <CardTitle>OAuth Provider Management</CardTitle>
-                            <CardDescription>Manage third-party login providers for your application.</CardDescription>
+                            <CardTitle>{t('adminOAuthProviders.title')}</CardTitle>
+                            <CardDescription>{t('adminOAuthProviders.description')}</CardDescription>
                         </div>
-                        <Button onClick={handleAddProvider}>Add New Provider</Button>
+                        <Button onClick={handleAddProvider}>{t('adminOAuthProviders.addNew')}</Button>
                     </div>
                 </CardHeader>
                 <CardContent>
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>Provider</TableHead>
-                                <TableHead>Client ID</TableHead>
-                                <TableHead>Enabled</TableHead>
-                                <TableHead className="text-right">Actions</TableHead>
+                                <TableHead>{t('adminOAuthProviders.table.provider')}</TableHead>
+                                <TableHead>{t('adminOAuthProviders.table.clientId')}</TableHead>
+                                <TableHead>{t('adminOAuthProviders.table.enabled')}</TableHead>
+                                <TableHead className="text-right">{t('adminOAuthProviders.table.actions')}</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -177,34 +180,25 @@ const AdminOAuthProvidersPage: React.FC = () => {
                                         <TableCell className="font-mono text-muted-foreground">{provider.client_id}</TableCell>
                                         <TableCell>
                                             <Badge variant={provider.enabled ? 'default' : 'outline'}>
-                                                {provider.enabled ? 'Enabled' : 'Disabled'}
+                                                {provider.enabled ? t('adminOAuthProviders.status.enabled') : t('adminOAuthProviders.status.disabled')}
                                             </Badge>
                                         </TableCell>
                                         <TableCell className="text-right">
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon">
-                                                        <MoreHorizontal className="h-4 w-4" />
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
-                                                    <DropdownMenuItem onClick={() => handleEditProvider(provider)}>
-                                                        <Edit className="mr-2 h-4 w-4" />
-                                                        <span>Edit</span>
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => handleDeleteProvider(provider.provider_name)} className="text-destructive focus:text-destructive">
-                                                        <Trash2 className="mr-2 h-4 w-4" />
-                                                        <span>Delete</span>
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
+                                            <div className="flex items-center justify-end gap-2">
+                                                <Button variant="ghost" size="icon" onClick={() => handleEditProvider(provider)}>
+                                                    <Edit className="h-4 w-4" />
+                                                </Button>
+                                                <Button variant="ghost" size="icon" onClick={() => handleDeleteProvider(provider.provider_name)} className="text-destructive hover:text-destructive">
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </div>
                                         </TableCell>
                                     </TableRow>
                                 ))
                             ) : (
                                 <TableRow>
                                     <TableCell colSpan={4} className="text-center text-muted-foreground">
-                                        No providers configured.
+                                        {t('adminOAuthProviders.empty.title')}
                                     </TableCell>
                                 </TableRow>
                             )}

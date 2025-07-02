@@ -3,6 +3,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,7 @@ const formSchema = z.object({
 
 export type ProviderFormData = z.infer<typeof formSchema>;
 
-interface ProviderFormModalProps {
+export interface ProviderFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (providerData: Partial<ProviderFormData>) => Promise<void>;
@@ -37,10 +38,15 @@ interface ProviderFormModalProps {
 }
 
 const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ isOpen, onClose, onSave, initialData }) => {
+  const { t } = useTranslation();
+
   const isEditing = !!initialData?.provider_name;
 
   const form = useForm<ProviderFormData>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(formSchema.extend({
+      provider_name: z.string().min(1, t('providerForm.validation.providerNameRequired')),
+      client_id: z.string().min(1, t('providerForm.validation.clientIdRequired')),
+    })),
     defaultValues: {
       provider_name: '',
       client_id: '',
@@ -58,7 +64,7 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ isOpen, onClose, 
     },
   });
 
-  const { handleSubmit, control, reset, formState: { isSubmitting } } = form;
+  const { handleSubmit, control, reset, formState: { isSubmitting, errors } } = form;
 
   useEffect(() => {
     if (isOpen) {
@@ -83,13 +89,14 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ isOpen, onClose, 
 
   const handleFormSubmit = async (data: ProviderFormData) => {
     try {
-      // For editing, if client_secret is empty, don't include it in the payload
       const payload = { ...data };
       if (isEditing && !payload.client_secret) {
         delete (payload as Partial<ProviderFormData>).client_secret;
       }
       await onSave(payload);
-      toast.success(`Provider ${isEditing ? 'updated' : 'created'} successfully!`);
+      toast.success(t('providerForm.notifications.saved', {
+        status: isEditing ? t('providerForm.notifications.status.updated') : t('providerForm.notifications.status.created')
+      }));
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'An unknown error occurred.');
@@ -100,9 +107,9 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ isOpen, onClose, 
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>{isEditing ? 'Edit' : 'Add New'} OAuth Provider</DialogTitle>
+          <DialogTitle>{isEditing ? t('providerForm.title.edit') : t('providerForm.title.add')}</DialogTitle>
           <DialogDescription>
-            Configure an OAuth provider for user authentication.
+            {t('providerForm.description')}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit(handleFormSubmit)}>
@@ -110,23 +117,25 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ isOpen, onClose, 
             {/* Left Column */}
             <div className="space-y-4">
               <div>
-                <Label htmlFor="provider_name">Provider Name <span className="text-destructive">*</span></Label>
+                <Label htmlFor="provider_name">{t('providerForm.labels.providerName')} <span className="text-destructive">*</span></Label>
                 <Controller name="provider_name" control={control} render={({ field }) => <Input id="provider_name" {...field} disabled={isEditing} />} />
+                {errors.provider_name && <p className="text-sm text-destructive mt-1">{errors.provider_name.message}</p>}
               </div>
               <div>
-                <Label htmlFor="client_id">Client ID <span className="text-destructive">*</span></Label>
+                <Label htmlFor="client_id">{t('providerForm.labels.clientId')} <span className="text-destructive">*</span></Label>
                 <Controller name="client_id" control={control} render={({ field }) => <Input id="client_id" {...field} />} />
+                {errors.client_id && <p className="text-sm text-destructive mt-1">{errors.client_id.message}</p>}
               </div>
               <div>
-                <Label htmlFor="client_secret">Client Secret {!isEditing && <span className="text-destructive">*</span>}</Label>
-                <Controller name="client_secret" control={control} render={({ field }) => <Input id="client_secret" type="password" placeholder={isEditing ? 'Leave blank to keep unchanged' : ''} {...field} />} />
+                <Label htmlFor="client_secret">{t('providerForm.labels.clientSecret')} {!isEditing && <span className="text-destructive">*</span>}</Label>
+                <Controller name="client_secret" control={control} render={({ field }) => <Input id="client_secret" type="password" placeholder={isEditing ? t('providerForm.placeholders.unchanged') : ''} {...field} />} />
               </div>
               <div>
-                <Label htmlFor="scopes">Scopes (comma-separated)</Label>
+                <Label htmlFor="scopes">{t('providerForm.labels.scopes')}</Label>
                 <Controller name="scopes" control={control} render={({ field }) => <Input id="scopes" {...field} value={field.value || ''} />} />
               </div>
               <div>
-                <Label htmlFor="icon_url">Icon URL</Label>
+                <Label htmlFor="icon_url">{t('providerForm.labels.iconUrl')}</Label>
                 <Controller name="icon_url" control={control} render={({ field }) => <Input id="icon_url" {...field} value={field.value || ''} />} />
               </div>
             </div>
@@ -134,15 +143,15 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ isOpen, onClose, 
             {/* Right Column */}
             <div className="space-y-4">
               <div>
-                <Label htmlFor="auth_url">Authorization URL</Label>
+                <Label htmlFor="auth_url">{t('providerForm.labels.authUrl')}</Label>
                 <Controller name="auth_url" control={control} render={({ field }) => <Input id="auth_url" {...field} value={field.value || ''} />} />
               </div>
               <div>
-                <Label htmlFor="token_url">Token URL</Label>
+                <Label htmlFor="token_url">{t('providerForm.labels.tokenUrl')}</Label>
                 <Controller name="token_url" control={control} render={({ field }) => <Input id="token_url" {...field} value={field.value || ''} />} />
               </div>
               <div>
-                <Label htmlFor="user_info_url">User Info URL</Label>
+                <Label htmlFor="user_info_url">{t('providerForm.labels.userInfoUrl')}</Label>
                 <Controller name="user_info_url" control={control} render={({ field }) => <Input id="user_info_url" {...field} value={field.value || ''} />} />
               </div>
             </div>
@@ -152,18 +161,18 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ isOpen, onClose, 
 
           {/* User Info Mapping Section */}
           <div>
-            <h4 className="text-md font-medium text-slate-900">User Info Field Mapping</h4>
+            <h4 className="text-md font-medium text-slate-900">{t('providerForm.labels.userInfoMapping')}</h4>
             <p className="text-sm text-muted-foreground mt-1">
-              Specify the field names from the provider's user info endpoint.
+              {t('providerForm.labels.userInfoMappingDesc')}
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 mt-4">
               <div>
-                <Label htmlFor="id_field">ID Field</Label>
-                <Controller name="user_info_mapping.id_field" control={control} render={({ field }) => <Input id="id_field" placeholder="e.g., id, sub" {...field} value={field.value || ''} />} />
+                <Label htmlFor="id_field">{t('providerForm.labels.idField')}</Label>
+                <Controller name="user_info_mapping.id_field" control={control} render={({ field }) => <Input id="id_field" placeholder={t('providerForm.placeholders.idField')} {...field} value={field.value || ''} />} />
               </div>
               <div>
-                <Label htmlFor="username_field">Username/Name Field</Label>
-                <Controller name="user_info_mapping.username_field" control={control} render={({ field }) => <Input id="username_field" placeholder="e.g., name, login" {...field} value={field.value || ''} />} />
+                <Label htmlFor="username_field">{t('providerForm.labels.usernameField')}</Label>
+                <Controller name="user_info_mapping.username_field" control={control} render={({ field }) => <Input id="username_field" placeholder={t('providerForm.placeholders.usernameField')} {...field} value={field.value || ''} />} />
               </div>
             </div>
           </div>
@@ -171,11 +180,11 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({ isOpen, onClose, 
           <DialogFooter className="pt-8">
             <div className="flex items-center mr-auto">
                 <Controller name="enabled" control={control} render={({ field }) => <Switch id="enabled" checked={field.value} onCheckedChange={field.onChange} />} />
-                <Label htmlFor="enabled" className="ml-2">Enabled</Label>
+                <Label htmlFor="enabled" className="ml-2">{t('providerForm.labels.enabled')}</Label>
             </div>
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('common.actions.cancel')}</Button>
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Saving...' : 'Save'}
+              {isSubmitting ? t('common.status.saving') : t('common.actions.save')}
             </Button>
           </DialogFooter>
         </form>

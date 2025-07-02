@@ -252,5 +252,127 @@
       "disabledSuccess": "规则“%{ruleName}”已禁用。",
       "updateStatusError": "更新警报规则状态失败。"
     }
+  },
+  "adminOAuthProviders": {
+    "title": "OAuth 提供商管理",
+    "description": "管理应用程序的第三方登录提供商。",
+    "addNew": "添加新提供商",
+    "table": {
+      "provider": "提供商",
+      "clientId": "客户端 ID",
+      "enabled": "已启用",
+      "actions": "操作"
+    },
+    "status": {
+      "enabled": "已启用",
+      "disabled": "已禁用"
+    },
+    "empty": {
+      "title": "未配置任何提供商。"
+    },
+    "deleteDialog": {
+      "title": "您确定吗？",
+      "description": "您确定要删除提供商 \"%{providerName}\" 吗？"
+    },
+    "notifications": {
+      "providerDeleted": "提供商删除成功！",
+      "providerSaved": "提供商已成功%{status}！",
+      "status": {
+        "created": "创建",
+        "updated": "更新"
+      }
+    }
+  },
+  "providerForm": {
+    "title": {
+      "add": "添加新的 OAuth 提供商",
+      "edit": "编辑 OAuth 提供商"
+    },
+    "description": "为用户身份验证配置 OAuth 提供商。",
+    "labels": {
+      "providerName": "提供商名称",
+      "clientId": "客户端 ID",
+      "clientSecret": "客户端密钥",
+      "scopes": "范围 (逗号分隔)",
+      "iconUrl": "图标 URL",
+      "authUrl": "授权 URL",
+      "tokenUrl": "令牌 URL",
+      "userInfoUrl": "用户信息 URL",
+      "userInfoMapping": "用户信息字段映射",
+      "userInfoMappingDesc": "指定提供商用户信息端点中的字段名称。",
+      "idField": "ID 字段",
+      "usernameField": "用户名/名称字段",
+      "enabled": "已启用"
+    },
+    "placeholders": {
+      "unchanged": "留空以保持不变",
+      "idField": "例如, id, sub",
+      "usernameField": "例如, name, login"
+    },
+    "validation": {
+      "providerNameRequired": "提供商名称是必填项",
+      "clientIdRequired": "客户端 ID 是必填项"
+    },
+    "notifications": {
+      "saved": "提供商已成功%{status}！",
+      "status": {
+        "created": "创建",
+        "updated": "更新"
+      }
+    }
+  },
+  "notificationsPage": {
+    "title": "通知渠道",
+    "description": "管理用于接收警报和通知的渠道。",
+    "addNew": "添加新渠道",
+    "table": {
+      "name": "名称",
+      "type": "类型",
+      "actions": "操作"
+    },
+    "empty": {
+      "title": "没有通知渠道",
+      "message": "从创建您的第一个通知渠道开始。"
+    },
+    "deleteDialog": {
+      "description": "此操作无法撤销。这将永久删除该通知渠道。"
+    },
+    "actions": {
+      "test": "测试"
+    },
+    "status": {
+      "updating": "正在更新渠道...",
+      "creating": "正在创建渠道...",
+      "deleting": "正在删除渠道...",
+      "testing": "正在发送测试消息..."
+    },
+    "notifications": {
+      "saveSuccess": "渠道保存成功！",
+      "saveFailed": "保存渠道失败。",
+      "deleteSuccess": "渠道删除成功！",
+      "deleteFailed": "删除渠道失败。",
+      "testSuccess": "测试消息发送成功！",
+      "testFailed": "发送测试消息失败。"
+    },
+    "modal": {
+      "createTitle": "添加新通知渠道",
+      "editTitle": "编辑通知渠道",
+      "description": "选择一个渠道类型并填写所需的详细信息。",
+      "labels": {
+        "channelName": "渠道名称",
+        "channelType": "渠道类型"
+      },
+      "errors": {
+        "nameRequired": "渠道名称是必填项",
+        "typeRequired": "请选择一个渠道类型"
+      },
+      "placeholders": {
+        "selectType": "选择一个类型"
+      },
+      "selectTypePrompt": "请选择一个渠道类型以查看其配置选项。",
+      "actions": {
+        "create": "创建渠道"
+      }
+    }
   }
 }
