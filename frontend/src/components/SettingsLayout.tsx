@@ -7,7 +7,7 @@ const settingsGroups = [
   {
     title: '系统管理',
     links: [
-      { name: '全局配置', to: '/settings/global', icon: SlidersHorizontal },
+      { name: 'Agent 配置', to: '/settings/agent', icon: SlidersHorizontal },
       { name: '通知渠道', to: '/settings/notifications', icon: Bell },
       { name: 'OAuth 配置', to: '/settings/oauth', icon: KeyRound },
     ],

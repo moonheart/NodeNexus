@@ -169,7 +169,7 @@ const GlobalSettingsPage: React.FC = () => {
                     {config && (
                         <form onSubmit={handleSave}>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {Object.keys(config).filter(k => k !== 'feature_flags').map((key) => (
+                                {Object.keys(config).filter(k => k !== 'feature_flags' && k !== 'service_monitor_tasks').map((key) => (
                                     <div key={key} className="space-y-2">
                                         <Label htmlFor={`global-${key}`} className="capitalize">
                                             {key.replace(/_/g, ' ')}

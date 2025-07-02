@@ -8,7 +8,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import NotFoundPage from './pages/NotFoundPage';
 import VpsDetailPage from './pages/VpsDetailPage';
-import GlobalSettingsPage from './pages/GlobalSettingsPage';
+import GlobalSettingsPage from './pages/AgentSettingsPage';
 import AlertsSettingsPage from './pages/AlertsSettingsPage';
 import TagManagementPage from './pages/TagManagementPage';
 import ScriptManagementPage from './pages/ScriptManagementPage'; // Import the new page
@@ -69,8 +69,8 @@ function App() {
             {/* Settings Section with Nested Routes */}
             {/* Settings Section with Nested Routes */}
             <Route path="/settings" element={<SettingsLayout />}>
-              <Route index element={<Navigate to="/settings/global" replace />} />
-              <Route path="global" element={<GlobalSettingsPage />} />
+              <Route index element={<Navigate to="/settings/agent" replace />} />
+              <Route path="agent" element={<GlobalSettingsPage />} />
               <Route path="alerts" element={<AlertsSettingsPage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="tags"element={<TagManagementPage />} />
