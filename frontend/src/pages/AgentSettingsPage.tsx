@@ -169,20 +169,42 @@ const GlobalSettingsPage: React.FC = () => {
                     {config && (
                         <form onSubmit={handleSave}>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {Object.keys(config).filter(k => k !== 'feature_flags' && k !== 'service_monitor_tasks').map((key) => (
-                                    <div key={key} className="space-y-2">
-                                        <Label htmlFor={`global-${key}`} className="capitalize">
-                                            {key.replace(/_/g, ' ')}
-                                        </Label>
-                                        <Input
-                                            type={typeof config[key as keyof AgentConfig] === 'number' ? 'number' : 'text'}
-                                            id={`global-${key}`}
-                                            name={key}
-                                            value={String(config[key as keyof AgentConfig])}
-                                            onChange={handleInputChange}
-                                        />
-                                    </div>
-                                ))}
+                                <div className="space-y-2">
+                                    <Label htmlFor="metricsCollectIntervalSeconds">Metrics Collect Interval (s)</Label>
+                                    <Input id="metricsCollectIntervalSeconds" name="metricsCollectIntervalSeconds" type="number" value={config.metricsCollectIntervalSeconds} onChange={handleInputChange} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="metricsUploadBatchMaxSize">Metrics Upload Batch Max Size</Label>
+                                    <Input id="metricsUploadBatchMaxSize" name="metricsUploadBatchMaxSize" type="number" value={config.metricsUploadBatchMaxSize} onChange={handleInputChange} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="metricsUploadIntervalSeconds">Metrics Upload Interval (s)</Label>
+                                    <Input id="metricsUploadIntervalSeconds" name="metricsUploadIntervalSeconds" type="number" value={config.metricsUploadIntervalSeconds} onChange={handleInputChange} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="dockerInfoCollectIntervalSeconds">Docker Info Collect Interval (s)</Label>
+                                    <Input id="dockerInfoCollectIntervalSeconds" name="dockerInfoCollectIntervalSeconds" type="number" value={config.dockerInfoCollectIntervalSeconds} onChange={handleInputChange} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="dockerInfoUploadIntervalSeconds">Docker Info Upload Interval (s)</Label>
+                                    <Input id="dockerInfoUploadIntervalSeconds" name="dockerInfoUploadIntervalSeconds" type="number" value={config.dockerInfoUploadIntervalSeconds} onChange={handleInputChange} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="genericMetricsUploadBatchMaxSize">Generic Metrics Upload Batch Max Size</Label>
+                                    <Input id="genericMetricsUploadBatchMaxSize" name="genericMetricsUploadBatchMaxSize" type="number" value={config.genericMetricsUploadBatchMaxSize} onChange={handleInputChange} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="genericMetricsUploadIntervalSeconds">Generic Metrics Upload Interval (s)</Label>
+                                    <Input id="genericMetricsUploadIntervalSeconds" name="genericMetricsUploadIntervalSeconds" type="number" value={config.genericMetricsUploadIntervalSeconds} onChange={handleInputChange} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="logLevel">Log Level</Label>
+                                    <Input id="logLevel" name="logLevel" type="text" value={config.logLevel} onChange={handleInputChange} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="heartbeatIntervalSeconds">Heartbeat Interval (s)</Label>
+                                    <Input id="heartbeatIntervalSeconds" name="heartbeatIntervalSeconds" type="number" value={config.heartbeatIntervalSeconds} onChange={handleInputChange} />
+                                </div>
                             </div>
                             <div className="mt-6 flex justify-end">
                                 <Button type="submit" disabled={isSaving}>

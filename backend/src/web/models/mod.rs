@@ -44,3 +44,5 @@ pub struct AuthenticatedUser {
     pub id: i32,
     pub username: String,
 }
+
+pub mod config_models;

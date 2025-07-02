@@ -11,7 +11,7 @@ use crate::agent_service::{
 };
 use crate::db::entities::{setting, vps}; // Added setting and vps entities
 use crate::db::services as db_services;
-use crate::web::{AppError, AppState}; // Added AppError
+use crate::web::{models::config_models::WebAgentConfig, AppError, AppState}; // Added AppError
 use futures_util::SinkExt;
 use tracing::{error, warn};
 use uuid::Uuid; // Import the SinkExt trait
@@ -36,7 +36,7 @@ pub fn create_vps_config_router() -> Router<Arc<AppState>> {
 #[axum::debug_handler]
 async fn get_global_agent_config(
     State(app_state): State<Arc<AppState>>,
-) -> Result<Json<AgentConfig>, AppError> {
+) -> Result<Json<WebAgentConfig>, AppError> {
     // Changed return type
     let setting_model_option: Option<setting::Model> =
         db_services::get_setting(&app_state.db_pool, "global_agent_config")
@@ -49,7 +49,7 @@ async fn get_global_agent_config(
                 .map_err(|e| {
                     AppError::ServerError(format!("Failed to parse global config: {e}"))
                 })?;
-            Ok(Json(config))
+            Ok(Json(config.into()))
         }
         None => Err(AppError::NotFound(
             "Global agent config not found.".to_string(),
@@ -60,10 +60,11 @@ async fn get_global_agent_config(
 #[axum::debug_handler]
 async fn update_global_agent_config(
     State(app_state): State<Arc<AppState>>,
-    Json(payload): Json<AgentConfig>,
+    Json(payload): Json<WebAgentConfig>,
 ) -> Result<StatusCode, AppError> {
     // Changed return type
-    let value = serde_json::to_value(&payload)
+    let proto_config: AgentConfig = payload.into();
+    let value = serde_json::to_value(&proto_config)
         .map_err(|e| AppError::InvalidInput(format!("Failed to serialize config: {e}")))?;
 
     db_services::update_setting(&app_state.db_pool, "global_agent_config", &value)
@@ -123,9 +124,9 @@ async fn retry_config_push(
 async fn preview_vps_config(
     State(app_state): State<Arc<AppState>>,
     Path(vps_id): Path<i32>,
-) -> Result<Json<AgentConfig>, AppError> {
+) -> Result<Json<WebAgentConfig>, AppError> {
     let effective_config = get_effective_vps_config(app_state, vps_id).await?;
-    Ok(Json(effective_config))
+    Ok(Json(effective_config.into()))
 }
 
 /// Gets the effective config for a VPS and pushes it to the agent if connected.
