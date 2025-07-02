@@ -10,7 +10,7 @@ RUN npm install
 
 # Copy the rest of the frontend code
 COPY frontend/ ./
-COPY locales/ ../locales/
+COPY locales ./public/locales
 
 # Build the frontend application
 RUN npm run build

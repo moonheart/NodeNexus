@@ -7,7 +7,7 @@ set -e
 # --- 定义变量 ---
 IMAGE_NAME="node-nexus-server"
 TAG="latest"
-DOCKERFILE_PATH="backend/Dockerfile"
+DOCKERFILE_PATH="Dockerfile"
 
 # --- 步骤 1: 构建 Docker 镜像 ---
 echo "Building Docker image: $IMAGE_NAME:$TAG..."

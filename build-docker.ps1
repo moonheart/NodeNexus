@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 # --- 定义变量 ---
 $ImageName = "moonheartmoon/node-nexus-server"
 $Tag = "latest"
-$Dockerfile = "backend/Dockerfile"
+$Dockerfile = "Dockerfile"
 
 # --- 步骤 1: 构建 Docker 镜像 ---
 Write-Host "Building Docker image: $($ImageName):$($Tag)..."
