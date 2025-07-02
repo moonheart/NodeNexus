@@ -12,7 +12,11 @@
       "link": "Link",
       "change": "Change",
       "continue": "Continue",
-      "openMenu": "Open menu"
+      "openMenu": "Open menu",
+      "preview": "Preview",
+      "push": "Push",
+      "retry": "Retry",
+      "close": "Close"
     },
     "labels": {
       "name": "Name",
@@ -72,6 +76,7 @@
       "changing": "Changing..."
     },
     "errors": {
+      "title": "Error",
       "notFound": "Page '%{page}' not found.",
       "unknown": "An unknown error occurred.",
       "passwordMismatch": "New passwords do not match!",
@@ -372,6 +377,57 @@
       "actions": {
         "create": "Create Channel"
       }
+    }
+  },
+  "agentSettings": {
+    "title": "Global Agent Configuration",
+    "description": "This configuration applies to all agents unless overridden by a specific VPS setting.",
+    "vpsStatusTitle": "VPS Configuration Status",
+    "vpsStatusDescription": "Monitor the configuration sync status for each connected VPS.",
+    "configStatus": {
+      "synced": "Synced",
+      "pending": "Pending",
+      "failed": "Failed",
+      "unknown": "Unknown"
+    },
+    "notifications": {
+      "loadConfigFailed": "Failed to load global configuration.",
+      "saving": "Saving configuration...",
+      "saveSuccess": "Configuration saved successfully! It will be pushed to relevant agents.",
+      "saveFailed": "Failed to save configuration.",
+      "retryInitiated": "Successfully initiated config push retry for VPS ID: %{vpsId}",
+      "retryFailed": "Failed to retry config push for VPS ID: %{vpsId}",
+      "pushTriggered": "Configuration push triggered for VPS ID: %{vpsId}",
+      "pushFailed": "Failed to trigger config push for VPS ID: %{vpsId}",
+      "previewFailed": "Failed to preview config for VPS ID: %{vpsId}",
+      "retrying": "Retrying config push for VPS ID: %{vpsId}",
+      "pushing": "Triggering config push for VPS ID: %{vpsId}"
+    },
+    "labels": {
+      "metricsCollectInterval": "Metrics Collect Interval (s)",
+      "metricsUploadBatchSize": "Metrics Upload Batch Max Size",
+      "metricsUploadInterval": "Metrics Upload Interval (s)",
+      "dockerInfoCollectInterval": "Docker Info Collect Interval (s)",
+      "dockerInfoUploadInterval": "Docker Info Upload Interval (s)",
+      "genericMetricsBatchSize": "Generic Metrics Upload Batch Max Size",
+      "genericMetricsUploadInterval": "Generic Metrics Upload Interval (s)",
+      "logLevel": "Log Level",
+      "heartbeatInterval": "Heartbeat Interval (s)"
+    },
+    "actions": {
+      "save": "Save Global Config"
+    },
+    "table": {
+      "configStatus": "Config Status",
+      "lastUpdate": "Last Update",
+      "lastError": "Last Error"
+    },
+    "previewModal": {
+      "title": "Configuration Preview"
+    },
+    "status": {
+      "na": "N/A",
+      "none": "None"
     }
   }
 }

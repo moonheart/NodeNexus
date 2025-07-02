@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getGlobalConfig, updateGlobalConfig, retryConfigPush, pushConfig, previewConfig } from '../services/configService';
 import type { AgentConfig, VpsListItemResponse } from '../types';
 import { useServerListStore } from '../store/serverListStore';
@@ -14,11 +15,12 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { RefreshCwIcon } from '@/components/Icons';
 
 const ConfigStatusBadge: React.FC<{ status: string }> = ({ status }) => {
+    const { t } = useTranslation();
     const statusMap: { [key: string]: { text: string; variant: "default" | "destructive" | "outline" | "secondary" | "success" | "warning" } } = {
-        synced: { text: 'Synced', variant: 'success' },
-        pending: { text: 'Pending', variant: 'warning' },
-        failed: { text: 'Failed', variant: 'destructive' },
-        unknown: { text: 'Unknown', variant: 'secondary' },
+        synced: { text: t('agentSettings.configStatus.synced'), variant: 'success' },
+        pending: { text: t('agentSettings.configStatus.pending'), variant: 'warning' },
+        failed: { text: t('agentSettings.configStatus.failed'), variant: 'destructive' },
+        unknown: { text: t('agentSettings.configStatus.unknown'), variant: 'secondary' },
     };
     const { text, variant } = statusMap[status] || statusMap.unknown;
     return (
@@ -27,6 +29,7 @@ const ConfigStatusBadge: React.FC<{ status: string }> = ({ status }) => {
 };
 
 const GlobalSettingsPage: React.FC = () => {
+    const { t } = useTranslation();
     const [config, setConfig] = useState<AgentConfig | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -46,13 +49,13 @@ const GlobalSettingsPage: React.FC = () => {
             setError(null);
         } catch (err) {
             console.error('Failed to load global configuration:', err);
-            const errorMessage = err instanceof Error ? err.message : 'Failed to load global configuration.';
+            const errorMessage = err instanceof Error ? err.message : t('agentSettings.notifications.loadConfigFailed');
             setError(errorMessage);
             toast.error(errorMessage);
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [t]);
 
     useEffect(() => {
         fetchConfig();
@@ -73,15 +76,15 @@ const GlobalSettingsPage: React.FC = () => {
 
         setIsSaving(true);
         setError(null);
-        const toastId = toast.loading('Saving configuration...');
+        const toastId = toast.loading(t('agentSettings.notifications.saving'));
         try {
             await updateGlobalConfig(config);
-            toast.success('Configuration saved successfully! It will be pushed to relevant agents.', { id: toastId });
+            toast.success(t('agentSettings.notifications.saveSuccess'), { id: toastId });
         } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'Failed to save configuration.';
+            const errorMessage = err instanceof Error ? err.message : t('agentSettings.notifications.saveFailed');
             setError(errorMessage);
             console.error(err);
-            toast.error(`Error: ${errorMessage}`, { id: toastId });
+            toast.error(t('common.notifications.error', { error: errorMessage }), { id: toastId });
         } finally {
             setIsSaving(false);
         }
@@ -89,13 +92,13 @@ const GlobalSettingsPage: React.FC = () => {
 
     const handleRetry = async (vpsId: number) => {
         setRetrying(vpsId);
-        const toastId = toast.loading(`Retrying config push for VPS ID: ${vpsId}`);
+        const toastId = toast.loading(t('agentSettings.notifications.retrying', { vpsId }));
         try {
             await retryConfigPush(vpsId);
-            toast.success(`Successfully initiated config push retry for VPS ID: ${vpsId}`, { id: toastId });
+            toast.success(t('agentSettings.notifications.retryInitiated', { vpsId }), { id: toastId });
         } catch (err) {
-            console.error(`Failed to retry config push for VPS ID: ${vpsId}`, err);
-            toast.error(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`, { id: toastId });
+            console.error(t('agentSettings.notifications.retryFailed', { vpsId }), err);
+            toast.error(t('common.notifications.error', { error: err instanceof Error ? err.message : t('common.errors.unknown') }), { id: toastId });
         } finally {
             setRetrying(null);
         }
@@ -103,13 +106,13 @@ const GlobalSettingsPage: React.FC = () => {
 
     const handlePushConfig = async (vpsId: number) => {
         setPushing(vpsId);
-        const toastId = toast.loading(`Triggering config push for VPS ID: ${vpsId}`);
+        const toastId = toast.loading(t('agentSettings.notifications.pushing', { vpsId }));
         try {
             await pushConfig(vpsId);
-            toast.success(`Configuration push triggered for VPS ID: ${vpsId}`, { id: toastId });
+            toast.success(t('agentSettings.notifications.pushTriggered', { vpsId }), { id: toastId });
         } catch (err) {
-            console.error(`Failed to trigger config push for VPS ID: ${vpsId}`, err);
-            toast.error(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`, { id: toastId });
+            console.error(t('agentSettings.notifications.pushFailed', { vpsId }), err);
+            toast.error(t('common.notifications.error', { error: err instanceof Error ? err.message : t('common.errors.unknown') }), { id: toastId });
         } finally {
             setPushing(null);
         }
@@ -122,8 +125,8 @@ const GlobalSettingsPage: React.FC = () => {
             setPreviewContent(JSON.stringify(config, null, 2));
             setIsPreviewModalOpen(true);
         } catch (err) {
-            console.error(`Failed to preview config for VPS ID: ${vpsId}`, err);
-            toast.error(`Error: ${err instanceof Error ? err.message : 'Failed to preview config'}`);
+            console.error(t('agentSettings.notifications.previewFailed', { vpsId }), err);
+            toast.error(t('common.notifications.error', { error: err instanceof Error ? err.message : t('agentSettings.notifications.previewFailed', { vpsId }) }));
         } finally {
             setPreviewing(null);
         }
@@ -136,7 +139,7 @@ const GlobalSettingsPage: React.FC = () => {
     if (error) {
         return (
             <Alert variant="destructive">
-                <AlertTitle>Error</AlertTitle>
+                <AlertTitle>{t('common.errors.title')}</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
             </Alert>
         );
@@ -147,7 +150,7 @@ const GlobalSettingsPage: React.FC = () => {
             <Dialog open={isPreviewModalOpen} onOpenChange={setIsPreviewModalOpen}>
                 <DialogContent className="sm:max-w-[600px]">
                     <DialogHeader>
-                        <DialogTitle>Configuration Preview</DialogTitle>
+                        <DialogTitle>{t('agentSettings.previewModal.title')}</DialogTitle>
                     </DialogHeader>
                     <div className="mt-2">
                         <pre className="bg-muted p-4 rounded-md text-sm overflow-auto max-h-[60vh]">
@@ -155,61 +158,61 @@ const GlobalSettingsPage: React.FC = () => {
                         </pre>
                     </div>
                     <DialogFooter>
-                        <Button onClick={() => setIsPreviewModalOpen(false)}>Close</Button>
+                        <Button onClick={() => setIsPreviewModalOpen(false)}>{t('common.actions.close')}</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Global Agent Configuration</CardTitle>
-                    <CardDescription>This configuration applies to all agents unless overridden by a specific VPS setting.</CardDescription>
+                    <CardTitle>{t('agentSettings.title')}</CardTitle>
+                    <CardDescription>{t('agentSettings.description')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                     {config && (
                         <form onSubmit={handleSave}>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-2">
-                                    <Label htmlFor="metricsCollectIntervalSeconds">Metrics Collect Interval (s)</Label>
+                                    <Label htmlFor="metricsCollectIntervalSeconds">{t('agentSettings.labels.metricsCollectInterval')}</Label>
                                     <Input id="metricsCollectIntervalSeconds" name="metricsCollectIntervalSeconds" type="number" value={config.metricsCollectIntervalSeconds} onChange={handleInputChange} />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="metricsUploadBatchMaxSize">Metrics Upload Batch Max Size</Label>
+                                    <Label htmlFor="metricsUploadBatchMaxSize">{t('agentSettings.labels.metricsUploadBatchSize')}</Label>
                                     <Input id="metricsUploadBatchMaxSize" name="metricsUploadBatchMaxSize" type="number" value={config.metricsUploadBatchMaxSize} onChange={handleInputChange} />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="metricsUploadIntervalSeconds">Metrics Upload Interval (s)</Label>
+                                    <Label htmlFor="metricsUploadIntervalSeconds">{t('agentSettings.labels.metricsUploadInterval')}</Label>
                                     <Input id="metricsUploadIntervalSeconds" name="metricsUploadIntervalSeconds" type="number" value={config.metricsUploadIntervalSeconds} onChange={handleInputChange} />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="dockerInfoCollectIntervalSeconds">Docker Info Collect Interval (s)</Label>
+                                    <Label htmlFor="dockerInfoCollectIntervalSeconds">{t('agentSettings.labels.dockerInfoCollectInterval')}</Label>
                                     <Input id="dockerInfoCollectIntervalSeconds" name="dockerInfoCollectIntervalSeconds" type="number" value={config.dockerInfoCollectIntervalSeconds} onChange={handleInputChange} />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="dockerInfoUploadIntervalSeconds">Docker Info Upload Interval (s)</Label>
+                                    <Label htmlFor="dockerInfoUploadIntervalSeconds">{t('agentSettings.labels.dockerInfoUploadInterval')}</Label>
                                     <Input id="dockerInfoUploadIntervalSeconds" name="dockerInfoUploadIntervalSeconds" type="number" value={config.dockerInfoUploadIntervalSeconds} onChange={handleInputChange} />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="genericMetricsUploadBatchMaxSize">Generic Metrics Upload Batch Max Size</Label>
+                                    <Label htmlFor="genericMetricsUploadBatchMaxSize">{t('agentSettings.labels.genericMetricsBatchSize')}</Label>
                                     <Input id="genericMetricsUploadBatchMaxSize" name="genericMetricsUploadBatchMaxSize" type="number" value={config.genericMetricsUploadBatchMaxSize} onChange={handleInputChange} />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="genericMetricsUploadIntervalSeconds">Generic Metrics Upload Interval (s)</Label>
+                                    <Label htmlFor="genericMetricsUploadIntervalSeconds">{t('agentSettings.labels.genericMetricsUploadInterval')}</Label>
                                     <Input id="genericMetricsUploadIntervalSeconds" name="genericMetricsUploadIntervalSeconds" type="number" value={config.genericMetricsUploadIntervalSeconds} onChange={handleInputChange} />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="logLevel">Log Level</Label>
+                                    <Label htmlFor="logLevel">{t('agentSettings.labels.logLevel')}</Label>
                                     <Input id="logLevel" name="logLevel" type="text" value={config.logLevel} onChange={handleInputChange} />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="heartbeatIntervalSeconds">Heartbeat Interval (s)</Label>
+                                    <Label htmlFor="heartbeatIntervalSeconds">{t('agentSettings.labels.heartbeatInterval')}</Label>
                                     <Input id="heartbeatIntervalSeconds" name="heartbeatIntervalSeconds" type="number" value={config.heartbeatIntervalSeconds} onChange={handleInputChange} />
                                 </div>
                             </div>
                             <div className="mt-6 flex justify-end">
                                 <Button type="submit" disabled={isSaving}>
                                     {isSaving && <RefreshCwIcon className="mr-2 h-4 w-4 animate-spin" />}
-                                    {isSaving ? 'Saving...' : 'Save Global Config'}
+                                    {isSaving ? t('common.status.saving') : t('agentSettings.actions.save')}
                                 </Button>
                             </div>
                         </form>
@@ -219,18 +222,18 @@ const GlobalSettingsPage: React.FC = () => {
 
             <Card>
                 <CardHeader>
-                    <CardTitle>VPS Configuration Status</CardTitle>
-                    <CardDescription>Monitor the configuration sync status for each connected VPS.</CardDescription>
+                    <CardTitle>{t('agentSettings.vpsStatusTitle')}</CardTitle>
+                    <CardDescription>{t('agentSettings.vpsStatusDescription')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>Name</TableHead>
-                                <TableHead>Config Status</TableHead>
-                                <TableHead>Last Update</TableHead>
-                                <TableHead>Last Error</TableHead>
-                                <TableHead className="text-right">Actions</TableHead>
+                                <TableHead>{t('common.table.name')}</TableHead>
+                                <TableHead>{t('agentSettings.table.configStatus')}</TableHead>
+                                <TableHead>{t('agentSettings.table.lastUpdate')}</TableHead>
+                                <TableHead>{t('agentSettings.table.lastError')}</TableHead>
+                                <TableHead className="text-right">{t('common.table.actions')}</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -238,8 +241,8 @@ const GlobalSettingsPage: React.FC = () => {
                                 <TableRow key={vps.id}>
                                     <TableCell className="font-medium">{vps.name}</TableCell>
                                     <TableCell><ConfigStatusBadge status={vps.configStatus} /></TableCell>
-                                    <TableCell>{vps.lastConfigUpdateAt ? new Date(vps.lastConfigUpdateAt).toLocaleString() : 'N/A'}</TableCell>
-                                    <TableCell className="text-destructive">{vps.lastConfigError || 'None'}</TableCell>
+                                    <TableCell>{vps.lastConfigUpdateAt ? new Date(vps.lastConfigUpdateAt).toLocaleString() : t('agentSettings.status.na')}</TableCell>
+                                    <TableCell className="text-destructive">{vps.lastConfigError || t('agentSettings.status.none')}</TableCell>
                                     <TableCell className="text-right space-x-2">
                                         <Button
                                             variant="ghost"
@@ -247,7 +250,7 @@ const GlobalSettingsPage: React.FC = () => {
                                             onClick={() => handlePreviewConfig(vps.id)}
                                             disabled={previewing === vps.id}
                                         >
-                                            {previewing === vps.id ? <RefreshCwIcon className="h-4 w-4 animate-spin" /> : 'Preview'}
+                                            {previewing === vps.id ? <RefreshCwIcon className="h-4 w-4 animate-spin" /> : t('common.actions.preview')}
                                         </Button>
                                         <Button
                                             variant="ghost"
@@ -255,7 +258,7 @@ const GlobalSettingsPage: React.FC = () => {
                                             onClick={() => handlePushConfig(vps.id)}
                                             disabled={pushing === vps.id}
                                         >
-                                            {pushing === vps.id ? <RefreshCwIcon className="h-4 w-4 animate-spin" /> : 'Push'}
+                                            {pushing === vps.id ? <RefreshCwIcon className="h-4 w-4 animate-spin" /> : t('common.actions.push')}
                                         </Button>
                                         {vps.configStatus === 'failed' && (
                                             <Button
@@ -264,7 +267,7 @@ const GlobalSettingsPage: React.FC = () => {
                                                 onClick={() => handleRetry(vps.id)}
                                                 disabled={retrying === vps.id}
                                             >
-                                                {retrying === vps.id ? <RefreshCwIcon className="h-4 w-4 animate-spin" /> : 'Retry'}
+                                                {retrying === vps.id ? <RefreshCwIcon className="h-4 w-4 animate-spin" /> : t('common.actions.retry')}
                                             </Button>
                                         )}
                                     </TableCell>

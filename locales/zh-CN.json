@@ -12,7 +12,11 @@
       "link": "关联",
       "change": "修改",
       "continue": "继续",
-      "openMenu": "打开菜单"
+      "openMenu": "打开菜单",
+      "preview": "预览",
+      "push": "推送",
+      "retry": "重试",
+      "close": "关闭"
     },
     "labels": {
       "name": "名称",
@@ -73,6 +77,7 @@
       "changing": "正在修改..."
     },
     "errors": {
+      "title": "错误",
       "notFound": "页面 '%{page}' 未找到。",
       "unknown": "发生未知错误。",
       "passwordMismatch": "新密码不匹配！",
@@ -373,6 +378,57 @@
       "actions": {
         "create": "创建渠道"
       }
+    }
+  },
+    "agentSettings": {
+    "title": "全局 Agent 配置",
+    "description": "此配置适用于所有 Agent，除非被特定 VPS 设置覆盖。",
+    "vpsStatusTitle": "VPS 配置状态",
+    "vpsStatusDescription": "监控每个已连接 VPS 的配置同步状态。",
+    "configStatus": {
+      "synced": "已同步",
+      "pending": "待处理",
+      "failed": "失败",
+      "unknown": "未知"
+    },
+    "notifications": {
+      "loadConfigFailed": "加载全局配置失败。",
+      "saving": "正在保存配置...",
+      "saveSuccess": "配置保存成功！将推送到相关 Agent。",
+      "saveFailed": "保存配置失败。",
+      "retryInitiated": "已成功为 VPS ID: %{vpsId} 发起配置推送重试",
+      "retryFailed": "为 VPS ID: %{vpsId} 重试配置推送失败",
+      "pushTriggered": "已为 VPS ID: %{vpsId} 触发配置推送",
+      "pushFailed": "为 VPS ID: %{vpsId} 触发配置推送失败",
+      "previewFailed": "为 VPS ID: %{vpsId} 预览配置失败",
+      "retrying": "正在为 VPS ID: %{vpsId} 重试配置推送",
+      "pushing": "正在为 VPS ID: %{vpsId} 触发配置推送"
+    },
+    "labels": {
+      "metricsCollectInterval": "指标收集间隔 (秒)",
+      "metricsUploadBatchSize": "指标上传批次最大大小",
+      "metricsUploadInterval": "指标上传间隔 (秒)",
+      "dockerInfoCollectInterval": "Docker 信息收集间隔 (秒)",
+      "dockerInfoUploadInterval": "Docker 信息上传间隔 (秒)",
+      "genericMetricsBatchSize": "通用指标上传批次最大大小",
+      "genericMetricsUploadInterval": "通用指标上传间隔 (秒)",
+      "logLevel": "日志级别",
+      "heartbeatInterval": "心跳间隔 (秒)"
+    },
+    "actions": {
+      "save": "保存全局配置"
+    },
+    "table": {
+      "configStatus": "配置状态",
+      "lastUpdate": "最后更新",
+      "lastError": "最后错误"
+    },
+    "previewModal": {
+      "title": "配置预览"
+    },
+    "status": {
+      "na": "不适用",
+      "none": "无"
     }
   }
 }
