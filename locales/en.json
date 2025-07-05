@@ -40,7 +40,8 @@
     },
     "placeholders": {
       "search": "Search...",
-      "selectLanguage": "Select language"
+      "selectLanguage": "Select language",
+      "pickDate": "Pick a date"
     },
     "dialogs": {
       "delete": {
@@ -503,5 +504,160 @@
     "na": "N/A",
     "calculating": "Calculating...",
     "notConfigured": "Not Configured"
+  },
+  "serverManagement": {
+    "title": "Server Management",
+    "createNewVps": "Create New VPS",
+    "serverFleet": "Server Fleet",
+    "filterByGroup": "Filter by Group:",
+    "allGroups": "All",
+    "filterByTags": "Filter by Tags",
+    "visibleTags": "Visible Tags",
+    "editTags": "Edit Tags (%{count})",
+    "updateAgent": "Update Agent (%{count})",
+    "noServersMatch": "No servers match the current filters.",
+    "table": {
+      "name": "Name",
+      "status": "Status",
+      "ipAddress": "IP Address",
+      "os": "OS",
+      "agent": "Agent",
+      "group": "Group",
+      "renewal": "Renewal",
+      "actions": "Actions",
+      "selectAll": "Select all"
+    },
+    "deleteDialog": {
+      "title": "Are you absolutely sure?",
+      "description": "This action cannot be undone. This will permanently delete the VPS and all its associated data."
+    },
+    "notifications": {
+      "fetchTagsFailed": "Failed to fetch tags.",
+      "fetchVpsDetailsFailed": "Could not fetch installation command.",
+      "updateCommandSent": "Update command sent. Success: %{successfulCount}, Failed: %{failedCount}",
+      "updateCommandFailed": "An error occurred while sending the update command.",
+      "deleteSuccess": "VPS deleted successfully.",
+      "deleteFailed": "An error occurred while deleting the VPS."
+    },
+    "status": {
+      "loading": "Loading servers...",
+      "connecting": "Connecting to real-time server...",
+      "reconnecting": "Connection lost. Reconnecting...",
+      "connectionError": "Could not connect to real-time server: %{error}"
+    },
+    "actions": {
+      "updateAgent": "Update Agent",
+      "copyCommand": "Copy Command"
+    },
+    "modals": {
+      "create": {
+        "title": "Create New VPS",
+        "description": "Enter a name for your new server. You can add more details later.",
+        "nameLabel": "Name",
+        "namePlaceholder": "e.g., My Web Server",
+        "nameRequired": "VPS name is required.",
+        "creating": "Creating...",
+        "createButton": "Create VPS",
+        "createSuccess": "VPS \"%{name}\" created successfully!"
+      },
+      "edit": {
+        "title": "Edit Server Information",
+        "description": "Make changes to your VPS configuration. Click save when you're done.",
+        "saving": "Saving...",
+        "saveButton": "Save Changes",
+        "updateSuccess": "VPS updated successfully!",
+        "updateFailed": "Failed to update VPS. Please try again.",
+        "tabs": {
+          "basic": "Basic Info",
+          "traffic": "Traffic Monitoring",
+          "renewal": "Renewal Settings"
+        },
+        "basicInfo": {
+          "name": "Name",
+          "group": "Group",
+          "groupPlaceholder": "Select or create a group...",
+          "tags": "Tags",
+          "tagsPlaceholder": "Select tags..."
+        },
+        "trafficMonitoring": {
+          "limit": "Traffic Limit",
+          "limitPlaceholder": "e.g., 100",
+          "billingRule": "Traffic Billing Rule",
+          "billingRulePlaceholder": "Select a rule...",
+          "billingRules": {
+            "sum": "Sum IN+OUT",
+            "out": "OUT only",
+            "max": "Max(IN, OUT)"
+          },
+          "resetRuleType": "Traffic Reset Rule Type",
+          "resetRuleTypePlaceholder": "Select a type...",
+          "resetRuleTypes": {
+            "monthly": "Monthly by day",
+            "fixed": "Fixed day interval"
+          },
+          "resetRuleValue": "Reset Rule Value",
+          "nextResetDate": "Next Reset Date"
+        },
+        "renewalSettings": {
+          "cycle": "Renewal Cycle",
+          "cyclePlaceholder": "Select a cycle...",
+          "cycles": {
+            "monthly": "Monthly",
+            "quarterly": "Quarterly",
+            "semi_annually": "Semi-Annually",
+            "annually": "Annually",
+            "biennially": "Biennially",
+            "triennially": "Triennially",
+            "custom": "Custom Days"
+          },
+          "customCycleDays": "Custom Cycle Days",
+          "price": "Renewal Price",
+          "currency": "Currency",
+          "currencyPlaceholder": "Select currency...",
+          "currencies": {
+            "usd": "USD",
+            "cny": "CNY",
+            "eur": "EUR",
+            "jpy": "JPY",
+            "gbp": "GBP",
+            "aud": "AUD",
+            "cad": "CAD",
+            "hkd": "HKD"
+          },
+          "startDate": "Service Start Date",
+          "lastDate": "Last Renewal Date",
+          "nextDate": "Next Renewal Date",
+          "paymentMethod": "Payment Method",
+          "paymentMethodPlaceholder": "Select payment method...",
+          "paymentMethods": {
+            "paypal": "PayPal",
+            "alipay": "Alipay (支付宝)",
+            "creditCard": "Credit Card (信用卡)",
+            "stripe": "Stripe",
+            "bankTransfer": "Bank Transfer (银行转账)",
+            "wechatPay": "WeChat Pay (微信支付)",
+            "unionPay": "UnionPay (银联)",
+            "applePay": "Apple Pay",
+            "googlePay": "Google Pay"
+          },
+          "notes": "Renewal Notes",
+          "autoRenew": "Enable Auto-Renewal"
+        },
+        "creatable": {
+          "searchPlaceholder": "Search or create...",
+          "createLabel": "Create \"%{value}\""
+        }
+      },
+      "bulkEditTags": {
+        "title": "Bulk Edit Tags",
+        "description": "Add or remove tags for %{count} selected servers.",
+        "tagsToAdd": "Tags to Add",
+        "tagsToRemove": "Tags to Remove",
+        "placeholder": "Select tags...",
+        "selected": "%{count} tag(s) selected",
+        "updateSuccess": "Tags updated successfully!",
+        "updateFailed": "An error occurred. Please try again."
+      }
+    }
   }
 }

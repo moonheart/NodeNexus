@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useServerListStore } from '../store/serverListStore';
 import * as tagService from '../services/tagService';
 import { toast } from 'react-hot-toast';
@@ -19,6 +20,7 @@ interface BulkEditTagsModalProps {
 }
 
 const BulkEditTagsModal: React.FC<BulkEditTagsModalProps> = ({ isOpen, onClose, vpsIds, onTagsUpdated }) => {
+  const { t } = useTranslation();
   const [tagsToAdd, setTagsToAdd] = useState<number[]>([]);
   const [tagsToRemove, setTagsToRemove] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -48,12 +50,12 @@ const BulkEditTagsModal: React.FC<BulkEditTagsModalProps> = ({ isOpen, onClose, 
         addTagIds: tagsToAdd,
         removeTagIds: tagsToRemove,
       });
-      toast.success('Tags updated successfully!');
+      toast.success(t('serverManagement.modals.bulkEditTags.updateSuccess'));
       onTagsUpdated();
       onClose();
     } catch (err) {
       console.error('Failed to bulk update tags:', err);
-      toast.error('An error occurred. Please try again.');
+      toast.error(t('serverManagement.modals.bulkEditTags.updateFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -76,9 +78,9 @@ const BulkEditTagsModal: React.FC<BulkEditTagsModalProps> = ({ isOpen, onClose, 
         <PopoverTrigger asChild>
           <Button variant="outline" className="w-full justify-between">
             <span className="truncate">
-              {selected.length > 0 
-                ? `${selected.length} tag(s) selected` 
-                : `Select tags...`}
+              {selected.length > 0
+                ? t('serverManagement.modals.bulkEditTags.selected', { count: selected.length })
+                : t('serverManagement.modals.bulkEditTags.placeholder')}
             </span>
             <ChevronDown className="h-4 w-4 ml-2" />
           </Button>
@@ -114,21 +116,21 @@ const BulkEditTagsModal: React.FC<BulkEditTagsModalProps> = ({ isOpen, onClose, 
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Bulk Edit Tags</DialogTitle>
+          <DialogTitle>{t('serverManagement.modals.bulkEditTags.title')}</DialogTitle>
           <DialogDescription>
-            Add or remove tags for {vpsIds.length} selected servers.
+            {t('serverManagement.modals.bulkEditTags.description', { count: vpsIds.length })}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <div className="space-y-4 py-4">
             <MultiSelectPopover
-              label="Tags to Add"
+              label={t('serverManagement.modals.bulkEditTags.tagsToAdd')}
               options={addOptions}
               selected={tagsToAdd}
               onSelectedChange={setTagsToAdd}
             />
             <MultiSelectPopover
-              label="Tags to Remove"
+              label={t('serverManagement.modals.bulkEditTags.tagsToRemove')}
               options={removeOptions}
               selected={tagsToRemove}
               onSelectedChange={setTagsToRemove}
@@ -136,10 +138,10 @@ const BulkEditTagsModal: React.FC<BulkEditTagsModalProps> = ({ isOpen, onClose, 
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
+              {t('common.actions.cancel')}
             </Button>
             <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Saving...' : 'Save Changes'}
+              {isLoading ? t('common.status.saving') : t('common.actions.save')}
             </Button>
           </DialogFooter>
         </form>

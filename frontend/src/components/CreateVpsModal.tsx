@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createVps } from '../services/vpsService';
 import type { Vps } from '../types';
 import axios from 'axios';
@@ -22,6 +23,7 @@ interface CreateVpsModalProps {
 }
 
 const CreateVpsModal: React.FC<CreateVpsModalProps> = ({ isOpen, onClose, onVpsCreated }) => {
+  const { t } = useTranslation();
   const [vpsName, setVpsName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +41,7 @@ const CreateVpsModal: React.FC<CreateVpsModalProps> = ({ isOpen, onClose, onVpsC
     setError(null);
 
     if (!vpsName.trim()) {
-      setError('VPS name is required.');
+      setError(t('serverManagement.modals.create.nameRequired'));
       return;
     }
 
@@ -49,7 +51,7 @@ const CreateVpsModal: React.FC<CreateVpsModalProps> = ({ isOpen, onClose, onVpsC
         name: vpsName.trim(),
       };
       const newVps = await createVps(payload);
-      toast.success(`VPS "${newVps.name}" created successfully!`);
+      toast.success(t('serverManagement.modals.create.createSuccess', { name: newVps.name }));
       
       if (onVpsCreated) {
         onVpsCreated(newVps);
@@ -57,7 +59,7 @@ const CreateVpsModal: React.FC<CreateVpsModalProps> = ({ isOpen, onClose, onVpsC
       onClose(); // Close modal on success
     } catch (err: unknown) {
       console.error('Failed to create VPS:', err);
-      let errorMessage = 'Failed to create VPS. Please try again later.';
+      let errorMessage = t('serverManagement.modals.edit.updateFailed');
       if (axios.isAxiosError(err) && err.response?.data?.error) {
         errorMessage = err.response.data.error;
       } else if (err instanceof Error) {
@@ -74,22 +76,22 @@ const CreateVpsModal: React.FC<CreateVpsModalProps> = ({ isOpen, onClose, onVpsC
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Create New VPS</DialogTitle>
+          <DialogTitle>{t('serverManagement.modals.create.title')}</DialogTitle>
           <DialogDescription>
-            Enter a name for your new server. You can add more details later.
+            {t('serverManagement.modals.create.description')}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="vpsNameModal" className="text-right">
-                Name
+                {t('serverManagement.modals.create.nameLabel')}
               </Label>
               <Input
                 id="vpsNameModal"
                 value={vpsName}
                 onChange={(e) => setVpsName(e.target.value)}
-                placeholder="e.g., My Web Server"
+                placeholder={t('serverManagement.modals.create.namePlaceholder')}
                 required
                 className={`col-span-3 ${error ? 'border-destructive' : ''}`}
               />
@@ -97,9 +99,9 @@ const CreateVpsModal: React.FC<CreateVpsModalProps> = ({ isOpen, onClose, onVpsC
             {error && <p className="col-start-2 col-span-3 text-destructive text-sm">{error}</p>}
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('common.actions.cancel')}</Button>
             <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Creating...' : 'Create VPS'}
+              {isLoading ? t('serverManagement.modals.create.creating') : t('serverManagement.modals.create.createButton')}
             </Button>
           </DialogFooter>
         </form>

@@ -40,7 +40,8 @@
     },
     "placeholders": {
       "search": "搜索...",
-      "selectLanguage": "选择语言"
+      "selectLanguage": "选择语言",
+      "pickDate": "选择日期"
     },
     "dialogs": {
       "delete": {
@@ -383,7 +384,7 @@
       }
     }
   },
-    "agentSettings": {
+  "agentSettings": {
     "title": "全局 Agent 配置",
     "description": "此配置适用于所有 Agent，除非被特定 VPS 设置覆盖。",
     "vpsStatusTitle": "VPS 配置状态",
@@ -504,5 +505,160 @@
     "na": "N/A",
     "calculating": "计算中...",
     "notConfigured": "未配置"
+  },
+  "serverManagement": {
+    "title": "服务器管理",
+    "createNewVps": "创建新VPS",
+    "serverFleet": "服务器舰队",
+    "filterByGroup": "按组筛选:",
+    "allGroups": "全部",
+    "filterByTags": "按标签筛选",
+    "visibleTags": "可见标签",
+    "editTags": "编辑标签 (%{count})",
+    "updateAgent": "更新 Agent (%{count})",
+    "noServersMatch": "没有与当前筛选器匹配的服务器。",
+    "table": {
+      "name": "名称",
+      "status": "状态",
+      "ipAddress": "IP 地址",
+      "os": "操作系统",
+      "agent": "Agent",
+      "group": "分组",
+      "renewal": "续费",
+      "actions": "操作",
+      "selectAll": "全选"
+    },
+    "deleteDialog": {
+      "title": "您确定吗？",
+      "description": "此操作无法撤销。这将永久删除该 VPS 及其所有相关数据。"
+    },
+    "notifications": {
+      "fetchTagsFailed": "获取标签失败。",
+      "fetchVpsDetailsFailed": "无法获取安装命令。",
+      "updateCommandSent": "更新命令已发送。成功: %{successfulCount}, 失败: %{failedCount}",
+      "updateCommandFailed": "发送更新命令时发生错误。",
+      "deleteSuccess": "VPS 删除成功。",
+      "deleteFailed": "删除 VPS 时发生错误。"
+    },
+    "status": {
+      "loading": "正在加载服务器...",
+      "connecting": "正在连接到实时服务器...",
+      "reconnecting": "连接已断开。正在重新连接...",
+      "connectionError": "无法连接到实时服务器: %{error}"
+    },
+    "actions": {
+      "updateAgent": "更新 Agent",
+      "copyCommand": "复制命令"
+    },
+    "modals": {
+      "create": {
+        "title": "创建新 VPS",
+        "description": "为您的新服务器输入一个名称。您可以稍后添加更多详细信息。",
+        "nameLabel": "名称",
+        "namePlaceholder": "例如，我的 Web 服务器",
+        "nameRequired": "VPS 名称是必需的。",
+        "creating": "正在创建...",
+        "createButton": "创建 VPS",
+        "createSuccess": "VPS “%{name}” 创建成功！"
+      },
+      "edit": {
+        "title": "编辑服务器信息",
+        "description": "更改您的 VPS 配置。完成后单击“保存”。",
+        "saving": "正在保存...",
+        "saveButton": "保存更改",
+        "updateSuccess": "VPS 更新成功！",
+        "updateFailed": "更新 VPS 失败。请重试。",
+        "tabs": {
+          "basic": "基本信息",
+          "traffic": "流量监控",
+          "renewal": "续费设置"
+        },
+        "basicInfo": {
+          "name": "名称",
+          "group": "分组",
+          "groupPlaceholder": "选择或创建一个分组...",
+          "tags": "标签",
+          "tagsPlaceholder": "选择标签..."
+        },
+        "trafficMonitoring": {
+          "limit": "流量限制",
+          "limitPlaceholder": "例如, 100",
+          "billingRule": "流量计费规则",
+          "billingRulePlaceholder": "选择一个规则...",
+          "billingRules": {
+            "sum": "入站+出站",
+            "out": "仅出站",
+            "max": "取最大值(入站, 出站)"
+          },
+          "resetRuleType": "流量重置规则类型",
+          "resetRuleTypePlaceholder": "选择一个类型...",
+          "resetRuleTypes": {
+            "monthly": "按月重置",
+            "fixed": "固定天数间隔"
+          },
+          "resetRuleValue": "重置规则值",
+          "nextResetDate": "下次重置日期"
+        },
+        "renewalSettings": {
+          "cycle": "续费周期",
+          "cyclePlaceholder": "选择一个周期...",
+          "cycles": {
+            "monthly": "月付",
+            "quarterly": "季付",
+            "semi_annually": "半年付",
+            "annually": "年付",
+            "biennially": "两年付",
+            "triennially": "三年付",
+            "custom": "自定义天数"
+          },
+          "customCycleDays": "自定义周期天数",
+          "price": "续费价格",
+          "currency": "货币",
+          "currencyPlaceholder": "选择货币...",
+          "currencies": {
+            "usd": "美元",
+            "cny": "人民币",
+            "eur": "欧元",
+            "jpy": "日元",
+            "gbp": "英镑",
+            "aud": "澳元",
+            "cad": "加元",
+            "hkd": "港币"
+          },
+          "startDate": "服务开始日期",
+          "lastDate": "上次续费日期",
+          "nextDate": "下次续费日期",
+          "paymentMethod": "支付方式",
+          "paymentMethodPlaceholder": "选择支付方式...",
+          "paymentMethods": {
+            "paypal": "PayPal",
+            "alipay": "支付宝",
+            "creditCard": "信用卡",
+            "stripe": "Stripe",
+            "bankTransfer": "银行转账",
+            "wechatPay": "微信支付",
+            "unionPay": "银联",
+            "applePay": "Apple Pay",
+            "googlePay": "Google Pay"
+          },
+          "notes": "续费备注",
+          "autoRenew": "启用自动续费"
+        },
+        "creatable": {
+          "searchPlaceholder": "搜索或创建...",
+          "createLabel": "创建 \"%{value}\""
+        }
+      },
+      "bulkEditTags": {
+        "title": "批量编辑标签",
+        "description": "为 %{count} 个选定的服务器添加或删除标签。",
+        "tagsToAdd": "要添加的标签",
+        "tagsToRemove": "要移除的标签",
+        "placeholder": "选择标签...",
+        "selected": "已选择 %{count} 个标签",
+        "updateSuccess": "标签更新成功！",
+        "updateFailed": "发生错误。请重试。"
+      }
+    }
   }
 }

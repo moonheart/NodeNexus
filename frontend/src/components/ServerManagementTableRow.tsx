@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link as RouterLink } from 'react-router-dom';
 import type { VpsListItemResponse } from '../types';
 import {
@@ -36,6 +37,7 @@ const ServerManagementTableRow: React.FC<ServerManagementTableRowProps> = ({
   onSelectionChange,
   isSelected,
 }) => {
+  const { t } = useTranslation();
   const statusAppearance = getVpsStatusAppearance(server.status);
   const IconComponent = statusAppearance.icon;
 
@@ -53,7 +55,7 @@ const ServerManagementTableRow: React.FC<ServerManagementTableRowProps> = ({
         <Checkbox
           checked={isSelected}
           onCheckedChange={(checked) => onSelectionChange(server.id, !!checked)}
-          aria-label="Select row"
+          aria-label={t('serverManagement.table.selectAll')}
         />
       </TableCell>
       <TableCell className="font-medium">
@@ -72,51 +74,51 @@ const ServerManagementTableRow: React.FC<ServerManagementTableRowProps> = ({
           {server.metadata?.country_code && (
             <span className={`fi fi-${server.metadata.country_code.toLowerCase()} mr-2`}></span>
           )}
-          {server.ipAddress || 'N/A'}
+          {server.ipAddress || t('vps.na')}
         </div>
       </TableCell>
-      <TableCell className="truncate" title={server.osType ?? 'N/A'}>
-        {server.osType ?? 'N/A'}
+      <TableCell className="truncate" title={server.osType ?? t('vps.na')}>
+        {server.osType ?? t('vps.na')}
       </TableCell>
-      <TableCell>{server.agentVersion || 'N/A'}</TableCell>
-      <TableCell>{server.group || 'N/A'}</TableCell>
+      <TableCell>{server.agentVersion || t('vps.na')}</TableCell>
+      <TableCell>{server.group || t('vps.na')}</TableCell>
       <TableCell>
         {renewalInfo.isApplicable ? (
           <Badge variant={renewalInfo.variant}>{renewalInfo.statusText}</Badge>
         ) : (
-          <span className="text-xs text-muted-foreground">未配置</span>
+          <span className="text-xs text-muted-foreground">{t('vps.notConfigured')}</span>
         )}
       </TableCell>
       <TableCell className="text-right">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="h-8 w-8 p-0">
-              <span className="sr-only">Open menu</span>
+              <span className="sr-only">{t('common.actions.openMenu')}</span>
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => onEdit(server)}>
               <Pencil className="mr-2 h-4 w-4" />
-              Edit
+              {t('common.actions.edit')}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => onTriggerUpdate(server.id)}
               disabled={server.status !== 'online'}
             >
               <RefreshCw className="mr-2 h-4 w-4" />
-              Update Agent
+              {t('serverManagement.actions.updateAgent')}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onCopyCommand(server)}>
               <Copy className="mr-2 h-4 w-4" />
-              Copy Command
+              {t('serverManagement.actions.copyCommand')}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => onDelete(server.id)}
               className="text-destructive focus:text-destructive"
             >
               <Trash2 className="mr-2 h-4 w-4" />
-              Delete
+              {t('common.actions.delete')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

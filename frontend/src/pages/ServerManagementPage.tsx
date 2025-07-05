@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import EditVpsModal from '../components/EditVpsModal';
 import CreateVpsModal from '../components/CreateVpsModal';
 import CopyCommandModal from '../components/CopyCommandModal';
@@ -51,6 +52,7 @@ const selectServerManagementPageData = (state: ServerListState): ServerManagemen
 
 
 const ServerManagementPage: React.FC = () => {
+    const { t } = useTranslation();
     const [isCreateVpsModalOpen, setIsCreateVpsModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingVps, setEditingVps] = useState<VpsListItemResponse | null>(null);
@@ -78,11 +80,11 @@ const ServerManagementPage: React.FC = () => {
                 setAvailableTags(tags);
             } catch (error) {
                 console.error("Failed to fetch tags:", error);
-                toast.error("Failed to fetch tags.");
+                toast.error(t('serverManagement.notifications.fetchTagsFailed'));
             }
         };
         fetchTags();
-    }, []);
+    }, [t]);
 
     const groupFilteredServers = useMemo(() => {
         if (selectedGroup === 'ALL') return vpsList;
@@ -118,7 +120,7 @@ const ServerManagementPage: React.FC = () => {
             setIsCopyCommandModalOpen(true);
         } catch (error) {
             console.error("Failed to fetch VPS details for command copy:", error);
-            toast.error("Could not fetch installation command.");
+            toast.error(t('serverManagement.notifications.fetchVpsDetailsFailed'));
         }
     };
 
@@ -140,10 +142,10 @@ const ServerManagementPage: React.FC = () => {
         if (vpsIds.length === 0) return;
         try {
             const result = await vpsService.triggerAgentUpdate(vpsIds);
-            toast.success(`Update command sent. Success: ${result.successfulCount}, Failed: ${result.failedCount}`);
+            toast.success(t('serverManagement.notifications.updateCommandSent', { successfulCount: result.successfulCount, failedCount: result.failedCount }));
         } catch (error) {
             console.error("Failed to trigger agent update:", error);
-            toast.error("An error occurred while sending the update command.");
+            toast.error(t('serverManagement.notifications.updateCommandFailed'));
         }
     };
 
@@ -156,10 +158,10 @@ const ServerManagementPage: React.FC = () => {
         if (vpsToDelete === null) return;
         try {
             await vpsService.deleteVps(vpsToDelete);
-            toast.success('VPS deleted successfully.');
+            toast.success(t('serverManagement.notifications.deleteSuccess'));
         } catch (error) {
             console.error("Failed to delete VPS:", error);
-            toast.error("An error occurred while deleting the VPS.");
+            toast.error(t('serverManagement.notifications.deleteFailed'));
         } finally {
             setIsAlertOpen(false);
             setVpsToDelete(null);
@@ -183,21 +185,21 @@ const ServerManagementPage: React.FC = () => {
     };
 
     if (isLoadingServers && vpsList.length === 0) {
-        return <div className="flex items-center justify-center h-64"><p>Loading servers...</p></div>;
+        return <div className="flex items-center justify-center h-64"><p>{t('serverManagement.status.loading')}</p></div>;
     }
 
     let statusMessage = '';
-    if (connectionStatus === 'connecting') statusMessage = 'Connecting to real-time server...';
-    else if (connectionStatus === 'reconnecting') statusMessage = 'Connection lost. Reconnecting...';
-    else if (wsError && (connectionStatus === 'error' || connectionStatus === 'permanently_failed')) statusMessage = `Could not connect to real-time server: ${wsError}`;
+    if (connectionStatus === 'connecting') statusMessage = t('serverManagement.status.connecting');
+    else if (connectionStatus === 'reconnecting') statusMessage = t('serverManagement.status.reconnecting');
+    else if (wsError && (connectionStatus === 'error' || connectionStatus === 'permanently_failed')) statusMessage = t('serverManagement.status.connectionError', { error: wsError });
 
     return (
         <div className="p-4 md:p-6 lg:p-8 space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-                <h1 className="text-3xl font-bold">Server Management</h1>
+                <h1 className="text-3xl font-bold">{t('serverManagement.title')}</h1>
                 <Button onClick={handleOpenCreateVpsModal} className="mt-3 sm:mt-0">
                     <Plus className="w-5 h-5 mr-2 -ml-1" />
-                    Create New VPS
+                    {t('serverManagement.createNewVps')}
                 </Button>
             </div>
             <CreateVpsModal isOpen={isCreateVpsModalOpen} onClose={handleCloseCreateVpsModal} onVpsCreated={handleVpsCreated} />
@@ -208,15 +210,15 @@ const ServerManagementPage: React.FC = () => {
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Server Fleet</CardTitle>
+                    <CardTitle>{t('serverManagement.serverFleet')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <div className="flex flex-wrap gap-4 items-center justify-between mb-4">
                         <div className="flex flex-wrap gap-2 items-center">
-                            <span className="text-sm font-medium text-muted-foreground">Filter by Group:</span>
+                            <span className="text-sm font-medium text-muted-foreground">{t('serverManagement.filterByGroup')}</span>
                             {uniqueGroups.map(group => (
                                 <Button key={group} onClick={() => setSelectedGroup(group)} variant={selectedGroup === group ? 'secondary' : 'outline'} size="sm">
-                                    {group === 'ALL' ? 'All' : group}
+                                    {group === 'ALL' ? t('serverManagement.allGroups') : group}
                                 </Button>
                             ))}
                         </div>
@@ -226,12 +228,12 @@ const ServerManagementPage: React.FC = () => {
                                     <DropdownMenuTrigger asChild>
                                         <Button variant="outline">
                                             <TagIcon className="mr-2 h-4 w-4" />
-                                            Filter by Tags
+                                            {t('serverManagement.filterByTags')}
                                             {selectedTagIds.size > 0 && <Badge variant="secondary" className="ml-2">{selectedTagIds.size}</Badge>}
                                         </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end">
-                                        <DropdownMenuLabel>Visible Tags</DropdownMenuLabel>
+                                        <DropdownMenuLabel>{t('serverManagement.visibleTags')}</DropdownMenuLabel>
                                         <DropdownMenuSeparator />
                                         {availableTags.filter(t => t.isVisible).map(tag => (
                                             <DropdownMenuCheckboxItem
@@ -255,11 +257,11 @@ const ServerManagementPage: React.FC = () => {
                                 <>
                                     <Button variant="outline" onClick={() => setIsBulkEditModalOpen(true)}>
                                         <Pencil className="w-4 h-4 mr-2" />
-                                        Edit Tags ({selectedVpsIds.size})
+                                        {t('serverManagement.editTags', { count: selectedVpsIds.size })}
                                     </Button>
                                     <Button onClick={() => handleTriggerUpdate(Array.from(selectedVpsIds))}>
                                         <RefreshCw className="w-4 h-4 mr-2" />
-                                        Update Agent ({selectedVpsIds.size})
+                                        {t('serverManagement.updateAgent', { count: selectedVpsIds.size })}
                                     </Button>
                                 </>
                             )}
@@ -267,7 +269,7 @@ const ServerManagementPage: React.FC = () => {
                     </div>
 
                     {displayedServers.length === 0 && !isLoadingServers ? (
-                        <p className="text-muted-foreground text-center py-8">No servers match the current filters.</p>
+                        <p className="text-muted-foreground text-center py-8">{t('serverManagement.noServersMatch')}</p>
                     ) : (
                         <div className="rounded-md border">
                             <Table>
@@ -277,17 +279,17 @@ const ServerManagementPage: React.FC = () => {
                                             <Checkbox
                                                 checked={selectedVpsIds.size > 0 && selectedVpsIds.size === displayedServers.length}
                                                 onCheckedChange={handleSelectAll}
-                                                aria-label="Select all"
+                                                aria-label={t('serverManagement.table.selectAll')}
                                             />
                                         </TableHead>
-                                        <TableHead>Name</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead>IP Address</TableHead>
-                                        <TableHead>OS</TableHead>
-                                        <TableHead>Agent</TableHead>
-                                        <TableHead>Group</TableHead>
-                                        <TableHead>Renewal</TableHead>
-                                        <TableHead className="text-right">Actions</TableHead>
+                                        <TableHead>{t('serverManagement.table.name')}</TableHead>
+                                        <TableHead>{t('serverManagement.table.status')}</TableHead>
+                                        <TableHead>{t('serverManagement.table.ipAddress')}</TableHead>
+                                        <TableHead>{t('serverManagement.table.os')}</TableHead>
+                                        <TableHead>{t('serverManagement.table.agent')}</TableHead>
+                                        <TableHead>{t('serverManagement.table.group')}</TableHead>
+                                        <TableHead>{t('serverManagement.table.renewal')}</TableHead>
+                                        <TableHead className="text-right">{t('serverManagement.table.actions')}</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -320,14 +322,14 @@ const ServerManagementPage: React.FC = () => {
             <AlertDialog open={isAlertOpen} onOpenChange={setIsAlertOpen}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
-                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                        <AlertDialogTitle>{t('serverManagement.deleteDialog.title')}</AlertDialogTitle>
                         <AlertDialogDescription>
-                            This action cannot be undone. This will permanently delete the VPS and all its associated data.
+                            {t('serverManagement.deleteDialog.description')}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleVpsDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
+                        <AlertDialogCancel>{t('common.actions.cancel')}</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleVpsDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{t('common.actions.delete')}</AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
