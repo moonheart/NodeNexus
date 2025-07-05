@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 
 const navLinks = [
   { to: '/servers', label: '服务器管理' },
-  { to: '/tasks', label: '任务' },
+  { to: '/batch-commands', label: '批量命令' },
   { to: '/monitors', label: '服务监控' },
   { to: '/settings', label: '设置' },
 ];

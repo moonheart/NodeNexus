@@ -61,7 +61,7 @@ function App() {
 
           {/* Protected routes */}
           <Route element={<ProtectedRoute />}>
-            <Route path="/tasks" element={<BatchCommandPage />} />
+            <Route path="/batch-commands" element={<BatchCommandPage />} />
             <Route path="/monitors" element={<ServiceMonitoringPage />} />
             <Route path="/monitors/:monitorId" element={<ServiceMonitorDetailPage />} />
             <Route path="/servers" element={<ServerManagementPage />} />

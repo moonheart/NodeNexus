@@ -8,7 +8,7 @@ import Editor from '@monaco-editor/react';
 import { useTheme } from "@/components/ThemeProvider";
 import Convert from 'ansi-to-html';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -262,28 +262,27 @@ const BatchCommandPage: React.FC = () => {
     };
 
     return (
-        <div className="container mx-auto p-4">
+        <div className="container mx-auto">
             <style>{`.hide-metadata .log-meta { display: none; }`}</style>
-            <h1 className="text-2xl font-bold mb-4">{t('batchCommand.title')}</h1>
-            
             <div className="flex flex-col md:flex-row gap-4 md:items-start">
-                <Card className={`transition-all duration-300 ease-in-out ${isServerPanelOpen ? 'w-full md:w-80' : 'w-auto'}`}>
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <Card className={`transition-all duration-300 ease-in-out gap-4 ${isServerPanelOpen ? 'w-full md:w-72' : 'w-16'}`}>
+                    <CardHeader className={`flex flex-row items-center ${isServerPanelOpen ? 'justify-between' : 'justify-center'}`}>
                         <CardTitle className={`text-lg font-semibold ${isServerPanelOpen ? 'block' : 'hidden'}`}>{t('batchCommand.selectServers')}</CardTitle>
                         <Button variant="ghost" size="icon" onClick={() => setIsServerPanelOpen(!isServerPanelOpen)} className="rounded-full">
                             <ChevronLeft className={`h-5 w-5 transition-transform duration-300 ${isServerPanelOpen ? 'rotate-0' : 'rotate-180'}`} />
                         </Button>
                     </CardHeader>
-                    <CardContent className={isServerPanelOpen ? 'block' : 'hidden'}>
-                        <Card className="mb-4 bg-muted/50 y-0">
-                            <CardHeader className="pb-2 pt-4">
+                    <CardContent className={`${isServerPanelOpen ? 'block' : 'hidden'}`}>
+                        <Card className="mb-4 bg-muted/50 gap-1">
+                            <CardHeader className='px-3'>
                                 <CardTitle className="text-base">{t('batchCommand.quickSelect')}</CardTitle>
+                                <CardAction>
+                                    <Button onClick={handleSelectAll} size="xxs" variant="secondary" className='mr-1'>{t('batchCommand.selectAll')}</Button>
+                                    <Button onClick={handleDeselectAll} size="xxs" variant="secondary">{t('batchCommand.deselectAll')}</Button>
+                                </CardAction>   
                             </CardHeader>
-                            <CardContent>
-                                <div className="flex flex-wrap gap-2 mb-2">
-                                    <Button onClick={handleSelectAll} size="sm" variant="secondary">{t('batchCommand.selectAll')}</Button>
-                                    <Button onClick={handleDeselectAll} size="sm" variant="secondary">{t('batchCommand.deselectAll')}</Button>
-                                </div>
+                            <CardContent className='px-3'>
+                               
                                 {allOsTypes.length > 0 && (
                                     <div className="mb-2">
                                         <h4 className="text-sm font-medium text-muted-foreground mb-1">{t('batchCommand.byOs')}</h4>
@@ -302,7 +301,7 @@ const BatchCommandPage: React.FC = () => {
                                 )}
                             </CardContent>
                         </Card>
-                        <div className="space-y-2 overflow-y-auto flex-grow max-h-96">
+                        <div className="space-y-2 overflow-y-auto flex-grow">
                             {servers.map((vps: VpsListItemResponse) => (
                                 <div key={vps.id} className="flex items-center space-x-2">
                                     <Checkbox id={`vps-${vps.id}`} checked={selectedVps.has(vps.id)} onCheckedChange={() => handleVpsSelection(vps.id)} />
