@@ -35,7 +35,7 @@ const SettingsLayout: React.FC = () => {
   return (
     <div className="grid md:grid-cols-[220px_1fr] lg:grid-cols-[280px_1fr] gap-8 items-start">
       <aside className="hidden md:flex flex-col gap-4">
-        <nav className="grid gap-2 text-sm text-muted-foreground">
+        <nav className="grid gap-2 text-sm text-muted-foreground" >
           {settingsGroups.map((group) => (
             <div key={group.title}>
               <h3 className="px-4 text-xs font-semibold uppercase text-muted-foreground/80 tracking-wider mb-2">

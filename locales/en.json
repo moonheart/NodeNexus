@@ -145,6 +145,8 @@
     },
     "theme": "Theme",
     "libraryTitle": "Theme Library",
+    "backgroundUrl": "Background Image URL",
+    "backgroundPlaceholder": "Enter image URL",
     "deleteDialog": {
       "description": "This action cannot be undone. This will permanently delete the theme \"%{themeName}\"."
     },
@@ -168,6 +170,7 @@
   },
   "scriptManagement": {
     "title": "Script Management",
+    "description": "Create, edit, and manage all your scripts.",
     "addNew": "Add New Script",
     "empty": {
       "title": "No scripts found",

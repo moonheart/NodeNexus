@@ -146,6 +146,8 @@
     },
     "theme": "主题",
     "libraryTitle": "主题库",
+    "backgroundUrl": "背景图片 URL",
+    "backgroundPlaceholder": "输入图片 URL",
     "deleteDialog": {
       "description": "此操作无法撤销。这将永久删除主题 \"%{themeName}\"。"
     },
@@ -169,6 +171,7 @@
   },
   "scriptManagement": {
     "title": "脚本管理",
+    "description": "创建、编辑和管理您的所有脚本。",
     "addNew": "添加新脚本",
     "empty": {
       "title": "未找到脚本",

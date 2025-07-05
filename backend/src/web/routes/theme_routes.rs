@@ -3,13 +3,14 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
-use sea_orm::{DatabaseConnection, EntityTrait, ActiveModelTrait, Set, ColumnTrait, QueryFilter, ModelTrait};
+use sea_orm::{DatabaseConnection, EntityTrait, ActiveModelTrait, Set, ColumnTrait, QueryFilter, ModelTrait, ActiveValue};
 use std::sync::Arc;
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::{
-    db::entities::{theme, user},
+    db::entities::{theme, setting},
     web::{error::AppError, models::AuthenticatedUser, AppState},
 };
 
@@ -128,37 +129,39 @@ async fn delete_theme(
     Ok(())
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Default)]
 pub struct UserThemeSettingsDto {
     pub theme_mode: String,
-    #[serde(serialize_with = "serialize_uuid_option_as_string")]
-    pub active_theme_id: Option<Uuid>,
-}
-
-fn serialize_uuid_option_as_string<S>(uuid_option: &Option<Uuid>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    match uuid_option {
-        Some(uuid) => serializer.serialize_str(&uuid.to_string()),
-        None => serializer.serialize_none(),
-    }
+    pub active_theme_id: Option<String>,
+    pub background_image_url: Option<String>,
 }
 
 async fn get_user_theme_settings(
     State(app_state): State<Arc<AppState>>,
-    Extension(authenticated_user): Extension<AuthenticatedUser>,
+    _authenticated_user: Extension<AuthenticatedUser>,
 ) -> Result<Json<UserThemeSettingsDto>, AppError> {
     let db = &app_state.db_pool;
-    let user = user::Entity::find_by_id(authenticated_user.id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::UserNotFound)?;
+    
+    let settings = setting::Entity::find().all(db).await?;
+    let mut settings_dto = UserThemeSettingsDto::default();
+    settings_dto.theme_mode = "system".to_string(); // Default value
 
-    let settings_dto = UserThemeSettingsDto {
-        theme_mode: user.theme_mode,
-        active_theme_id: user.active_theme_id,
-    };
+    for s in settings {
+        match s.key.as_str() {
+            "theme_mode" => {
+                if let Some(val) = s.value.as_str() {
+                    settings_dto.theme_mode = val.to_string();
+                }
+            },
+            "active_theme_id" => {
+                settings_dto.active_theme_id = s.value.as_str().map(String::from);
+            },
+            "background_image_url" => {
+                settings_dto.background_image_url = s.value.as_str().map(String::from);
+            },
+            _ => {}
+        }
+    }
 
     Ok(Json(settings_dto))
 }
@@ -167,38 +170,54 @@ async fn get_user_theme_settings(
 pub struct UpdateThemeSettingsPayload {
     pub theme_mode: Option<String>,
     pub active_theme_id: Option<String>,
+    pub background_image_url: Option<String>,
 }
 
 async fn update_user_theme_settings(
     State(app_state): State<Arc<AppState>>,
-    Extension(authenticated_user): Extension<AuthenticatedUser>,
+    _authenticated_user: Extension<AuthenticatedUser>,
     Json(payload): Json<UpdateThemeSettingsPayload>,
-) -> Result<Json<UserThemeSettingsDto>, AppError> {
+) -> Result<Json<()>, AppError> {
     let db = &app_state.db_pool;
-    let user_to_update = user::Entity::find_by_id(authenticated_user.id)
-        .one(db)
-        .await?
-        .ok_or_else(|| AppError::UserNotFound)?;
-
-    let mut active_model: user::ActiveModel = user_to_update.into();
 
     if let Some(theme_mode) = payload.theme_mode {
-        active_model.theme_mode = Set(theme_mode);
+        let model = setting::ActiveModel {
+            key: Set("theme_mode".to_owned()),
+            value: Set(json!(theme_mode)),
+            updated_at: Set(chrono::Utc::now()),
+        };
+        setting::Entity::insert(model).on_conflict(
+            sea_orm::sea_query::OnConflict::column(setting::Column::Key)
+            .update_column(setting::Column::Value)
+            .to_owned()
+        ).exec(db).await?;
     }
 
-    if let Some(theme_id_str) = payload.active_theme_id {
-        let theme_id = Uuid::parse_str(&theme_id_str).ok();
-        active_model.active_theme_id = Set(theme_id);
+    if let Some(active_theme_id) = payload.active_theme_id {
+        let model = setting::ActiveModel {
+            key: Set("active_theme_id".to_owned()),
+            value: Set(json!(active_theme_id)),
+            updated_at: Set(chrono::Utc::now()),
+        };
+        setting::Entity::insert(model).on_conflict(
+            sea_orm::sea_query::OnConflict::column(setting::Column::Key)
+            .update_column(setting::Column::Value)
+            .to_owned()
+        ).exec(db).await?;
     }
-    
-    active_model.updated_at = Set(chrono::Utc::now());
 
-    let updated_user = active_model.update(db).await?;
+    if let Some(background_image_url) = payload.background_image_url {
+        let model = setting::ActiveModel {
+            key: Set("background_image_url".to_owned()),
+            value: Set(json!(background_image_url)),
+            updated_at: Set(chrono::Utc::now()),
+        };
+        setting::Entity::insert(model).on_conflict(
+            sea_orm::sea_query::OnConflict::column(setting::Column::Key)
+            .update_column(setting::Column::Value)
+            .to_owned()
+        ).exec(db).await?;
+    }
 
-    let settings_dto = UserThemeSettingsDto {
-        theme_mode: updated_user.theme_mode,
-        active_theme_id: updated_user.active_theme_id,
-    };
-
-    Ok(Json(settings_dto))
+    Ok(Json(()))
 }

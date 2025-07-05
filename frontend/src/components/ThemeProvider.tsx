@@ -78,6 +78,23 @@ const clearCustomTheme = () => {
   }
 };
 
+const applyBackgroundImage = (url: string | null | undefined) => {
+  const body = document.body;
+  if (url) {
+    body.style.backgroundImage = `url('${url}')`;
+    body.style.backgroundSize = 'cover';
+    body.style.backgroundPosition = 'center';
+    body.style.backgroundAttachment = 'fixed';
+    body.style.backgroundColor = 'transparent';
+  } else {
+    body.style.backgroundImage = '';
+    body.style.backgroundSize = '';
+    body.style.backgroundPosition = '';
+    body.style.backgroundAttachment = '';
+    body.style.backgroundColor = ''; // Revert to default
+  }
+};
+
 // --- Types and Context ---
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -159,11 +176,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             applyCustomTheme(theme.css); // This will also save it to localStorage
           }
         }
+        
+        applyBackgroundImage(settings.background_image_url);
+
       } catch (error) {
         console.error("Error applying user theme, falling back to default:", error);
         if (isMounted) {
           setActiveThemeIdState('default');
           clearCustomTheme();
+          applyBackgroundImage(null);
         }
       }
     };

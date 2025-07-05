@@ -6,7 +6,7 @@ import type { CommandScript } from '../types';
 import ScriptFormModal from '../components/ScriptFormModal';
 import { Plus, Search, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -130,73 +130,76 @@ const ScriptManagementPage: React.FC = () => {
         }
 
         return (
-            <Card>
-                <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>{t('common.table.name')}</TableHead>
-                                <TableHead>{t('common.table.description')}</TableHead>
-                                <TableHead>{t('common.table.language')}</TableHead>
-                                <TableHead><span className="sr-only">{t('common.table.actions')}</span></TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {filteredScripts.map((script) => (
-                                <TableRow key={script.id}>
-                                    <TableCell className="font-medium">{script.name}</TableCell>
-                                    <TableCell className="max-w-xs truncate">{script.description}</TableCell>
-                                    <TableCell>
-                                        <Badge variant={script.language === 'shell' ? 'default' : 'secondary'}>
-                                            {script.language}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                                <Button variant="ghost" className="h-8 w-8 p-0">
-                                                    <span className="sr-only">{t('common.actions.openMenu')}</span>
-                                                    <MoreHorizontal className="h-4 w-4" />
-                                                </Button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end">
-                                                <DropdownMenuItem onClick={() => handleEdit(script)}>{t('common.actions.edit')}</DropdownMenuItem>
-                                                <DropdownMenuItem onClick={() => confirmDelete(script.id)} className="text-destructive">{t('common.actions.delete')}</DropdownMenuItem>
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </CardContent>
-            </Card>
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead>{t('common.table.name')}</TableHead>
+                        <TableHead>{t('common.table.description')}</TableHead>
+                        <TableHead>{t('common.table.language')}</TableHead>
+                        <TableHead><span className="sr-only">{t('common.table.actions')}</span></TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {filteredScripts.map((script) => (
+                        <TableRow key={script.id}>
+                            <TableCell className="font-medium">{script.name}</TableCell>
+                            <TableCell className="max-w-xs truncate">{script.description}</TableCell>
+                            <TableCell>
+                                <Badge variant={script.language === 'shell' ? 'default' : 'secondary'}>
+                                    {script.language}
+                                </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" className="h-8 w-8 p-0">
+                                            <span className="sr-only">{t('common.actions.openMenu')}</span>
+                                            <MoreHorizontal className="h-4 w-4" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onClick={() => handleEdit(script)}>{t('common.actions.edit')}</DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => confirmDelete(script.id)} className="text-destructive">{t('common.actions.delete')}</DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
         );
     };
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
-                <h1 className="text-2xl font-bold">{t('scriptManagement.title')}</h1>
-                {scripts.length > 0 && (
-                    <Button onClick={handleAdd}>{t('scriptManagement.addNew')}</Button>
-                )}
-            </div>
-
-            {scripts.length > 0 && (
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                    <Input
-                        type="search"
-                        placeholder={t('common.placeholders.search')}
-                        className="pl-10"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                </div>
-            )}
-
-            {renderContent()}
+            <Card>
+                <CardHeader>
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <CardTitle>{t('scriptManagement.title')}</CardTitle>
+                            <CardDescription>{t('scriptManagement.description')}</CardDescription>
+                        </div>
+                        {scripts.length > 0 && (
+                            <Button onClick={handleAdd}>{t('scriptManagement.addNew')}</Button>
+                        )}
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    {scripts.length > 0 && (
+                        <div className="relative mb-4">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                            <Input
+                                type="search"
+                                placeholder={t('common.placeholders.search')}
+                                className="pl-10"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+                    )}
+                    {renderContent()}
+                </CardContent>
+            </Card>
 
             <ScriptFormModal
                 isOpen={isModalOpen}

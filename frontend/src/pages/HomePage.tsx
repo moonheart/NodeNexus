@@ -220,7 +220,7 @@ const HomePage: React.FC = () => {
     <div className="p-4 md:p-6 lg:p-8 space-y-6">
       {statusMessage && <Alert variant={statusVariant} className="mb-6"><AlertTriangle className="h-4 w-4" /><AlertDescription>{statusMessage}</AlertDescription></Alert>}
 
-      <Card>
+      <Card className='backdrop-blur'>
         <CardHeader>
           <CardTitle>{t('homePage.overview.title')}</CardTitle>
         </CardHeader>
@@ -237,7 +237,7 @@ const HomePage: React.FC = () => {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className='backdrop-blur'>
         <CardHeader>
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <CardTitle>{t('homePage.serverList.title')}</CardTitle>

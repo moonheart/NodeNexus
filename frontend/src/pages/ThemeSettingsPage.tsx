@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -14,12 +15,14 @@ import { useTranslation } from "react-i18next";
 export interface UserThemeSettings {
   theme_mode: 'light' | 'dark' | 'system';
   active_theme_id: string | null;
+  background_image_url?: string | null;
 }
 
 const ThemeSettingsPage = () => {
   const { t } = useTranslation();
   const [userThemes, setUserThemes] = useState<Theme[]>([]);
   const [settings, setSettings] = useState<UserThemeSettings | null>(null);
+  const [backgroundImageUrl, setBackgroundImageUrl] = useState('');
   const [themeToDelete, setThemeToDelete] = useState<Theme | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTheme, setEditingTheme] = useState<Theme | null>(null);
@@ -54,6 +57,7 @@ const ThemeSettingsPage = () => {
           ...settingsData,
           active_theme_id: settingsData.active_theme_id || 'default',
         });
+        setBackgroundImageUrl(settingsData.background_image_url || '');
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : t('common.errors.unknown'));
       } finally {
@@ -70,7 +74,7 @@ const ThemeSettingsPage = () => {
       await fetch('/api/user/theme-settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(settings),
+        body: JSON.stringify({ ...settings, background_image_url: backgroundImageUrl }),
       });
       // The theme provider will fetch the latest settings and apply them
       reloadTheme();
@@ -175,6 +179,17 @@ const ThemeSettingsPage = () => {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="flex items-center justify-between">
+                <label htmlFor="background-url" className="text-sm font-medium">{t('themeSettings.backgroundUrl')}</label>
+                <Input
+                  id="background-url"
+                  type="text"
+                  value={backgroundImageUrl}
+                  onChange={(e) => setBackgroundImageUrl(e.target.value)}
+                  placeholder={t('themeSettings.backgroundPlaceholder')}
+                  className="w-[180px]"
+                />
               </div>
               <Button onClick={handleSaveSettings}>{t('common.actions.save')}</Button>
             </div>
