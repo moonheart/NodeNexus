@@ -659,5 +659,53 @@
         "updateFailed": "An error occurred. Please try again."
       }
     }
+  },
+  "batchCommand": {
+    "title": "Batch Command Execution",
+    "selectServers": "Select Servers",
+    "quickSelect": "Quick Select",
+    "selectAll": "Select All",
+    "deselectAll": "Deselect All",
+    "byOs": "By OS",
+    "byTag": "By Tag",
+    "workingDirPlaceholder": "e.g., /root or C:\\Users\\Admin",
+    "command": "Command",
+    "language": "Language",
+    "loadScript": "Load a script...",
+    "history": "History",
+    "hide": "Hide",
+    "show": "Show",
+    "resizeEditorHint": "Drag to resize editor",
+    "clearHistory": "Clear All",
+    "noHistory": "No history yet.",
+    "executing": "Executing...",
+    "runCommand": "Run Command",
+    "saveAsScript": "Save as Script",
+    "terminate": "Terminate",
+    "liveOutput": "Live Output",
+    "timestamps": "Timestamps",
+    "aggregated": "Aggregated",
+    "perServer": "Per-Server",
+    "outputPlaceholder": "Command output will appear here...",
+    "pending": "Pending...",
+    "noServersSelected": "No servers selected for the command.",
+    "connecting": "Connecting to server...",
+    "connectionEstablished": "Connection established. Sending command...",
+    "connectionClosed": "WebSocket connection closed. Code: %{code}",
+    "connectionError": "WebSocket connection error. Could not connect to the server.",
+    "noActiveCommand": "No active command to terminate.",
+    "wsNotConnected": "WebSocket is not connected. Cannot send termination signal.",
+    "sendingTermination": "Sending termination signal for batch command ID: %{batchId}...",
+    "loadScriptsFailed": "Failed to load saved scripts.",
+    "saveScriptFailed": "An unknown error occurred while saving the script.",
+    "saveScriptModal": {
+      "title": "Save Command as Script",
+      "description": "Save the current command and working directory for future use.",
+      "name": "Name",
+      "descriptionLabel": "Description",
+      "commandLabel": "Command",
+      "saveButton": "Save Script",
+      "nameRequired": "Script name is required."
+    }
   }
 }

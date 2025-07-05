@@ -660,5 +660,53 @@
         "updateFailed": "发生错误。请重试。"
       }
     }
+  },
+  "batchCommand": {
+    "title": "批量命令执行",
+    "selectServers": "选择服务器",
+    "quickSelect": "快速选择",
+    "selectAll": "全选",
+    "deselectAll": "取消全选",
+    "byOs": "按操作系统",
+    "byTag": "按标签",
+    "workingDirPlaceholder": "例如, /root 或 C:\\Users\\Admin",
+    "command": "命令",
+    "language": "语言",
+    "loadScript": "加载脚本...",
+    "history": "历史记录",
+    "hide": "隐藏",
+    "show": "显示",
+    "resizeEditorHint": "拖动以调整编辑器大小",
+    "clearHistory": "清除全部",
+    "noHistory": "暂无历史记录。",
+    "executing": "执行中...",
+    "runCommand": "运行命令",
+    "saveAsScript": "另存为脚本",
+    "terminate": "终止",
+    "liveOutput": "实时输出",
+    "timestamps": "时间戳",
+    "aggregated": "聚合视图",
+    "perServer": "单服务器视图",
+    "outputPlaceholder": "命令输出将显示在此处...",
+    "pending": "等待中...",
+    "noServersSelected": "未选择任何服务器来执行命令。",
+    "connecting": "正在连接到服务器...",
+    "connectionEstablished": "连接已建立。正在发送命令...",
+    "connectionClosed": "WebSocket 连接已关闭。代码: %{code}",
+    "connectionError": "WebSocket 连接错误。无法连接到服务器。",
+    "noActiveCommand": "没有活动命令可以终止。",
+    "wsNotConnected": "WebSocket 未连接。无法发送终止信号。",
+    "sendingTermination": "正在发送终止信号，批处理命令 ID: %{batchId}...",
+    "loadScriptsFailed": "加载已保存的脚本失败。",
+    "saveScriptFailed": "保存脚本时发生未知错误。",
+    "saveScriptModal": {
+      "title": "将命令另存为脚本",
+      "description": "保存当前命令和工作目录以备将来使用。",
+      "name": "名称",
+      "descriptionLabel": "描述",
+      "commandLabel": "命令",
+      "saveButton": "保存脚本",
+      "nameRequired": "脚本名称是必填项。"
+    }
   }
 }

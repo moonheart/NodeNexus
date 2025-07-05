@@ -16,8 +16,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { ChevronLeft, History, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const BatchCommandPage: React.FC = () => {
+    const { t } = useTranslation();
     const { resolvedTheme } = useTheme();
     const { servers } = useServerListStore();
     const [selectedVps, setSelectedVps] = useState<Set<number>>(new Set());
@@ -80,7 +82,7 @@ const BatchCommandPage: React.FC = () => {
             setScripts(fetchedScripts);
         } catch (error) {
             console.error("Failed to load scripts:", error);
-            setError("Failed to load saved scripts.");
+            setError(t('batchCommand.loadScriptsFailed'));
         }
     };
 
@@ -109,7 +111,7 @@ const BatchCommandPage: React.FC = () => {
 
         setIsLoading(true);
         setError(null);
-        setGeneralOutput(['<span class="log-content">Connecting to server...</span>']);
+        setGeneralOutput([`<span class="log-content">${t('batchCommand.connecting')}</span>`]);
         setServerOutputs({});
         setAggregatedLogs([]);
         setActiveView('all');
@@ -123,7 +125,7 @@ const BatchCommandPage: React.FC = () => {
         webSocketRef.current = ws;
 
         ws.onopen = () => {
-            setGeneralOutput(prev => [...prev, '<span class="log-content">Connection established. Sending command...</span>']);
+            setGeneralOutput(prev => [...prev, `<span class="log-content">${t('batchCommand.connectionEstablished')}</span>`]);
             ws.send(JSON.stringify({
                 command_content: processedCommand,
                 target_vps_ids: Array.from(selectedVps),
@@ -148,7 +150,7 @@ const BatchCommandPage: React.FC = () => {
                         [vpsId]: {
                             name: vpsName,
                             logs: [...(prev[vpsId]?.logs || []), log],
-                            status: statusUpdate?.status || prev[vpsId]?.status || 'Pending',
+                            status: statusUpdate?.status || prev[vpsId]?.status || t('batchCommand.pending'),
                             exitCode: statusUpdate?.exitCode !== undefined ? statusUpdate.exitCode : prev[vpsId]?.exitCode,
                         },
                     }));
@@ -192,26 +194,26 @@ const BatchCommandPage: React.FC = () => {
 
         ws.onerror = (event) => {
             console.error('WebSocket connection error:', event);
-            setError('WebSocket connection error. Could not connect to the server.');
+            setError(t('batchCommand.connectionError'));
             setIsLoading(false);
         };
 
         ws.onclose = (event) => {
-            setGeneralOutput(prev => [...prev, `<span class="log-content">WebSocket connection closed. Code: ${event.code}</span>`]);
+            setGeneralOutput(prev => [...prev, `<span class="log-content">${t('batchCommand.connectionClosed', { code: event.code })}</span>`]);
             setIsLoading(false);
         };
     };
 
     const handleTerminateCommand = () => {
         if (!currentBatchCommandId) {
-            setError("No active command to terminate.");
+            setError(t('batchCommand.noActiveCommand'));
             return;
         }
         if (!webSocketRef.current || webSocketRef.current.readyState !== WebSocket.OPEN) {
-            setError("WebSocket is not connected. Cannot send termination signal.");
+            setError(t('batchCommand.wsNotConnected'));
             return;
         }
-        setGeneralOutput(prev => [...prev, `<span class="log-meta text-gray-500">[SYSTEM]: </span><span class="log-content">Sending termination signal for batch command ID: ${currentBatchCommandId}...</span>`]);
+        setGeneralOutput(prev => [...prev, `<span class="log-meta text-gray-500">[SYSTEM]: </span><span class="log-content">${t('batchCommand.sendingTermination', { batchId: currentBatchCommandId })}</span>`]);
         webSocketRef.current.send(JSON.stringify({ type: "TERMINATE_TASK" }));
     };
 
@@ -230,7 +232,7 @@ const BatchCommandPage: React.FC = () => {
                 };
             };
             const axiosError = err as AxiosError;
-            const errorMsg = axiosError.response?.data?.error || 'An unknown error occurred while saving the script.';
+            const errorMsg = axiosError.response?.data?.error || t('batchCommand.saveScriptFailed');
             setError(errorMsg);
         }
     };
@@ -262,12 +264,12 @@ const BatchCommandPage: React.FC = () => {
     return (
         <div className="container mx-auto p-4">
             <style>{`.hide-metadata .log-meta { display: none; }`}</style>
-            <h1 className="text-2xl font-bold mb-4">Batch Command Execution</h1>
+            <h1 className="text-2xl font-bold mb-4">{t('batchCommand.title')}</h1>
             
             <div className="flex flex-col md:flex-row gap-4 md:items-start">
                 <Card className={`transition-all duration-300 ease-in-out ${isServerPanelOpen ? 'w-full md:w-80' : 'w-auto'}`}>
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className={`text-lg font-semibold ${isServerPanelOpen ? 'block' : 'hidden'}`}>Select Servers</CardTitle>
+                        <CardTitle className={`text-lg font-semibold ${isServerPanelOpen ? 'block' : 'hidden'}`}>{t('batchCommand.selectServers')}</CardTitle>
                         <Button variant="ghost" size="icon" onClick={() => setIsServerPanelOpen(!isServerPanelOpen)} className="rounded-full">
                             <ChevronLeft className={`h-5 w-5 transition-transform duration-300 ${isServerPanelOpen ? 'rotate-0' : 'rotate-180'}`} />
                         </Button>
@@ -275,16 +277,16 @@ const BatchCommandPage: React.FC = () => {
                     <CardContent className={isServerPanelOpen ? 'block' : 'hidden'}>
                         <Card className="mb-4 bg-muted/50 y-0">
                             <CardHeader className="pb-2 pt-4">
-                                <CardTitle className="text-base">Quick Select</CardTitle>
+                                <CardTitle className="text-base">{t('batchCommand.quickSelect')}</CardTitle>
                             </CardHeader>
                             <CardContent>
                                 <div className="flex flex-wrap gap-2 mb-2">
-                                    <Button onClick={handleSelectAll} size="sm" variant="secondary">Select All</Button>
-                                    <Button onClick={handleDeselectAll} size="sm" variant="secondary">Deselect All</Button>
+                                    <Button onClick={handleSelectAll} size="sm" variant="secondary">{t('batchCommand.selectAll')}</Button>
+                                    <Button onClick={handleDeselectAll} size="sm" variant="secondary">{t('batchCommand.deselectAll')}</Button>
                                 </div>
                                 {allOsTypes.length > 0 && (
                                     <div className="mb-2">
-                                        <h4 className="text-sm font-medium text-muted-foreground mb-1">By OS</h4>
+                                        <h4 className="text-sm font-medium text-muted-foreground mb-1">{t('batchCommand.byOs')}</h4>
                                         <div className="flex flex-wrap gap-2">
                                             {allOsTypes.map(os => <Badge key={os} onClick={() => handleSelectByOs(os)} className="cursor-pointer">{os}</Badge>)}
                                         </div>
@@ -292,7 +294,7 @@ const BatchCommandPage: React.FC = () => {
                                 )}
                                 {allTags.length > 0 && (
                                     <div>
-                                        <h4 className="text-sm font-medium text-muted-foreground mb-1">By Tag</h4>
+                                        <h4 className="text-sm font-medium text-muted-foreground mb-1">{t('batchCommand.byTag')}</h4>
                                         <div className="flex flex-wrap gap-2">
                                             {allTags.map(tag => <Badge key={tag.id} onClick={() => handleSelectByTag(tag.name)} className="cursor-pointer" style={{ backgroundColor: tag.color }}>{tag.name}</Badge>)}
                                         </div>
@@ -317,46 +319,46 @@ const BatchCommandPage: React.FC = () => {
                     <CardContent className="p-4">
                         <div className="grid gap-4">
                             <div>
-                                <Label htmlFor="working-directory-input">Working Directory</Label>
-                                <Input id="working-directory-input" value={workingDirectory} onChange={(e) => setWorkingDirectory(e.target.value)} placeholder="e.g., /root or C:\Users\Admin" />
+                                <Label htmlFor="working-directory-input">{t('common.labels.workingDirectory')}</Label>
+                                <Input id="working-directory-input" value={workingDirectory} onChange={(e) => setWorkingDirectory(e.target.value)} placeholder={t('batchCommand.workingDirPlaceholder')} />
                             </div>
                             <div className="min-w-0">
                                 <div className="flex justify-between items-center mb-1">
-                                    <Label htmlFor="command-input">Command</Label>
+                                    <Label htmlFor="command-input">{t('batchCommand.command')}</Label>
                                     <div className="flex items-center gap-2">
                                         <Select value={scriptLanguage} onValueChange={setScriptLanguage}>
                                             <SelectTrigger className="w-[120px] h-8 text-xs">
-                                                <SelectValue placeholder="Language" />
+                                                <SelectValue placeholder={t('batchCommand.language')} />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                <SelectItem value="shell">Shell</SelectItem>
-                                                <SelectItem value="powershell">PowerShell</SelectItem>
+                                                <SelectItem value="shell">{t('scriptManagement.form.languages.shell')}</SelectItem>
+                                                <SelectItem value="powershell">{t('scriptManagement.form.languages.powershell')}</SelectItem>
                                             </SelectContent>
                                         </Select>
                                         <Select onValueChange={handleSelectScript}>
                                             <SelectTrigger className="w-[140px] h-8 text-xs">
-                                                <SelectValue placeholder="Load a script..." />
+                                                <SelectValue placeholder={t('batchCommand.loadScript')} />
                                             </SelectTrigger>
                                             <SelectContent>
                                                 {scripts.map(script => <SelectItem key={script.id} value={String(script.id)}>{script.name}</SelectItem>)}
                                             </SelectContent>
                                         </Select>
                                         <Button variant="ghost" size="sm" onClick={() => setShowHistory(!showHistory)}>
-                                            <History className="h-4 w-4 mr-1" /> {showHistory ? 'Hide' : 'Show'}
+                                            <History className="h-4 w-4 mr-1" /> {showHistory ? t('batchCommand.hide') : t('batchCommand.show')}
                                         </Button>
                                     </div>
                                 </div>
                                 <div className="relative w-full rounded-md border" style={{ height: `${editorHeight}px` }}>
                                     <Editor theme={resolvedTheme === 'light' ? 'vs-light' : 'vs-dark'} language={scriptLanguage} value={command} onChange={(value) => setCommand(value || '')} options={{ minimap: { enabled: false }, scrollbar: { vertical: 'auto', horizontal: 'auto' }, wordWrap: 'on', lineNumbers: 'off', glyphMargin: false, folding: false, lineDecorationsWidth: 0, lineNumbersMinChars: 0, renderLineHighlight: 'none' }} />
                                 </div>
-                                <div onMouseDown={handleResizeMouseDown} className="w-full h-2 cursor-ns-resize bg-muted hover:bg-muted-foreground/20 transition-colors rounded-b-md" title="Drag to resize editor" />
+                                <div onMouseDown={handleResizeMouseDown} className="w-full h-2 cursor-ns-resize bg-muted hover:bg-muted-foreground/20 transition-colors rounded-b-md" title={t('batchCommand.resizeEditorHint')} />
                                 {showHistory && (
                                     <Card className="mt-2 max-h-64 overflow-y-auto">
                                         <CardContent className="p-2">
                                             {commandHistory.length > 0 ? (
                                                 <>
                                                     <div className="flex justify-end mb-1">
-                                                        <Button variant="link" size="sm" className="text-destructive" onClick={handleClearHistory}>Clear All</Button>
+                                                        <Button variant="link" size="sm" className="text-destructive" onClick={handleClearHistory}>{t('batchCommand.clearHistory')}</Button>
                                                     </div>
                                                     {commandHistory.map((cmd, index) => (
                                                         <div key={index} className="flex items-center justify-between p-1 hover:bg-muted rounded group">
@@ -367,31 +369,31 @@ const BatchCommandPage: React.FC = () => {
                                                         </div>
                                                     ))}
                                                 </>
-                                            ) : <p className="text-sm text-muted-foreground text-center p-4">No history yet.</p>}
+                                            ) : <p className="text-sm text-muted-foreground text-center p-4">{t('batchCommand.noHistory')}</p>}
                                         </CardContent>
                                     </Card>
                                 )}
                             </div>
                             <div className="flex space-x-2">
                                 <Button onClick={handleSendCommand} disabled={selectedVps.size === 0 || command.trim() === '' || isLoading}>
-                                    {isLoading ? 'Executing...' : 'Run Command'}
+                                    {isLoading ? t('batchCommand.executing') : t('batchCommand.runCommand')}
                                 </Button>
-                                <Button variant="secondary" onClick={() => setShowSaveModal(true)} disabled={command.trim() === ''}>Save as Script</Button>
-                                {isLoading && currentBatchCommandId && <Button variant="destructive" onClick={handleTerminateCommand}>Terminate</Button>}
+                                <Button variant="secondary" onClick={() => setShowSaveModal(true)} disabled={command.trim() === ''}>{t('batchCommand.saveAsScript')}</Button>
+                                {isLoading && currentBatchCommandId && <Button variant="destructive" onClick={handleTerminateCommand}>{t('batchCommand.terminate')}</Button>}
                             </div>
                             {error && <div className="p-2 bg-destructive/10 text-destructive border border-destructive/20 rounded-md text-sm">{error}</div>}
                             
                             <div className="mt-4 border-t pt-4">
                                 <div className="flex justify-between items-center mb-2">
-                                    <h2 className="text-lg font-semibold">Live Output</h2>
+                                    <h2 className="text-lg font-semibold">{t('batchCommand.liveOutput')}</h2>
                                     <div className="flex items-center space-x-4">
                                         <div className="flex items-center space-x-2">
-                                            <Label htmlFor="timestamps-switch" className="text-sm font-medium">Timestamps</Label>
+                                            <Label htmlFor="timestamps-switch" className="text-sm font-medium">{t('batchCommand.timestamps')}</Label>
                                             <Switch id="timestamps-switch" checked={showMetadata} onCheckedChange={setShowMetadata} />
                                         </div>
                                         <div className="flex items-center space-x-2">
-                                            <Button variant={activeView === 'all' ? 'secondary' : 'ghost'} size="sm" onClick={() => setActiveView('all')}>Aggregated</Button>
-                                            <Button variant={activeView === 'per-server' ? 'secondary' : 'ghost'} size="sm" onClick={() => setActiveView('per-server')}>Per-Server</Button>
+                                            <Button variant={activeView === 'all' ? 'secondary' : 'ghost'} size="sm" onClick={() => setActiveView('all')}>{t('batchCommand.aggregated')}</Button>
+                                            <Button variant={activeView === 'per-server' ? 'secondary' : 'ghost'} size="sm" onClick={() => setActiveView('per-server')}>{t('batchCommand.perServer')}</Button>
                                         </div>
                                     </div>
                                 </div>
@@ -405,7 +407,7 @@ const BatchCommandPage: React.FC = () => {
                                                     <span dangerouslySetInnerHTML={{ __html: item.log }} />
                                                 </div>
                                             ))}
-                                            {generalOutput.length === 0 && aggregatedLogs.length === 0 && <p>Command output will appear here...</p>}
+                                            {generalOutput.length === 0 && aggregatedLogs.length === 0 && <p>{t('batchCommand.outputPlaceholder')}</p>}
                                         </>
                                     )}
                                     {activeView === 'per-server' && (
@@ -417,7 +419,7 @@ const BatchCommandPage: React.FC = () => {
                                                 if (!data) {
                                                     return (
                                                         <details key={vpsId} className="mb-2">
-                                                            <summary className="cursor-pointer font-semibold text-muted-foreground">{vpsName} - <span className="text-warning">Pending...</span></summary>
+                                                            <summary className="cursor-pointer font-semibold text-muted-foreground">{vpsName} - <span className="text-warning">{t('batchCommand.pending')}</span></summary>
                                                         </details>
                                                     );
                                                 }
@@ -431,7 +433,7 @@ const BatchCommandPage: React.FC = () => {
                                                     </details>
                                                 );
                                             })}
-                                            {activeServersInTask.size === 0 && <p>No servers selected for the command.</p>}
+                                            {activeServersInTask.size === 0 && <p>{t('batchCommand.noServersSelected')}</p>}
                                         </>
                                     )}
                                 </div>
