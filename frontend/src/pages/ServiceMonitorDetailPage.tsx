@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getMonitorById, getMonitorResults } from '../services/serviceMonitorService';
 import type { ServiceMonitor, ServiceMonitorResult } from '../types';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea, type LegendProps } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceArea } from 'recharts';
 import websocketService from '../services/websocketService';
 import { ArrowLeft, CheckCircle, XCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -10,7 +10,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import type { ValueType } from 'recharts/types/component/DefaultTooltipContent';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  ChartLegend,
+  type ChartConfig,
+} from "@/components/ui/chart";
 
 const TIME_RANGE_OPTIONS = [
   { label: '实时', value: 'realtime' as const },
@@ -23,7 +29,6 @@ type TimeRangeOption = typeof TIME_RANGE_OPTIONS[number]['value'];
 
 const formatDateTick = (tickItem: string) => new Date(tickItem).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 const formatTooltipLabel = (label: string) => new Date(label).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-const formatLatencyForTooltip = (value: ValueType) => typeof value === 'number' ? `${value.toFixed(0)} ms` : `${value}`;
 
 const AGENT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F'];
 
@@ -85,9 +90,9 @@ const ServiceMonitorDetailPage: React.FC = () => {
     };
   }, [monitorId, selectedTimeRange]);
 
-  const { chartData, agentLines, downtimeAreas } = useMemo(() => {
+  const { chartData, agentLines, downtimeAreas, chartConfig } = useMemo(() => {
     if (!results || results.length === 0) {
-      return { chartData: [], agentLines: [], downtimeAreas: [] };
+      return { chartData: [], agentLines: [], downtimeAreas: [], chartConfig: {} as ChartConfig };
     }
 
     const groupedByAgent = results.reduce((acc, result) => {
@@ -102,6 +107,14 @@ const ServiceMonitorDetailPage: React.FC = () => {
       name: agentName,
       stroke: AGENT_COLORS[index % AGENT_COLORS.length],
     }));
+
+    const chartConfig = agentLines.reduce((acc, line) => {
+      acc[line.dataKey] = {
+        label: line.name,
+        color: line.stroke,
+      };
+      return acc;
+    }, {} as ChartConfig);
 
     const timePoints = [...new Set(results.map(r => new Date(r.time).toISOString()))].sort();
     const chartData = timePoints.map(time => {
@@ -130,18 +143,12 @@ const ServiceMonitorDetailPage: React.FC = () => {
       areas.push({ x1: downtimeStart, x2: timePoints[timePoints.length - 1] });
     }
 
-    return { chartData, agentLines, downtimeAreas: areas };
+    return { chartData, agentLines, downtimeAreas: areas, chartConfig };
   }, [results]);
 
-  const handleLegendClick: LegendProps['onClick'] = (data) => {
+  const handleLegendClick = (data: { dataKey: string }) => {
     const dataKey = data.dataKey as string;
     setHiddenLines(prev => ({ ...prev, [dataKey]: !prev[dataKey] }));
-  };
-
-  const renderLegendText: LegendProps['formatter'] = (value, entry) => {
-    const { color, dataKey } = entry;
-    const isHidden = typeof dataKey === 'string' && hiddenLines[dataKey];
-    return <span style={{ color: isHidden ? '#A0A0A0' : color || '#000', cursor: 'pointer' }}>{value}</span>;
   };
 
   if (isLoading) return <div className="container mx-auto p-8 text-center">正在加载...</div>;
@@ -203,15 +210,86 @@ const ServiceMonitorDetailPage: React.FC = () => {
         </CardHeader>
         <CardContent className="h-96">
           {results.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
-                <YAxis label={{ value: '延迟 (ms)', angle: -90, position: 'insideLeft' }} tickFormatter={(tick) => `${tick}ms`} />
-                <Tooltip formatter={formatLatencyForTooltip} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'hsl(var(--background) / 0.8)', backdropFilter: 'blur(2px)', borderRadius: 'var(--radius)', fontSize: '0.8rem' }} />
-                <Legend onClick={handleLegendClick} formatter={renderLegendText} />
+            <ChartContainer config={chartConfig} className="h-full w-full">
+              <LineChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  dataKey="time"
+                  tickFormatter={formatDateTick}
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  tick={{ fontSize: 11 }}
+                />
+                <YAxis
+                  width={80}
+                  tickFormatter={(tick) => `${tick}ms`}
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  label={{ value: '延迟 (ms)', angle: -90, position: 'insideLeft', offset: -15 }}
+                />
+                <ChartTooltip
+                  cursor={true}
+                  content={
+                    <ChartTooltipContent
+                      labelFormatter={formatTooltipLabel}
+                      formatter={(value, name, item) => {
+                        if (value == null) return null;
+                        const itemConfig = chartConfig[name as keyof typeof chartConfig];
+                        return (
+                          <div className="flex w-full items-center gap-2">
+                            <div
+                              className="shrink-0 rounded-[2px] h-2.5 w-2.5"
+                              style={{ backgroundColor: item.color }}
+                            />
+                            <div className="flex flex-1 justify-between leading-none">
+                              <span className="text-muted-foreground">
+                                {itemConfig?.label || name}
+                              </span>
+                              <span className="text-foreground font-mono font-medium tabular-nums">
+                                {`${Math.round(value as number)} ms`}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      }}
+                      indicator="dot"
+                    />
+                  }
+                />
+                <ChartLegend
+                  content={({ payload }) => (
+                    <div className="flex items-center justify-center gap-4 pt-3">
+                      {payload?.map((item) => {
+                        const key = item.dataKey as string;
+                        const itemConfig = chartConfig[key as keyof typeof chartConfig];
+                        const isHidden = hiddenLines[key];
+                        return (
+                          <div
+                            key={item.value}
+                            onClick={() => {
+                              if (typeof item.dataKey === 'string') {
+                                handleLegendClick({ dataKey: item.dataKey });
+                              }
+                            }}
+                            className="flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <div
+                              className="h-2 w-2 shrink-0 rounded-[2px]"
+                              style={{ backgroundColor: isHidden ? '#A0A0A0' : item.color }}
+                            />
+                            <span style={{ color: isHidden ? '#A0A0A0' : 'inherit' }}>
+                              {itemConfig?.label || item.value}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                />
                 {downtimeAreas.map((area, index) => (
-                  <ReferenceArea key={index} x1={area.x1} x2={area.x2} stroke="transparent" fill="hsl(var(--destructive))" fillOpacity={0.15} />
+                  <ReferenceArea key={index} x1={area.x1} x2={area.x2} stroke="transparent" fill="hsl(var(--destructive))" fillOpacity={0.15} ifOverflow="extendDomain" />
                 ))}
                 {agentLines.map(line => (
                   <Line
@@ -219,15 +297,16 @@ const ServiceMonitorDetailPage: React.FC = () => {
                     type="monotone"
                     dataKey={line.dataKey}
                     name={line.name}
-                    stroke={hiddenLines[line.dataKey] ? 'transparent' : line.stroke}
+                    stroke={`var(--color-${line.dataKey})`}
+                    strokeWidth={2}
                     dot={false}
                     activeDot={{ r: 6 }}
                     connectNulls={true}
-                    strokeWidth={2}
+                    hide={hiddenLines[line.dataKey]}
                   />
                 ))}
               </LineChart>
-            </ResponsiveContainer>
+            </ChartContainer>
           ) : (
             <div className="flex items-center justify-center h-full">
               <p className="text-muted-foreground">暂无监控结果。</p>
