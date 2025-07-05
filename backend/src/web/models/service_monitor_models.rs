@@ -18,6 +18,12 @@ pub struct ServiceMonitorDetails {
     pub agent_ids: Vec<i32>,
     pub tag_ids: Vec<i32>,
     pub assignment_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_check: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_message: Option<String>,
 }
 
 // Model for representing monitor assignments in API requests

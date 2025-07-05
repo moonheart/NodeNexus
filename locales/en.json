@@ -707,5 +707,71 @@
       "saveButton": "Save Script",
       "nameRequired": "Script name is required."
     }
+  },
+  "serviceMonitoring": {
+    "title": "Service Monitoring",
+    "create": "Create Monitor",
+    "refresh": "Refresh",
+    "deleteDialog": {
+      "title": "Are you sure you want to delete?",
+      "description": "This action cannot be undone. This will permanently delete the service monitor.",
+      "confirm": "Confirm",
+      "cancel": "Cancel"
+    },
+    "notifications": {
+      "fetchError": "Failed to fetch service monitors.",
+      "deleteSuccess": "Monitor deleted successfully!",
+      "deleteError": "Failed to delete monitor.",
+      "saveSuccess_updated": "Monitor updated successfully!",
+      "saveSuccess_created": "Monitor created successfully!",
+      "saveError": "Failed to save monitor."
+    },
+    "table": {
+      "name": "Name",
+      "type": "Type",
+      "target": "Target",
+      "frequency": "Frequency",
+      "lastCheck": "Last Check",
+      "statusMessage": "Status Message",
+      "actions": "Actions"
+    },
+    "empty": {
+      "title": "No Service Monitors Found",
+      "description": "Click the \"Create Monitor\" button to add your first one."
+    },
+    "modal": {
+      "title_create": "Create Service Monitor",
+      "title_edit": "Edit Service Monitor",
+      "description": "Configure the details for your service monitor.",
+      "isActive": "Is Active",
+      "name": "Monitor Name",
+      "type": "Monitor Type",
+      "types": {
+        "http": "HTTP(s)",
+        "ping": "Ping",
+        "tcp": "TCP Port"
+      },
+      "target": "Target",
+      "targetPlaceholder": "e.g., https://example.com or 8.8.8.8:53",
+      "frequency": "Frequency (seconds)",
+      "timeout": "Timeout (seconds)",
+      "httpOptions": "HTTP Options",
+      "expectedStatusCodes": "Expected Status Codes",
+      "expectedStatusCodesPlaceholder": "e.g., 200, 201",
+      "responseBodyMatch": "Response Body Match",
+      "responseBodyMatchPlaceholder": "Text to find in response body",
+      "assignments": "Assignments",
+      "assignmentType": {
+        "inclusive": "Inclusive (Apply to selected)",
+        "exclusive": "Exclusive (Apply to all except selected)"
+      },
+      "assignToAgents": "Assign to Agents",
+      "excludeAgents": "Exclude Agents",
+      "selectAgents": "Select agents...",
+      "assignToTags": "Assign to Tags",
+      "excludeTags": "Exclude Tags",
+      "selectTags": "Select tags...",
+      "fetchDataError": "Failed to fetch agents and tags."
+    }
   }
 }

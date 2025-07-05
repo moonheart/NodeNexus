@@ -123,11 +123,37 @@ pub async fn get_monitors_with_details_by_user_id(
         tag_map.entry(tag.monitor_id).or_default().push(tag.tag_id);
     }
 
-    // 4. Construct the final response models
+    // 4. Fetch the latest result for each monitor
+    let latest_results_future = service_monitor_result::Entity::find()
+        .filter(service_monitor_result::Column::MonitorId.is_in(monitor_ids.clone()))
+        .order_by_desc(service_monitor_result::Column::Time)
+        .all(db);
+
+    let latest_results = latest_results_future.await?;
+    let mut latest_result_map: HashMap<i32, service_monitor_result::Model> = HashMap::new();
+    for result in latest_results {
+        latest_result_map
+            .entry(result.monitor_id)
+            .or_insert(result);
+    }
+
+    // 5. Construct the final response models
     let details_list = monitors
         .into_iter()
         .map(|monitor| {
             let monitor_id = monitor.id;
+            let last_result = latest_result_map.get(&monitor_id);
+
+            let last_status = last_result.map(|r| if r.is_up { "UP" } else { "DOWN" }.to_string());
+            let last_check = last_result.map(|r| r.time.to_rfc3339());
+            let status_message = last_result.and_then(|r| {
+                r.details.as_ref().and_then(|d| {
+                    d.get("message")
+                        .and_then(|m| m.as_str())
+                        .map(String::from)
+                })
+            });
+
             ServiceMonitorDetails {
                 id: monitor.id,
                 user_id: monitor.user_id,
@@ -143,6 +169,9 @@ pub async fn get_monitors_with_details_by_user_id(
                 agent_ids: agent_map.get(&monitor_id).cloned().unwrap_or_default(),
                 tag_ids: tag_map.get(&monitor_id).cloned().unwrap_or_default(),
                 assignment_type: monitor.assignment_type,
+                last_status,
+                last_check,
+                status_message,
             }
         })
         .collect();
@@ -174,6 +203,24 @@ pub async fn get_monitor_details_by_id(
     // 3. Collect IDs
     let agent_ids = agent_assignments.into_iter().map(|a| a.vps_id).collect();
     let tag_ids = tag_assignments.into_iter().map(|t| t.tag_id).collect();
+    // 4. Construct the response model
+    let latest_result = service_monitor_result::Entity::find()
+        .filter(service_monitor_result::Column::MonitorId.eq(monitor_id))
+        .order_by_desc(service_monitor_result::Column::Time)
+        .one(db)
+        .await?;
+
+    let last_status = latest_result
+        .as_ref()
+        .map(|r| if r.is_up { "UP" } else { "DOWN" }.to_string());
+    let last_check = latest_result.as_ref().map(|r| r.time.to_rfc3339());
+    let status_message = latest_result.and_then(|r| {
+        r.details.as_ref().and_then(|d| {
+            d.get("message")
+                .and_then(|m| m.as_str())
+                .map(String::from)
+        })
+    });
 
     // 4. Construct the response model
     let details = ServiceMonitorDetails {
@@ -191,6 +238,9 @@ pub async fn get_monitor_details_by_id(
         agent_ids,
         tag_ids,
         assignment_type: monitor.assignment_type,
+        last_status,
+        last_check,
+        status_message,
     };
 
     Ok(Some(details))

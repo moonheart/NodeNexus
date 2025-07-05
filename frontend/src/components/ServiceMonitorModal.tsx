@@ -19,6 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChevronDown } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { Switch } from './ui/switch';
+import { useTranslation } from 'react-i18next';
 
 const httpMonitorConfigSchema = z.object({
   expected_status_codes: z.array(z.number()).optional(),
@@ -26,7 +27,7 @@ const httpMonitorConfigSchema = z.object({
 }).optional();
 
 const formSchema = z.object({
-  name: z.string().min(1, "Name is required"),
+  name: z.string().min(1, "common.errors.validation.nameRequired"),
   monitorType: z.enum(['http', 'ping', 'tcp']),
   target: z.string().min(1, "Target is required"),
   frequencySeconds: z.number().min(10),
@@ -50,6 +51,7 @@ interface ServiceMonitorModalProps {
 }
 
 const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClose, onSave, monitorToEdit }) => {
+  const { t } = useTranslation();
   const [allAgents, setAllAgents] = React.useState<VpsListItemResponse[]>([]);
   const [allTags, setAllTags] = React.useState<Tag[]>([]);
 
@@ -81,7 +83,7 @@ const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClo
         setAllTags(tags);
       } catch (error) {
         console.error("Failed to fetch agents and tags:", error);
-        toast.error('Failed to fetch agents and tags.');
+        toast.error(t('serviceMonitoring.modal.fetchDataError'));
       }
     };
     if (isOpen) {
@@ -137,7 +139,7 @@ const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClo
       <PopoverTrigger asChild>
         <Button variant="outline" className="w-full justify-between">
           <span className="truncate">
-            {(field.value || []).length > 0 ? `${(field.value || []).length} selected` : placeholder}
+            {(field.value || []).length > 0 ? t('serverManagement.modals.bulkEditTags.selected', { count: (field.value || []).length }) : placeholder}
           </span>
           <ChevronDown className="h-4 w-4 ml-2" />
         </Button>
@@ -174,48 +176,48 @@ const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClo
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>{monitorToEdit ? 'Edit' : 'Create'} Service Monitor</DialogTitle>
-          <DialogDescription>Configure the details for your service monitor.</DialogDescription>
+          <DialogTitle>{monitorToEdit ? t('serviceMonitoring.modal.title_edit') : t('serviceMonitoring.modal.title_create')}</DialogTitle>
+          <DialogDescription>{t('serviceMonitoring.modal.description')}</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
           <ScrollArea className="h-[70vh]">
             <div className="p-4 space-y-6">
               {/* Basic Info */}
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                    <Label>Is Active</Label>
+                <div className="grid gap-3">
+                    <Label>{t('serviceMonitoring.modal.isActive')}</Label>
                     <Controller name="isActive" control={control} render={({ field }) => <Switch checked={field.value} onCheckedChange={field.onChange} />} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="name">Monitor Name</Label>
+                  <div className="grid gap-3">
+                    <Label htmlFor="name">{t('serviceMonitoring.modal.name')}</Label>
                     <Controller name="name" control={control} render={({ field }) => <Input id="name" {...field} />} />
                   </div>
-                  <div>
-                    <Label>Monitor Type</Label>
+                  <div className="grid gap-3">
+                    <Label>{t('serviceMonitoring.modal.type')}</Label>
                     <Controller name="monitorType" control={control} render={({ field }) => (
                       <Select onValueChange={field.onChange} value={field.value}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="http">HTTP(s)</SelectItem>
-                          <SelectItem value="ping">Ping</SelectItem>
-                          <SelectItem value="tcp">TCP Port</SelectItem>
+                          <SelectItem value="http">{t('serviceMonitoring.modal.types.http')}</SelectItem>
+                          <SelectItem value="ping">{t('serviceMonitoring.modal.types.ping')}</SelectItem>
+                          <SelectItem value="tcp">{t('serviceMonitoring.modal.types.tcp')}</SelectItem>
                         </SelectContent>
                       </Select>
                     )} />
                   </div>
                 </div>
-                <div>
-                  <Label htmlFor="target">Target</Label>
-                  <Controller name="target" control={control} render={({ field }) => <Input id="target" placeholder="e.g., https://example.com or 8.8.8.8:53" {...field} />} />
+                <div className="grid gap-3">
+                  <Label htmlFor="target">{t('serviceMonitoring.modal.target')}</Label>
+                  <Controller name="target" control={control} render={({ field }) => <Input id="target" placeholder={t('serviceMonitoring.modal.targetPlaceholder')} {...field} />} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="frequencySeconds">Frequency (seconds)</Label>
+                  <div className="grid gap-3">
+                    <Label htmlFor="frequencySeconds">{t('serviceMonitoring.modal.frequency')}</Label>
                     <Controller name="frequencySeconds" control={control} render={({ field }) => <Input id="frequencySeconds" type="number" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10))} />} />
                   </div>
-                  <div>
-                    <Label htmlFor="timeoutSeconds">Timeout (seconds)</Label>
+                  <div className="grid gap-3">
+                    <Label htmlFor="timeoutSeconds">{t('serviceMonitoring.modal.timeout')}</Label>
                     <Controller name="timeoutSeconds" control={control} render={({ field }) => <Input id="timeoutSeconds" type="number" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10))} />} />
                   </div>
                 </div>
@@ -224,9 +226,9 @@ const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClo
               {/* Dynamic Config Section */}
               {watch('monitorType') === 'http' && (
                 <div className="space-y-4 p-4 border rounded-md bg-slate-50">
-                    <h3 className="text-lg font-medium text-slate-900">HTTP Options</h3>
-                    <div>
-                        <Label>Expected Status Codes</Label>
+                    <h3 className="text-lg font-medium text-slate-900">{t('serviceMonitoring.modal.httpOptions')}</h3>
+                    <div className="grid gap-3">
+                        <Label>{t('serviceMonitoring.modal.expectedStatusCodes')}</Label>
                         <Controller
                             name="monitorConfig.expected_status_codes"
                             control={control}
@@ -235,21 +237,21 @@ const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClo
                                     ref={ref}
                                     name={name}
                                     onBlur={onBlur}
-                                    placeholder="e.g., 200, 201"
+                                    placeholder={t('serviceMonitoring.modal.expectedStatusCodesPlaceholder')}
                                     value={Array.isArray(value) ? value.join(', ') : ''}
                                     onChange={e => onChange(e.target.value.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)))}
                                 />
                             )}
                         />
                     </div>
-                    <div>
-                        <Label>Response Body Match</Label>
+                    <div className="grid gap-3">
+                        <Label>{t('serviceMonitoring.modal.responseBodyMatch')}</Label>
                         <Controller
                             name="monitorConfig.response_body_match"
                             control={control}
                             render={({ field }) => (
                                 <Input
-                                    placeholder="Text to find in response body"
+                                    placeholder={t('serviceMonitoring.modal.responseBodyMatchPlaceholder')}
                                     {...field}
                                     value={field.value ?? ''}
                                 />
@@ -261,36 +263,36 @@ const ServiceMonitorModal: React.FC<ServiceMonitorModalProps> = ({ isOpen, onClo
 
               {/* Assignments */}
               <div className="p-4 border rounded-md bg-slate-50 space-y-4">
-                <h3 className="text-lg font-medium">Assignments</h3>
+                <h3 className="text-lg font-medium">{t('serviceMonitoring.modal.assignments')}</h3>
                 <Controller name="assignments.assignmentType" control={control} render={({ field }) => (
                   <RadioGroup onValueChange={field.onChange} value={field.value} className="space-y-2">
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="INCLUSIVE" id="inclusive" />
-                      <Label htmlFor="inclusive">Inclusive (Apply to selected)</Label>
+                      <Label htmlFor="inclusive">{t('serviceMonitoring.modal.assignmentType.inclusive')}</Label>
                     </div>
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="EXCLUSIVE" id="exclusive" />
-                      <Label htmlFor="exclusive">Exclusive (Apply to all except selected)</Label>
+                      <Label htmlFor="exclusive">{t('serviceMonitoring.modal.assignmentType.exclusive')}</Label>
                     </div>
                   </RadioGroup>
                 )} />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label>{watch('assignments.assignmentType') === 'EXCLUSIVE' ? 'Exclude Agents' : 'Assign to Agents'}</Label>
-                    <Controller name="assignments.agentIds" control={control} render={({ field }) => <MultiSelectPopover field={field} options={allAgents} placeholder="Select agents..." />} />
+                  <div className="grid gap-3">
+                    <Label>{watch('assignments.assignmentType') === 'EXCLUSIVE' ? t('serviceMonitoring.modal.excludeAgents') : t('serviceMonitoring.modal.assignToAgents')}</Label>
+                    <Controller name="assignments.agentIds" control={control} render={({ field }) => <MultiSelectPopover field={field} options={allAgents} placeholder={t('serviceMonitoring.modal.selectAgents')} />} />
                   </div>
-                  <div>
-                    <Label>{watch('assignments.assignmentType') === 'EXCLUSIVE' ? 'Exclude Tags' : 'Assign to Tags'}</Label>
-                    <Controller name="assignments.tagIds" control={control} render={({ field }) => <MultiSelectPopover field={field} options={allTags} placeholder="Select tags..." />} />
+                  <div className="grid gap-3">
+                    <Label>{watch('assignments.assignmentType') === 'EXCLUSIVE' ? t('serviceMonitoring.modal.excludeTags') : t('serviceMonitoring.modal.assignToTags')}</Label>
+                    <Controller name="assignments.tagIds" control={control} render={({ field }) => <MultiSelectPopover field={field} options={allTags} placeholder={t('serviceMonitoring.modal.selectTags')} />} />
                   </div>
                 </div>
               </div>
             </div>
           </ScrollArea>
           <DialogFooter className="pt-4">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('common.actions.cancel')}</Button>
             <Button type="submit" disabled={form.formState.isSubmitting}>
-              {form.formState.isSubmitting ? 'Saving...' : 'Save'}
+              {form.formState.isSubmitting ? t('common.status.saving') : t('common.actions.save')}
             </Button>
           </DialogFooter>
         </form>

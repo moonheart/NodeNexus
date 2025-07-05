@@ -387,6 +387,9 @@ export interface ServiceMonitor {
   agentIds: number[];
   tagIds: number[];
   assignmentType: 'INCLUSIVE' | 'EXCLUSIVE';
+  lastStatus?: 'UP' | 'DOWN' | 'UNKNOWN';
+  lastCheck?: string; // ISO 8601 date string
+  statusMessage?: string;
 }
 
 /**

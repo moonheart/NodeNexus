@@ -708,5 +708,71 @@
       "saveButton": "保存脚本",
       "nameRequired": "脚本名称是必填项。"
     }
+  },
+  "serviceMonitoring": {
+    "title": "服务监控",
+    "create": "创建监控",
+    "refresh": "刷新",
+    "deleteDialog": {
+      "title": "确定要删除吗？",
+      "description": "此操作无法撤销。这将永久删除该服务监控项。",
+      "confirm": "确定",
+      "cancel": "取消"
+    },
+    "notifications": {
+      "fetchError": "无法获取服务监控列表。",
+      "deleteSuccess": "监控已成功删除！",
+      "deleteError": "删除监控失败。",
+      "saveSuccess_updated": "监控已成功更新！",
+      "saveSuccess_created": "监控已成功创建！",
+      "saveError": "保存监控失败。"
+    },
+    "table": {
+      "name": "名称",
+      "type": "类型",
+      "target": "目标",
+      "frequency": "频率",
+      "lastCheck": "上次检查",
+      "statusMessage": "状态信息",
+      "actions": "操作"
+    },
+    "empty": {
+      "title": "未找到服务监控项",
+      "description": "点击“创建监控”按钮来添加第一个监控项。"
+    },
+    "modal": {
+      "title_create": "创建服务监控",
+      "title_edit": "编辑服务监控",
+      "description": "配置您的服务监控的详细信息。",
+      "isActive": "是否激活",
+      "name": "监控名称",
+      "type": "监控类型",
+      "types": {
+        "http": "HTTP(s)",
+        "ping": "Ping",
+        "tcp": "TCP 端口"
+      },
+      "target": "目标",
+      "targetPlaceholder": "例如：https://example.com 或 8.8.8.8:53",
+      "frequency": "频率 (秒)",
+      "timeout": "超时 (秒)",
+      "httpOptions": "HTTP 选项",
+      "expectedStatusCodes": "预期的状态码",
+      "expectedStatusCodesPlaceholder": "例如：200, 201",
+      "responseBodyMatch": "响应体匹配",
+      "responseBodyMatchPlaceholder": "在响应体中查找的文本",
+      "assignments": "分配",
+      "assignmentType": {
+        "inclusive": "包含 (应用于选定的)",
+        "exclusive": "排除 (应用于除选定外的所有)"
+      },
+      "assignToAgents": "分配给代理",
+      "excludeAgents": "排除代理",
+      "selectAgents": "选择代理...",
+      "assignToTags": "分配给标签",
+      "excludeTags": "排除标签",
+      "selectTags": "选择标签...",
+      "fetchDataError": "获取代理和标签失败。"
+    }
   }
 }
