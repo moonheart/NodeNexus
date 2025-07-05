@@ -10,7 +10,7 @@ use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{

@@ -1,9 +1,9 @@
 use axum::{
     extract::{Path, State},
-    routing::{get, post},
+    routing::get,
     Extension, Json, Router,
 };
-use sea_orm::{DatabaseConnection, EntityTrait, ActiveModelTrait, Set, ColumnTrait, QueryFilter, ModelTrait, ActiveValue};
+use sea_orm::{DatabaseConnection, EntityTrait, ActiveModelTrait, Set, ColumnTrait, QueryFilter, ModelTrait};
 use std::sync::Arc;
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};

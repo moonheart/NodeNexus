@@ -1,7 +1,7 @@
 use axum::{
     body::Body as AxumBody, extract::{Extension, State}, http::{header, Request}, middleware::Next, response::Response
 };
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::EntityTrait;
 use std::sync::Arc;
 
 use crate::{

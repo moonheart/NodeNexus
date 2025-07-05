@@ -11,10 +11,10 @@ use crate::web::models::service_monitor_models::{
 };
 use futures::try_join;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ModelTrait, QueryFilter,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter,
     QueryOrder, Set, TransactionTrait,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::agent_service::{ServiceMonitorResult, ServiceMonitorTask};
 use crate::db::entities::{service_monitor_result, vps_tag};
@@ -435,9 +435,10 @@ pub async fn get_monitors_for_vps(
 }
 /// Fetches all active service monitoring tasks assigned to a specific agent (VPS).
 ///
-/// This function determines the full set of monitors for an agent by combining:
-/// 1. Monitors directly assigned to the agent's `vps_id`.
-/// 2. Monitors assigned to tags that the agent possesses.
+/// This function determines the full set of monitors for an agent by considering
+/// the `assignment_type` of each monitor:
+/// - `INCLUSIVE`: The agent runs the monitor if it's directly assigned or has a matching tag.
+/// - `EXCLUSIVE`: The agent runs the monitor if it's NOT directly assigned and does NOT have a matching tag.
 ///
 /// It then fetches the details for these monitors, ensuring only active ones are returned,
 /// and transforms them into the gRPC `ServiceMonitorTask` format.
@@ -445,69 +446,100 @@ pub async fn get_tasks_for_agent(
     db: &DatabaseConnection,
     vps_id: i32,
 ) -> Result<Vec<ServiceMonitorTask>, DbErr> {
-    // 1. Get monitor IDs from direct agent assignments
-    let direct_monitor_ids_future = ServiceMonitorAgent::find()
-        .select_only()
-        .column(service_monitor_agent::Column::MonitorId)
-        .filter(service_monitor_agent::Column::VpsId.eq(vps_id))
-        .into_tuple::<i32>()
-        .all(db);
+    // 1. Get user_id for the vps to scope the monitors
+    let vps = Vps::find_by_id(vps_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| DbErr::RecordNotFound(format!("VPS with ID {vps_id} not found")))?;
+    let user_id = vps.user_id;
 
-    // 2. Get monitor IDs from tag-based assignments
-    // First, find all tags for the given vps_id
-    let agent_tags_future = VpsTag::find()
-        .select_only()
-        .column(vps_tag::Column::TagId)
-        .filter(vps_tag::Column::VpsId.eq(vps_id))
-        .into_tuple::<i32>()
-        .all(db);
-
-    let (direct_monitor_ids, agent_tags) = try_join!(direct_monitor_ids_future, agent_tags_future)?;
-
-    let mut tagged_monitor_ids: Vec<i32> = Vec::new();
-    if !agent_tags.is_empty() {
-        // Then, find all monitors associated with those tags
-        tagged_monitor_ids = ServiceMonitorTag::find()
-            .select_only()
-            .column(service_monitor_tag::Column::MonitorId)
-            .filter(service_monitor_tag::Column::TagId.is_in(agent_tags))
-            .into_tuple::<i32>()
-            .all(db)
-            .await?;
-    }
-
-    // 3. Combine and deduplicate monitor IDs
-    let mut all_monitor_ids = direct_monitor_ids;
-    all_monitor_ids.extend(tagged_monitor_ids);
-    all_monitor_ids.sort_unstable();
-    all_monitor_ids.dedup();
-
-    if all_monitor_ids.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // 4. Fetch all active monitors corresponding to the collected IDs
-    let monitors = ServiceMonitor::find()
-        .filter(service_monitor::Column::Id.is_in(all_monitor_ids))
+    // 2. Get all active monitors for the user
+    let all_active_monitors = ServiceMonitor::find()
+        .filter(service_monitor::Column::UserId.eq(user_id))
         .filter(service_monitor::Column::IsActive.eq(true))
         .all(db)
         .await?;
 
-    // 5. Map the database models to the gRPC task models
-    let tasks = monitors
+    if all_active_monitors.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let monitor_ids: Vec<i32> = all_active_monitors.iter().map(|m| m.id).collect();
+
+    // 3. Fetch all assignments for these monitors and tags for the current VPS in parallel
+    let agent_assignments_future = ServiceMonitorAgent::find()
+        .filter(service_monitor_agent::Column::MonitorId.is_in(monitor_ids.clone()))
+        .all(db);
+
+    let tag_assignments_future = ServiceMonitorTag::find()
+        .filter(service_monitor_tag::Column::MonitorId.is_in(monitor_ids))
+        .all(db);
+
+    let vps_tags_future = VpsTag::find()
+        .filter(vps_tag::Column::VpsId.eq(vps_id))
+        .all(db);
+
+    let (agent_assignments, tag_assignments, vps_tags) =
+        try_join!(agent_assignments_future, tag_assignments_future, vps_tags_future)?;
+
+    // 4. Process assignments and tags into efficient lookup structures
+    let mut monitor_agent_assignments: HashMap<i32, HashSet<i32>> = HashMap::new();
+    for assignment in agent_assignments {
+        monitor_agent_assignments
+            .entry(assignment.monitor_id)
+            .or_default()
+            .insert(assignment.vps_id);
+    }
+
+    let mut monitor_tag_assignments: HashMap<i32, HashSet<i32>> = HashMap::new();
+    for assignment in tag_assignments {
+        monitor_tag_assignments
+            .entry(assignment.monitor_id)
+            .or_default()
+            .insert(assignment.tag_id);
+    }
+
+    let vps_tag_ids: HashSet<i32> = vps_tags.into_iter().map(|t| t.tag_id).collect();
+
+    // 5. Filter monitors based on assignment logic
+    let tasks = all_active_monitors
         .into_iter()
-        .map(|monitor| ServiceMonitorTask {
-            monitor_id: monitor.id,
-            name: monitor.name,
-            monitor_type: monitor.monitor_type,
-            target: monitor.target,
-            frequency_seconds: monitor.frequency_seconds,
-            // Safely handle optional JSON, defaulting to an empty JSON object string
-            monitor_config_json: monitor
-                .monitor_config
-                .as_ref()
-                .map_or_else(|| "{}".to_string(), |json| json.to_string()),
-            timeout_seconds: monitor.timeout_seconds,
+        .filter_map(|monitor| {
+            let empty_set = HashSet::new();
+            let assigned_agents = monitor_agent_assignments
+                .get(&monitor.id)
+                .unwrap_or(&empty_set);
+            let assigned_tags = monitor_tag_assignments
+                .get(&monitor.id)
+                .unwrap_or(&empty_set);
+
+            let is_directly_assigned = assigned_agents.contains(&vps_id);
+            let has_assigned_tag = !vps_tag_ids.is_disjoint(assigned_tags);
+
+            let should_run = if monitor.assignment_type == "EXCLUSIVE" {
+                // For EXCLUSIVE, run if NOT assigned directly and NOT assigned via tag
+                !is_directly_assigned && !has_assigned_tag
+            } else {
+                // For INCLUSIVE, run if assigned directly OR via tag
+                is_directly_assigned || has_assigned_tag
+            };
+
+            if should_run {
+                Some(ServiceMonitorTask {
+                    monitor_id: monitor.id,
+                    name: monitor.name,
+                    monitor_type: monitor.monitor_type,
+                    target: monitor.target,
+                    frequency_seconds: monitor.frequency_seconds,
+                    monitor_config_json: monitor
+                        .monitor_config
+                        .as_ref()
+                        .map_or_else(|| "{}".to_string(), |json| json.to_string()),
+                    timeout_seconds: monitor.timeout_seconds,
+                })
+            } else {
+                None
+            }
         })
         .collect();
 
