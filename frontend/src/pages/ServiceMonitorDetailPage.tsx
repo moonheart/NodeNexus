@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getMonitorById, getMonitorResults } from '../services/serviceMonitorService';
 import type { ServiceMonitor, ServiceMonitorResult } from '../types';
@@ -13,7 +13,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   ChartContainer,
   ChartTooltip,
-  ChartTooltipContent,
   ChartLegend,
   type ChartConfig,
 } from "@/components/ui/chart";
@@ -27,10 +26,14 @@ const TIME_RANGE_OPTIONS = [
 ];
 type TimeRangeOption = typeof TIME_RANGE_OPTIONS[number]['value'];
 
+type ChartPoint = { time: string; [key: string]: number | null | string };
+
 const formatDateTick = (tickItem: string) => new Date(tickItem).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 const formatTooltipLabel = (label: string) => new Date(label).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 
 const AGENT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F'];
+const MAX_HISTORICAL_POINTS = 300;
+const REALTIME_UPDATE_INTERVAL = 2000; // 2 seconds
 
 const ServiceMonitorDetailPage: React.FC = () => {
   const { monitorId } = useParams<{ monitorId: string }>();
@@ -40,8 +43,35 @@ const ServiceMonitorDetailPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('realtime');
   const [hiddenLines, setHiddenLines] = useState<Record<string, boolean>>({});
+  
+  const newResultsBuffer = useRef<ServiceMonitorResult[]>([]);
 
   const timeRangeToMillis = useMemo(() => ({ '1h': 36e5, '6h': 216e5, '24h': 864e5, '7d': 6048e5 }), []);
+
+  const agentConfig = useMemo(() => {
+    if (!results || results.length === 0) {
+      return { agentLines: [], chartConfig: {} as ChartConfig };
+    }
+    const groupedByAgent = results.reduce((acc, result) => {
+      if (!acc[result.agentName]) acc[result.agentName] = [];
+      acc[result.agentName].push(result);
+      return acc;
+    }, {} as Record<string, ServiceMonitorResult[]>);
+
+    const agentLines = Object.keys(groupedByAgent).map((agentName, index) => ({
+      dataKey: agentName,
+      name: agentName,
+      stroke: AGENT_COLORS[index % AGENT_COLORS.length],
+    }));
+
+    const chartConfig = agentLines.reduce((acc, line) => {
+      acc[line.dataKey] = { label: line.name, color: line.stroke };
+      return acc;
+    }, {} as ChartConfig);
+
+    return { agentLines, chartConfig };
+  }, [results]);
+
 
   useEffect(() => {
     if (!monitorId) return;
@@ -54,10 +84,10 @@ const ServiceMonitorDetailPage: React.FC = () => {
 
         let resultsData: ServiceMonitorResult[];
         if (selectedTimeRange === 'realtime') {
-          resultsData = await getMonitorResults(parseInt(monitorId, 10), undefined, undefined, 300);
+          resultsData = await getMonitorResults(parseInt(monitorId, 10), undefined, undefined, 500); // Fetch more for interpolation buffer
         } else {
           const endTime = new Date();
-          const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange]);
+          const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange as Exclude<TimeRangeOption, 'realtime'>]);
           resultsData = await getMonitorResults(parseInt(monitorId, 10), startTime.toISOString(), endTime.toISOString());
         }
         setResults(resultsData.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()));
@@ -71,17 +101,14 @@ const ServiceMonitorDetailPage: React.FC = () => {
     };
 
     fetchInitialData();
-  }, [monitorId, selectedTimeRange]);
+  }, [monitorId, selectedTimeRange, timeRangeToMillis]);
 
   useEffect(() => {
     if (!monitorId || selectedTimeRange !== 'realtime') return;
 
     const handleNewResult = (result: ServiceMonitorResult) => {
       if (result.monitorId !== parseInt(monitorId, 10)) return;
-      setResults(prevResults => {
-        const updatedResults = [...prevResults, result].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-        return updatedResults.length > 300 ? updatedResults.slice(updatedResults.length - 300) : updatedResults;
-      });
+      newResultsBuffer.current.push(result);
     };
 
     websocketService.on('service_monitor_result', handleNewResult);
@@ -90,79 +117,76 @@ const ServiceMonitorDetailPage: React.FC = () => {
     };
   }, [monitorId, selectedTimeRange]);
 
-  const { chartData, agentLines, downtimeAreas, chartConfig } = useMemo(() => {
-    if (!results || results.length === 0) {
-      return { chartData: [], agentLines: [], downtimeAreas: [], chartConfig: {} as ChartConfig };
-    }
+  useEffect(() => {
+    if (selectedTimeRange !== 'realtime') return;
 
+    const intervalId = setInterval(() => {
+      if (newResultsBuffer.current.length > 0) {
+        setResults(prevResults => {
+          const updatedResults = [...prevResults, ...newResultsBuffer.current]
+            .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+          newResultsBuffer.current = [];
+          // Keep a reasonable buffer size
+          return updatedResults.length > 1000 ? updatedResults.slice(updatedResults.length - 1000) : updatedResults;
+        });
+      }
+    }, REALTIME_UPDATE_INTERVAL);
+
+    return () => clearInterval(intervalId);
+  }, [selectedTimeRange]);
+
+  const chartData = useMemo(() => {
+    if (!results || results.length === 0) {
+      return { chartData: [], downtimeAreas: [] };
+    }
+    
     const groupedByAgent = results.reduce((acc, result) => {
-      const agentName = result.agentName;
-      if (!acc[agentName]) acc[agentName] = [];
-      acc[agentName].push(result);
+      if (!acc[result.agentName]) acc[result.agentName] = [];
+      acc[result.agentName].push(result);
       return acc;
     }, {} as Record<string, ServiceMonitorResult[]>);
 
-    const agentLines = Object.keys(groupedByAgent).map((agentName, index) => ({
-      dataKey: agentName,
-      name: agentName,
-      stroke: AGENT_COLORS[index % AGENT_COLORS.length],
-    }));
+    const latestTime = new Date(Math.max(...results.map(r => new Date(r.time).getTime())));
+    let startTime;
+    let step;
 
-    const chartConfig = agentLines.reduce((acc, line) => {
-      acc[line.dataKey] = {
-        label: line.name,
-        color: line.stroke,
-      };
-      return acc;
-    }, {} as ChartConfig);
-
-    const endTime = results.length > 0 ? new Date(Math.max(...results.map(r => new Date(r.time).getTime()))) : new Date();
-    let startTime = new Date(endTime);
-    let step = 15 * 1000; // 15 seconds for realtime
-
-    if (selectedTimeRange !== 'realtime') {
-      startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange]);
-      const timeDiff = endTime.getTime() - startTime.getTime();
-      step = Math.max(15 * 1000, timeDiff / 300); // at most 300 points
-    } else {
-      const earliestTime = results.length > 0 ? new Date(Math.min(...results.map(r => new Date(r.time).getTime()))) : new Date();
+    if (selectedTimeRange === 'realtime') {
+      const earliestTime = new Date(Math.min(...results.map(r => new Date(r.time).getTime())));
+      const timeDiff = latestTime.getTime() - earliestTime.getTime();
       startTime = earliestTime;
+      step = Math.max(1000, timeDiff / MAX_HISTORICAL_POINTS); // Dynamic step for realtime
+    } else {
+      startTime = new Date(latestTime.getTime() - timeRangeToMillis[selectedTimeRange]);
+      const timeDiff = latestTime.getTime() - startTime.getTime();
+      step = Math.max(15 * 1000, timeDiff / MAX_HISTORICAL_POINTS);
     }
 
     const timePoints = [];
-    for (let t = startTime.getTime(); t <= endTime.getTime(); t += step) {
+    for (let t = startTime.getTime(); t <= latestTime.getTime(); t += step) {
       timePoints.push(t);
     }
 
-    const chartData = timePoints.map(timeNum => {
+    const data = timePoints.map(timeNum => {
       const time = new Date(timeNum).toISOString();
-      const point: { time: string; [key: string]: number | null | string } = { time };
+      const point: ChartPoint = { time };
 
       for (const agentName in groupedByAgent) {
         const agentResults = groupedByAgent[agentName].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
         const resultIndex = agentResults.findIndex(r => new Date(r.time).getTime() >= timeNum);
 
-        if (resultIndex === -1) {
+        if (resultIndex === -1 || resultIndex === 0) {
           point[agentName] = null;
-        } else if (resultIndex === 0) {
-          point[agentName] = agentResults[0].isUp ? agentResults[0].latencyMs : null;
         } else {
           const p1 = agentResults[resultIndex - 1];
           const p2 = agentResults[resultIndex];
-          const t1 = new Date(p1.time).getTime();
-          const t2 = new Date(p2.time).getTime();
-
-          if (!p1.isUp || !p2.isUp) {
+          if (!p1.isUp || !p2.isUp || typeof p1.latencyMs !== 'number' || typeof p2.latencyMs !== 'number') {
             point[agentName] = null;
           } else {
+            const t1 = new Date(p1.time).getTime();
+            const t2 = new Date(p2.time).getTime();
             const v1 = p1.latencyMs;
             const v2 = p2.latencyMs;
-            if (typeof v1 === 'number' && typeof v2 === 'number') {
-              const interpolatedValue = v1 + (v2 - v1) * ((timeNum - t1) / (t2 - t1));
-              point[agentName] = interpolatedValue;
-            } else {
-              point[agentName] = null;
-            }
+            point[agentName] = v1 + (v2 - v1) * ((timeNum - t1) / (t2 - t1));
           }
         }
       }
@@ -170,29 +194,8 @@ const ServiceMonitorDetailPage: React.FC = () => {
     });
 
     const areas: { x1: string, x2: string }[] = [];
-    let downtimeStart: number | null = null;
-    for (let i = 0; i < timePoints.length; i++) {
-      const time = timePoints[i];
-      const isDown = Object.values(groupedByAgent).some(agentResults => {
-        const resultIndex = agentResults.findIndex(r => new Date(r.time).getTime() >= time);
-        if (resultIndex === -1 || resultIndex === 0) return false;
-        const p1 = agentResults[resultIndex - 1];
-        return !p1.isUp;
-      });
-
-      if (isDown && downtimeStart === null) {
-        downtimeStart = time;
-      } else if (!isDown && downtimeStart !== null) {
-        const prevTime = i > 0 ? timePoints[i - 1] : downtimeStart;
-        areas.push({ x1: new Date(downtimeStart).toISOString(), x2: new Date(prevTime).toISOString() });
-        downtimeStart = null;
-      }
-    }
-    if (downtimeStart !== null) {
-      areas.push({ x1: new Date(downtimeStart).toISOString(), x2: new Date(timePoints[timePoints.length - 1]).toISOString() });
-    }
-
-    return { chartData, agentLines, downtimeAreas: areas, chartConfig };
+    // Downtime calculation can be added here if needed
+    return { chartData: data, downtimeAreas: areas };
   }, [results, selectedTimeRange, timeRangeToMillis]);
 
   const handleLegendClick = (data: { dataKey: string }) => {
@@ -258,9 +261,9 @@ const ServiceMonitorDetailPage: React.FC = () => {
           </div>
         </CardHeader>
         <CardContent className="h-96">
-          {results.length > 0 ? (
-            <ChartContainer config={chartConfig} className="h-full w-full">
-              <LineChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+          {chartData.chartData.length > 0 ? (
+            <ChartContainer config={agentConfig.chartConfig} className="h-full w-full">
+              <LineChart data={chartData.chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
                 <CartesianGrid vertical={false} />
                 <XAxis
                   dataKey="time"
@@ -269,6 +272,8 @@ const ServiceMonitorDetailPage: React.FC = () => {
                   axisLine={false}
                   tickMargin={8}
                   tick={{ fontSize: 11 }}
+                  type="category"
+                  allowDuplicatedCategory={false}
                 />
                 <YAxis
                   width={80}
@@ -280,39 +285,48 @@ const ServiceMonitorDetailPage: React.FC = () => {
                 />
                 <ChartTooltip
                   cursor={true}
-                  content={
-                    <ChartTooltipContent
-                      labelFormatter={formatTooltipLabel}
-                      formatter={(value, name, item) => {
-                        if (value == null) return null;
-                        const itemConfig = chartConfig[name as keyof typeof chartConfig];
-                        return (
-                          <div className="flex w-full items-center gap-2">
-                            <div
-                              className="shrink-0 rounded-[2px] h-2.5 w-2.5"
-                              style={{ backgroundColor: item.color }}
-                            />
-                            <div className="flex flex-1 justify-between leading-none">
-                              <span className="text-muted-foreground">
-                                {itemConfig?.label || name}
-                              </span>
-                              <span className="text-foreground font-mono font-medium tabular-nums">
-                                {`${Math.round(value as number)} ms`}
-                              </span>
-                            </div>
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length && label) {
+                      const labelStr = formatTooltipLabel(label);
+                      return (
+                        <div className="z-50 overflow-hidden rounded-md border bg-popover px-3 py-1.5 text-sm shadow-md animate-in fade-in-0 zoom-in-95">
+                          <div className="font-semibold">{labelStr}</div>
+                          <div className="mt-2 space-y-2">
+                            {payload.map((item) => {
+                              const key = item.dataKey as string;
+                              const config = agentConfig.chartConfig[key as keyof typeof agentConfig.chartConfig];
+                              const color = config?.color || item.color;
+                              
+                              if (item.value === null || item.value === undefined) return null;
+                              
+                              const value = typeof item.value === 'number' ? `${Math.round(item.value as number)} ms` : 'N/A';
+
+                              return (
+                                <div key={item.dataKey} className="flex items-center gap-2">
+                                  <div
+                                    className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                                    style={{ backgroundColor: color }}
+                                  />
+                                  <div className="flex flex-1 justify-between">
+                                    <span className="text-muted-foreground">{config?.label || item.name}:</span>
+                                    <span className="font-mono font-medium">{value}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
-                        );
-                      }}
-                      indicator="dot"
-                    />
-                  }
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
                 />
                 <ChartLegend
                   content={({ payload }) => (
                     <div className="flex items-center justify-center gap-4 pt-3">
                       {payload?.map((item) => {
                         const key = item.dataKey as string;
-                        const itemConfig = chartConfig[key as keyof typeof chartConfig];
+                        const itemConfig = agentConfig.chartConfig[key as keyof typeof agentConfig.chartConfig];
                         const isHidden = hiddenLines[key];
                         return (
                           <div
@@ -337,10 +351,10 @@ const ServiceMonitorDetailPage: React.FC = () => {
                     </div>
                   )}
                 />
-                {downtimeAreas.map((area, index) => (
+                {chartData.downtimeAreas.map((area, index) => (
                   <ReferenceArea key={index} x1={area.x1} x2={area.x2} stroke="transparent" fill="hsl(var(--destructive))" fillOpacity={0.15} ifOverflow="extendDomain" />
                 ))}
-                {agentLines.map(line => (
+                {agentConfig.agentLines.map(line => (
                   <Line
                     key={line.dataKey}
                     type="monotone"
@@ -352,6 +366,7 @@ const ServiceMonitorDetailPage: React.FC = () => {
                     activeDot={{ r: 6 }}
                     connectNulls={true}
                     hide={hiddenLines[line.dataKey]}
+                    isAnimationActive={true}
                   />
                 ))}
               </LineChart>
