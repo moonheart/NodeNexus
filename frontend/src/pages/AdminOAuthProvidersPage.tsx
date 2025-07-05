@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
 import ProviderFormModal, { type ProviderFormData } from '../components/ProviderFormModal';
+import apiClient from '../services/apiClient';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardAction } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -33,19 +33,14 @@ const AdminOAuthProvidersPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProvider, setEditingProvider] = useState<Partial<ProviderFormData> | undefined>(undefined);
-    const { token } = useAuthStore();
-
     const fetchProviders = async () => {
         setLoading(true);
         try {
-            const response = await fetch('/api/admin/oauth/providers', {
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (!response.ok) throw new Error('Failed to fetch OAuth providers.');
-            const data: OAuthProvider[] = await response.json();
-            setProviders(data);
+            const response = await apiClient.get<OAuthProvider[]>('/admin/oauth/providers');
+            setProviders(response.data);
         } catch (error) {
-            toast.error(error instanceof Error ? error.message : 'An unknown error occurred.');
+            const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+            toast.error(errorMessage);
         } finally {
             setLoading(false);
         }
@@ -53,7 +48,7 @@ const AdminOAuthProvidersPage: React.FC = () => {
 
     useEffect(() => {
         fetchProviders();
-    }, [token]);
+    }, []);
 
     const handleAddProvider = () => {
         setEditingProvider(undefined);
@@ -74,18 +69,12 @@ const AdminOAuthProvidersPage: React.FC = () => {
     const handleDeleteProvider = async (providerName: string) => {
         if (!window.confirm(t('adminOAuthProviders.deleteDialog.description', { providerName }))) return;
         try {
-            const response = await fetch(`/api/admin/oauth/providers/${providerName}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to delete provider.');
-            }
+            await apiClient.delete(`/admin/oauth/providers/${providerName}`);
             toast.success(t('adminOAuthProviders.notifications.providerDeleted'));
             fetchProviders();
         } catch (error) {
-            toast.error(error instanceof Error ? error.message : 'An unknown error occurred.');
+            const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+            toast.error(errorMessage);
         }
     };
 
@@ -96,28 +85,20 @@ const AdminOAuthProvidersPage: React.FC = () => {
             toast.error("Provider name is required.");
             return;
         }
-        const url = isEditing ? `/api/admin/oauth/providers/${providerName}` : '/api/admin/oauth/providers';
-        const method = isEditing ? 'PUT' : 'POST';
+
+        const url = isEditing ? `/admin/oauth/providers/${providerName}` : '/admin/oauth/providers';
+        const method = isEditing ? 'put' : 'post';
+
         try {
-            const response = await fetch(url, {
-                method: method,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify(providerData),
-            });
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to save provider.');
-            }
+            await apiClient[method](url, providerData);
             toast.success(t('adminOAuthProviders.notifications.providerSaved', {
                 status: isEditing ? t('adminOAuthProviders.notifications.status.updated') : t('adminOAuthProviders.notifications.status.created')
             }));
             setIsModalOpen(false);
             fetchProviders();
         } catch (error) {
-            toast.error(error instanceof Error ? error.message : 'An unknown error occurred.');
+            const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+            toast.error(errorMessage);
         }
     };
 
@@ -140,13 +121,12 @@ const AdminOAuthProvidersPage: React.FC = () => {
             />
             <Card>
                 <CardHeader>
-                    <div className="flex justify-between items-center">
-                        <div>
-                            <CardTitle>{t('adminOAuthProviders.title')}</CardTitle>
-                            <CardDescription>{t('adminOAuthProviders.description')}</CardDescription>
-                        </div>
+
+                    <CardTitle>{t('adminOAuthProviders.title')}</CardTitle>
+                    <CardDescription>{t('adminOAuthProviders.description')}</CardDescription>
+                    <CardAction>
                         <Button onClick={handleAddProvider}>{t('adminOAuthProviders.addNew')}</Button>
-                    </div>
+                    </CardAction>
                 </CardHeader>
                 <CardContent>
                     <Table>

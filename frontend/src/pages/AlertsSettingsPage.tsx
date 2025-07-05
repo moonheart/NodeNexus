@@ -6,23 +6,58 @@ import type { VpsListItemResponse, AlertRule } from '../types';
 import AlertRuleModal from '../components/AlertRuleModal';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Edit3, PlusCircle, Trash2 } from 'lucide-react';
-import { RefreshCwIcon as SpinnerIcon } from '@/components/Icons';
 import EmptyState from '@/components/EmptyState';
+
+const AlertsTableSkeleton: React.FC = () => {
+    const { t } = useTranslation();
+    return (
+        <Table>
+            <TableHeader>
+                <TableRow>
+                    <TableHead>{t('alertSettings.table.name')}</TableHead>
+                    <TableHead>{t('alertSettings.table.status')}</TableHead>
+                    <TableHead>{t('alertSettings.table.condition')}</TableHead>
+                    <TableHead className="text-center">{t('alertSettings.table.enabled')}</TableHead>
+                    <TableHead className="text-right">{t('alertSettings.table.actions')}</TableHead>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {[...Array(3)].map((_, i) => (
+                    <TableRow key={i}>
+                        <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                        <TableCell><Skeleton className="h-6 w-20" /></TableCell>
+                        <TableCell>
+                            <Skeleton className="h-4 w-full" />
+                            <Skeleton className="h-3 w-3/4 mt-2" />
+                        </TableCell>
+                        <TableCell className="text-center"><Skeleton className="h-6 w-12 mx-auto" /></TableCell>
+                        <TableCell className="text-right space-x-1">
+                            <Skeleton className="h-8 w-8 inline-block" />
+                            <Skeleton className="h-8 w-8 inline-block" />
+                        </TableCell>
+                    </TableRow>
+                ))}
+            </TableBody>
+        </Table>
+    );
+};
+
 
 const AlertsSettingsPage: React.FC = () => {
     const { t } = useTranslation();
@@ -53,7 +88,7 @@ const AlertsSettingsPage: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [t]);
 
     useEffect(() => {
         fetchAlertsData();
@@ -109,10 +144,6 @@ const AlertsSettingsPage: React.FC = () => {
         }
     };
 
-    if (isLoading) {
-        return <div className="flex items-center justify-center h-full"><SpinnerIcon className="h-8 w-8 animate-spin" /></div>;
-    }
-
     if (error) {
         return <div className="container mx-auto p-4 text-destructive">{t('alertSettings.errorLoading', { error: error })}</div>;
     }
@@ -120,17 +151,19 @@ const AlertsSettingsPage: React.FC = () => {
     return (
         <div className="space-y-6">
             <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
-                    <div>
-                        <CardTitle>{t('alertSettings.title')}</CardTitle>
-                        <CardDescription>{t('alertSettings.description')}</CardDescription>
-                    </div>
-                    <Button onClick={handleOpenCreateAlertModal}>
-                        <PlusCircle size={18} className="mr-2" /> {t('alertSettings.addNewRule')}
-                    </Button>
+                <CardHeader >
+                    <CardTitle>{t('alertSettings.title')}</CardTitle>
+                    <CardDescription>{t('alertSettings.description')}</CardDescription>
+                    <CardAction>
+                        <Button onClick={handleOpenCreateAlertModal}>
+                            <PlusCircle size={18} className="mr-2" /> {t('alertSettings.addNewRule')}
+                        </Button>
+                    </CardAction>
                 </CardHeader>
                 <CardContent>
-                    {alertRules.length === 0 ? (
+                    {isLoading ? (
+                        <AlertsTableSkeleton />
+                    ) : alertRules.length === 0 ? (
                         <EmptyState
                             title={t('alertSettings.empty.title')}
                             message={t('alertSettings.empty.message')}
@@ -154,19 +187,19 @@ const AlertsSettingsPage: React.FC = () => {
                                         <TableCell>
                                             <Badge variant={rule.isActive ? 'success' : 'secondary'}>
                                                 {rule.isActive ? t('alertSettings.status.active') : t('alertSettings.status.inactive')}
-                                           </Badge>
-                                       </TableCell>
-                                       <TableCell>
-                                           <div className="text-sm">
-                                               <span className="font-semibold">{t(`alertSettings.metrics.${rule.metricType}` as const)}</span>
-                                               <span> {rule.comparisonOperator} </span>
-                                               <span className="font-semibold">{rule.threshold}</span>
-                                               <span> {t('alertSettings.condition.for')} </span>
-                                               <span className="font-semibold">{t('alertSettings.condition.seconds', { count: rule.durationSeconds })}</span>
-                                           </div>
-                                           <div className="text-xs text-muted-foreground">
-                                               {t('alertSettings.condition.cooldown', { count: rule.cooldownSeconds })}
-                                           </div>
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="text-sm">
+                                                <span className="font-semibold">{t(`alertSettings.metrics.${rule.metricType}` as const)}</span>
+                                                <span> {rule.comparisonOperator} </span>
+                                                <span className="font-semibold">{rule.threshold}</span>
+                                                <span> {t('alertSettings.condition.for')} </span>
+                                                <span className="font-semibold">{t('alertSettings.condition.seconds', { count: rule.durationSeconds })}</span>
+                                            </div>
+                                            <div className="text-xs text-muted-foreground">
+                                                {t('alertSettings.condition.cooldown', { count: rule.cooldownSeconds })}
+                                            </div>
                                         </TableCell>
                                         <TableCell className="text-center">
                                             <Switch

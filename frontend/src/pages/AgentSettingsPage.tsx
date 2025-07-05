@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { RefreshCwIcon } from '@/components/Icons';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const ConfigStatusBadge: React.FC<{ status: string }> = ({ status }) => {
     const { t } = useTranslation();
@@ -133,7 +134,63 @@ const GlobalSettingsPage: React.FC = () => {
     };
 
     if (isLoading) {
-        return <div className="flex items-center justify-center h-full"><RefreshCwIcon className="h-8 w-8 animate-spin" /></div>;
+        return (
+            <div className="space-y-6">
+                <Card>
+                    <CardHeader>
+                        <Skeleton className="h-7 w-1/4 mb-2" />
+                        <Skeleton className="h-4 w-1/2" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {Array.from({ length: 9 }).map((_, index) => (
+                                <div className="space-y-2" key={index}>
+                                    <Skeleton className="h-4 w-1/3" />
+                                    <Skeleton className="h-10 w-full" />
+                                </div>
+                            ))}
+                        </div>
+                        <div className="mt-6 flex justify-end">
+                            <Skeleton className="h-10 w-24" />
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                        <Skeleton className="h-7 w-1/3 mb-2" />
+                        <Skeleton className="h-4 w-2/3" />
+                    </CardHeader>
+                    <CardContent>
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead><Skeleton className="h-5 w-20" /></TableHead>
+                                    <TableHead><Skeleton className="h-5 w-24" /></TableHead>
+                                    <TableHead><Skeleton className="h-5 w-32" /></TableHead>
+                                    <TableHead><Skeleton className="h-5 w-40" /></TableHead>
+                                    <TableHead className="text-right"><Skeleton className="h-5 w-28 ml-auto" /></TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {Array.from({ length: 3 }).map((_, index) => (
+                                    <TableRow key={index}>
+                                        <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                                        <TableCell><Skeleton className="h-6 w-20" /></TableCell>
+                                        <TableCell><Skeleton className="h-5 w-40" /></TableCell>
+                                        <TableCell><Skeleton className="h-5 w-28" /></TableCell>
+                                        <TableCell className="text-right space-x-2">
+                                            <Skeleton className="h-8 w-16 inline-block" />
+                                            <Skeleton className="h-8 w-16 inline-block" />
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </CardContent>
+                </Card>
+            </div>
+        );
     }
 
     if (error) {

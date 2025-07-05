@@ -6,9 +6,10 @@ import type { CommandScript } from '../types';
 import ScriptFormModal from '../components/ScriptFormModal';
 import { Plus, Search, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardAction } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from '@/components/ui/badge';
 import {
     DropdownMenu,
@@ -111,7 +112,7 @@ const ScriptManagementPage: React.FC = () => {
     }, [scripts, searchQuery]);
 
     const renderContent = () => {
-        if (loading) return <p>{t('common.status.loading')}</p>;
+        if (loading) return <ScriptTableSkeleton />;
         if (error) return <p className="text-destructive">{t('common.notifications.error', { error })}</p>;
 
         if (scripts.length === 0) {
@@ -174,15 +175,11 @@ const ScriptManagementPage: React.FC = () => {
         <div className="space-y-6">
             <Card>
                 <CardHeader>
-                    <div className="flex justify-between items-start">
-                        <div>
-                            <CardTitle>{t('scriptManagement.title')}</CardTitle>
-                            <CardDescription>{t('scriptManagement.description')}</CardDescription>
-                        </div>
-                        {scripts.length > 0 && (
-                            <Button onClick={handleAdd}>{t('scriptManagement.addNew')}</Button>
-                        )}
-                    </div>
+                    <CardTitle>{t('scriptManagement.title')}</CardTitle>
+                    <CardDescription>{t('scriptManagement.description')}</CardDescription>
+                    <CardAction>
+                        <Button onClick={handleAdd}>{t('scriptManagement.addNew')}</Button>
+                    </CardAction>
                 </CardHeader>
                 <CardContent>
                     {scripts.length > 0 && (
@@ -223,6 +220,34 @@ const ScriptManagementPage: React.FC = () => {
                 </AlertDialogContent>
             </AlertDialog>
         </div>
+    );
+};
+
+const ScriptTableSkeleton = () => {
+    const { t } = useTranslation();
+    return (
+        <Table>
+            <TableHeader>
+                <TableRow>
+                    <TableHead>{t('common.table.name')}</TableHead>
+                    <TableHead>{t('common.table.description')}</TableHead>
+                    <TableHead>{t('common.table.language')}</TableHead>
+                    <TableHead><span className="sr-only">{t('common.table.actions')}</span></TableHead>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {Array.from({ length: 3 }).map((_, index) => (
+                    <TableRow key={index}>
+                        <TableCell><Skeleton className="h-6 w-32" /></TableCell>
+                        <TableCell><Skeleton className="h-6 w-48" /></TableCell>
+                        <TableCell><Skeleton className="h-6 w-20" /></TableCell>
+                        <TableCell className="text-right">
+                            <Skeleton className="h-8 w-8" />
+                        </TableCell>
+                    </TableRow>
+                ))}
+            </TableBody>
+        </Table>
     );
 };
 

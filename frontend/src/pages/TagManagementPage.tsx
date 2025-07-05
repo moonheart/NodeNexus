@@ -8,6 +8,7 @@ import { useServerListStore } from '../store/serverListStore';
 import TagEditModal from '../components/TagEditModal';
 import TagTableRow from '../components/TagTableRow';
 import EmptyState from '../components/EmptyState';
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,10 +21,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
+  TableCell,
   TableHead,
   TableHeader,
   TableRow,
@@ -38,18 +40,22 @@ const TagManagementPage: React.FC = () => {
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [tagToDelete, setTagToDelete] = useState<Tag | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const loadInitialTags = async () => {
+      setIsLoading(true);
       try {
         await fetchAllTags();
       } catch (err) {
         toast.error(t('common.notifications.fetchFailed'));
         console.error(err);
+      } finally {
+        setIsLoading(false);
       }
     };
     loadInitialTags();
-  }, [fetchAllTags]);
+  }, [fetchAllTags, t]);
 
   const handleCreateClick = () => {
     setEditingTag(null);
@@ -127,8 +133,8 @@ const TagManagementPage: React.FC = () => {
   }, [tags, searchQuery]);
 
   const renderContent = () => {
-    if (!tags) {
-        return <div className="text-center py-10">{t('common.status.loading')}</div>;
+    if (isLoading) {
+      return <TagTableSkeleton />;
     }
     if (tags.length === 0) {
       return (
@@ -176,27 +182,27 @@ const TagManagementPage: React.FC = () => {
   return (
     <>
       <Card>
-        <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <CardTitle>{t('tagManagement.title')}</CardTitle>
-            <p className="text-muted-foreground text-sm mt-1">{t('tagManagement.description')}</p>
-          </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder={t('common.placeholders.search')}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
+        <CardHeader>
+          <CardTitle>{t('tagManagement.title')}</CardTitle>
+          <CardDescription>{t('tagManagement.description')}</CardDescription>
+          <CardAction>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder={t('common.placeholders.search')}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <Button onClick={handleCreateClick}>
+                <PlusCircle className="w-5 h-5 mr-2" />
+                <span>{t('tagManagement.addNew')}</span>
+              </Button>
             </div>
-            <Button onClick={handleCreateClick}>
-              <PlusCircle className="w-5 h-5 mr-2" />
-              <span>{t('tagManagement.addNew')}</span>
-            </Button>
-          </div>
+          </CardAction>
         </CardHeader>
         <CardContent>
           {renderContent()}
@@ -229,5 +235,40 @@ const TagManagementPage: React.FC = () => {
     </>
   );
 };
+
+const TagTableSkeleton = () => {
+  const { t } = useTranslation();
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{t('common.table.name')}</TableHead>
+          <TableHead>{t('common.table.id')}</TableHead>
+          <TableHead className="text-center">{t('common.table.usageCount')}</TableHead>
+          <TableHead>{t('common.table.associatedUrl')}</TableHead>
+          <TableHead className="text-right">{t('common.table.actions')}</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {Array.from({ length: 3 }).map((_, index) => (
+          <TableRow key={index}>
+            <TableCell><Skeleton className="h-6 w-24" /></TableCell>
+            <TableCell><Skeleton className="h-6 w-12" /></TableCell>
+            <TableCell className="text-center"><Skeleton className="h-6 w-8 mx-auto" /></TableCell>
+            <TableCell><Skeleton className="h-6 w-32" /></TableCell>
+            <TableCell className="text-right">
+              <div className="flex gap-2 justify-end">
+                <Skeleton className="h-8 w-8" />
+                <Skeleton className="h-8 w-8" />
+                <Skeleton className="h-8 w-8" />
+              </div>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+};
+
 
 export default TagManagementPage;

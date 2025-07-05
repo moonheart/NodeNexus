@@ -12,18 +12,19 @@ import type { ChannelTemplate, ChannelResponse, CreateChannelRequest, UpdateChan
 import NotificationChannelModal from '../components/NotificationChannelModal';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { PlusCircle, Send, Trash2, Edit } from 'lucide-react';
 import { RefreshCwIcon as SpinnerIcon } from '@/components/Icons';
 import EmptyState from '@/components/EmptyState';
@@ -127,63 +128,94 @@ const NotificationsPage: React.FC = () => {
         }
     };
 
-    if (isLoading) {
-        return <div className="flex items-center justify-center h-full"><SpinnerIcon className="h-8 w-8 animate-spin" /></div>;
-    }
-
     if (error) {
         return <div className="container mx-auto p-4 text-destructive">{t('common.notifications.error', { error: error })}</div>;
     }
 
+    const renderTableContent = () => {
+        if (isLoading) {
+            return (
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>{t('notificationsPage.table.name')}</TableHead>
+                            <TableHead>{t('notificationsPage.table.type')}</TableHead>
+                            <TableHead className="text-right">{t('notificationsPage.table.actions')}</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {Array.from({ length: 3 }).map((_, index) => (
+                            <TableRow key={index}>
+                                <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                                <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                                <TableCell className="text-right space-x-1">
+                                    <Skeleton className="h-8 w-8 inline-block" />
+                                    <Skeleton className="h-8 w-8 inline-block" />
+                                    <Skeleton className="h-8 w-8 inline-block" />
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            );
+        }
+
+        if (channels.length === 0) {
+            return (
+                <EmptyState
+                    title={t('notificationsPage.empty.title')}
+                    message={t('notificationsPage.empty.message')}
+                    action={<Button onClick={handleOpenCreateModal}><PlusCircle size={18} className="mr-2" /> {t('notificationsPage.addNew')}</Button>}
+                />
+            );
+        }
+
+        return (
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead>{t('notificationsPage.table.name')}</TableHead>
+                        <TableHead>{t('notificationsPage.table.type')}</TableHead>
+                        <TableHead className="text-right">{t('notificationsPage.table.actions')}</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {channels.map(channel => (
+                        <TableRow key={channel.id}>
+                            <TableCell className="font-medium">{channel.name}</TableCell>
+                            <TableCell className="capitalize text-muted-foreground">{channel.channelType}</TableCell>
+                            <TableCell className="text-right space-x-1">
+                                <Button variant="ghost" size="icon" onClick={() => handleOpenEditModal(channel)}>
+                                    <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={() => handleTestChannel(channel.id)} disabled={testingChannelId === channel.id}>
+                                    {testingChannelId === channel.id ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(channel.id)}>
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
+        );
+    };
+
     return (
         <div className="space-y-6">
             <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
-                    <div>
-                        <CardTitle>{t('notificationsPage.title')}</CardTitle>
-                        <CardDescription>{t('notificationsPage.description')}</CardDescription>
-                    </div>
-                    <Button onClick={handleOpenCreateModal}>
-                        <PlusCircle size={18} className="mr-2" /> {t('notificationsPage.addNew')}
-                    </Button>
+                <CardHeader>
+                    <CardTitle>{t('notificationsPage.title')}</CardTitle>
+                    <CardDescription>{t('notificationsPage.description')}</CardDescription>
+                    <CardAction>
+                        <Button onClick={handleOpenCreateModal}>
+                            <PlusCircle size={18} className="mr-2" /> {t('notificationsPage.addNew')}
+                        </Button>
+                    </CardAction>
                 </CardHeader>
                 <CardContent>
-                    {channels.length === 0 ? (
-                        <EmptyState
-                            title={t('notificationsPage.empty.title')}
-                            message={t('notificationsPage.empty.message')}
-                            action={<Button onClick={handleOpenCreateModal}><PlusCircle size={18} className="mr-2" /> {t('notificationsPage.addNew')}</Button>}
-                        />
-                    ) : (
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>{t('notificationsPage.table.name')}</TableHead>
-                                    <TableHead>{t('notificationsPage.table.type')}</TableHead>
-                                    <TableHead className="text-right">{t('notificationsPage.table.actions')}</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {channels.map(channel => (
-                                    <TableRow key={channel.id}>
-                                        <TableCell className="font-medium">{channel.name}</TableCell>
-                                        <TableCell className="capitalize text-muted-foreground">{channel.channelType}</TableCell>
-                                        <TableCell className="text-right space-x-1">
-                                            <Button variant="ghost" size="icon" onClick={() => handleOpenEditModal(channel)}>
-                                                <Edit className="h-4 w-4" />
-                                            </Button>
-                                            <Button variant="ghost" size="icon" onClick={() => handleTestChannel(channel.id)} disabled={testingChannelId === channel.id}>
-                                                {testingChannelId === channel.id ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                                            </Button>
-                                            <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(channel.id)}>
-                                                <Trash2 className="h-4 w-4 text-destructive" />
-                                            </Button>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    )}
+                    {renderTableContent()}
                 </CardContent>
             </Card>
 
