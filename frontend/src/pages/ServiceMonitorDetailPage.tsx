@@ -41,7 +41,7 @@ const ServiceMonitorDetailPage: React.FC = () => {
   const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('realtime');
   const [hiddenLines, setHiddenLines] = useState<Record<string, boolean>>({});
 
-  const timeRangeToMillis: Record<Exclude<TimeRangeOption, 'realtime'>, number> = { '1h': 36e5, '6h': 216e5, '24h': 864e5, '7d': 6048e5 };
+  const timeRangeToMillis = useMemo(() => ({ '1h': 36e5, '6h': 216e5, '24h': 864e5, '7d': 6048e5 }), []);
 
   useEffect(() => {
     if (!monitorId) return;
@@ -116,35 +116,84 @@ const ServiceMonitorDetailPage: React.FC = () => {
       return acc;
     }, {} as ChartConfig);
 
-    const timePoints = [...new Set(results.map(r => new Date(r.time).toISOString()))].sort();
-    const chartData = timePoints.map(time => {
+    const endTime = results.length > 0 ? new Date(Math.max(...results.map(r => new Date(r.time).getTime()))) : new Date();
+    let startTime = new Date(endTime);
+    let step = 15 * 1000; // 15 seconds for realtime
+
+    if (selectedTimeRange !== 'realtime') {
+      startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange]);
+      const timeDiff = endTime.getTime() - startTime.getTime();
+      step = Math.max(15 * 1000, timeDiff / 300); // at most 300 points
+    } else {
+      const earliestTime = results.length > 0 ? new Date(Math.min(...results.map(r => new Date(r.time).getTime()))) : new Date();
+      startTime = earliestTime;
+    }
+
+    const timePoints = [];
+    for (let t = startTime.getTime(); t <= endTime.getTime(); t += step) {
+      timePoints.push(t);
+    }
+
+    const chartData = timePoints.map(timeNum => {
+      const time = new Date(timeNum).toISOString();
       const point: { time: string; [key: string]: number | null | string } = { time };
+
       for (const agentName in groupedByAgent) {
-        const resultForTime = groupedByAgent[agentName].find(r => new Date(r.time).toISOString() === time);
-        point[agentName] = resultForTime && resultForTime.isUp ? resultForTime.latencyMs : null;
+        const agentResults = groupedByAgent[agentName].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+        const resultIndex = agentResults.findIndex(r => new Date(r.time).getTime() >= timeNum);
+
+        if (resultIndex === -1) {
+          point[agentName] = null;
+        } else if (resultIndex === 0) {
+          point[agentName] = agentResults[0].isUp ? agentResults[0].latencyMs : null;
+        } else {
+          const p1 = agentResults[resultIndex - 1];
+          const p2 = agentResults[resultIndex];
+          const t1 = new Date(p1.time).getTime();
+          const t2 = new Date(p2.time).getTime();
+
+          if (!p1.isUp || !p2.isUp) {
+            point[agentName] = null;
+          } else {
+            const v1 = p1.latencyMs;
+            const v2 = p2.latencyMs;
+            if (typeof v1 === 'number' && typeof v2 === 'number') {
+              const interpolatedValue = v1 + (v2 - v1) * ((timeNum - t1) / (t2 - t1));
+              point[agentName] = interpolatedValue;
+            } else {
+              point[agentName] = null;
+            }
+          }
+        }
       }
       return point;
     });
 
     const areas: { x1: string, x2: string }[] = [];
-    let downtimeStart: string | null = null;
+    let downtimeStart: number | null = null;
     for (let i = 0; i < timePoints.length; i++) {
       const time = timePoints[i];
-      const isDown = Object.values(groupedByAgent).some(agentResults => agentResults.some(r => new Date(r.time).toISOString() === time && !r.isUp));
-      if (isDown && !downtimeStart) {
+      const isDown = Object.values(groupedByAgent).some(agentResults => {
+        const resultIndex = agentResults.findIndex(r => new Date(r.time).getTime() >= time);
+        if (resultIndex === -1 || resultIndex === 0) return false;
+        const p1 = agentResults[resultIndex - 1];
+        return !p1.isUp;
+      });
+
+      if (isDown && downtimeStart === null) {
         downtimeStart = time;
-      } else if (!isDown && downtimeStart) {
+      } else if (!isDown && downtimeStart !== null) {
         const prevTime = i > 0 ? timePoints[i - 1] : downtimeStart;
-        areas.push({ x1: downtimeStart, x2: prevTime });
+        areas.push({ x1: new Date(downtimeStart).toISOString(), x2: new Date(prevTime).toISOString() });
         downtimeStart = null;
       }
     }
-    if (downtimeStart) {
-      areas.push({ x1: downtimeStart, x2: timePoints[timePoints.length - 1] });
+    if (downtimeStart !== null) {
+      areas.push({ x1: new Date(downtimeStart).toISOString(), x2: new Date(timePoints[timePoints.length - 1]).toISOString() });
     }
 
     return { chartData, agentLines, downtimeAreas: areas, chartConfig };
-  }, [results]);
+  }, [results, selectedTimeRange, timeRangeToMillis]);
 
   const handleLegendClick = (data: { dataKey: string }) => {
     const dataKey = data.dataKey as string;
