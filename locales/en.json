@@ -503,7 +503,9 @@
     "renewal": "Renewal",
     "na": "N/A",
     "calculating": "Calculating...",
-    "notConfigured": "Not Configured"
+    "notConfigured": "Not Configured",
+    "serviceMonitor": "Service Monitor",
+    "noServiceMonitors": "No Service Monitors"
   },
   "serverManagement": {
     "title": "Server Management",

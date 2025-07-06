@@ -444,7 +444,7 @@
     },
     "overview": {
       "title": "概览",
-      "totalServers": "总服务器数",
+      "totalServers": "总服务器",
       "online": "在线",
       "offline": "离线",
       "rebooting": "重启中",
@@ -504,7 +504,9 @@
     "renewal": "续费",
     "na": "N/A",
     "calculating": "计算中...",
-    "notConfigured": "未配置"
+    "notConfigured": "未配置",
+    "serviceMonitor": "服务监控",
+    "noServiceMonitors": "暂无服务监控"
   },
   "serverManagement": {
     "title": "服务器管理",

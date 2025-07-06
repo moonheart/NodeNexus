@@ -171,11 +171,11 @@ const HomePage: React.FC = () => {
   const onlineServersForNetworkTotals = useMemo(() => displayedServers.filter(s => s.status === STATUS_ONLINE && s.latestMetrics), [displayedServers]);
   const totalNetworkUp = useMemo(() => onlineServersForNetworkTotals.reduce((acc, server) => acc + (server.latestMetrics?.networkTxInstantBps || 0), 0), [onlineServersForNetworkTotals]);
   const totalNetworkDown = useMemo(() => onlineServersForNetworkTotals.reduce((acc, server) => acc + (server.latestMetrics?.networkRxInstantBps || 0), 0), [onlineServersForNetworkTotals]);
-  const formatNetworkSpeedForDisplay = (bps: number): string => {
-    if (bps < 1024) return `${bps.toFixed(0)} Bps`;
-    if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KBps`;
-    if (bps < 1024 * 1024 * 1024) return `${(bps / (1024 * 1024)).toFixed(1)} MBps`;
-    return `${(bps / (1024 * 1024 * 1024)).toFixed(1)} GBps`;
+  const formatNetworkSpeedForDisplay = (bps: number): [string, string] => {
+    if (bps < 1024) return [bps.toFixed(0), 'Bps'];
+    if (bps < 1024 * 1024) return [(bps / 1024).toFixed(1), 'KBps'];
+    if (bps < 1024 * 1024 * 1024) return [(bps / (1024 * 1024)).toFixed(1), 'MBps'];
+    return [(bps / (1024 * 1024 * 1024)).toFixed(1), 'GBps'];
   };
 
   const sortOptions = useMemo(() => [
@@ -216,6 +216,9 @@ const HomePage: React.FC = () => {
     setSelectedTagIds(newSet);
   };
 
+  const [totalNetworkUpValue, totalNetworkUpUnit] = formatNetworkSpeedForDisplay(totalNetworkUp);
+  const [totalNetworkDownValue, totalNetworkDownUnit] = formatNetworkSpeedForDisplay(totalNetworkDown);
+
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-6">
       {statusMessage && <Alert variant={statusVariant} className="mb-6"><AlertTriangle className="h-4 w-4" /><AlertDescription>{statusMessage}</AlertDescription></Alert>}
@@ -225,14 +228,14 @@ const HomePage: React.FC = () => {
           <CardTitle>{t('homePage.overview.title')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 md:gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 gap-4 md:gap-6">
             <StatCard title={t('homePage.overview.totalServers')} value={serverStats.total} icon={<Server className="w-6 h-6" />} valueClassName="text-primary" onClick={() => setSelectedStatusFilter(null)} isActive={selectedStatusFilter === null} />
             <StatCard title={t('homePage.overview.online')} value={serverStats[STATUS_ONLINE]} icon={<CheckCircle className="w-6 h-6" />} valueClassName={statusColorMap[STATUS_ONLINE]} onClick={() => setSelectedStatusFilter(STATUS_ONLINE)} isActive={selectedStatusFilter === STATUS_ONLINE} />
             <StatCard title={t('homePage.overview.offline')} value={serverStats[STATUS_OFFLINE]} icon={<XCircle className="w-6 h-6" />} valueClassName={statusColorMap[STATUS_OFFLINE]} onClick={() => setSelectedStatusFilter(STATUS_OFFLINE)} isActive={selectedStatusFilter === STATUS_OFFLINE} />
             {serverStats[STATUS_REBOOTING] > 0 && <StatCard title={t('homePage.overview.rebooting')} value={serverStats[STATUS_REBOOTING]} icon={<Power className="w-6 h-6" />} valueClassName={statusColorMap[STATUS_REBOOTING]} onClick={() => setSelectedStatusFilter(STATUS_REBOOTING)} isActive={selectedStatusFilter === STATUS_REBOOTING} />}
             {serverStats[STATUS_ERROR] > 0 && <StatCard title={t('homePage.overview.error')} value={serverStats[STATUS_ERROR]} icon={<AlertTriangle className="w-6 h-6" />} valueClassName={statusColorMap[STATUS_ERROR]} onClick={() => setSelectedStatusFilter(STATUS_ERROR)} isActive={selectedStatusFilter === STATUS_ERROR} />}
-            <StatCard title={t('homePage.overview.totalUpload')} value={formatNetworkSpeedForDisplay(totalNetworkUp)} icon={<ArrowUp className="w-6 h-6" />} valueClassName="text-emerald-500" description={t('homePage.overview.onlineServers')} />
-            <StatCard title={t('homePage.overview.totalDownload')} value={formatNetworkSpeedForDisplay(totalNetworkDown)} icon={<ArrowDown className="w-6 h-6" />} valueClassName="text-sky-500" description={t('homePage.overview.onlineServers')} />
+            <StatCard title={t('homePage.overview.totalUpload')} value={totalNetworkUpValue} unit={totalNetworkUpUnit} icon={<ArrowUp className="w-6 h-6" />} valueClassName="text-emerald-500" description={t('homePage.overview.onlineServers')} />
+            <StatCard title={t('homePage.overview.totalDownload')} value={totalNetworkDownValue} unit={totalNetworkDownUnit} icon={<ArrowDown className="w-6 h-6" />} valueClassName="text-sky-500" description={t('homePage.overview.onlineServers')} />
           </div>
         </CardContent>
       </Card>
@@ -326,7 +329,7 @@ const HomePage: React.FC = () => {
               <p>{t('homePage.serverList.empty')}</p>
             </div>
           ) : viewMode === 'card' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
               {displayedServers.map(server => <VpsCard key={server.id} server={server} />)}
             </div>
           ) : (
