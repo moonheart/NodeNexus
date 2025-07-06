@@ -143,9 +143,16 @@ pub struct FullServerListPush {
 }
 
 #[derive(Serialize, Clone, Debug)]
+pub struct ServiceMonitorUpdate {
+    #[serde(flatten)]
+    pub result_details: ServiceMonitorResultDetails,
+    pub vps_id: i32,
+}
+
+#[derive(Serialize, Clone, Debug)]
 #[serde(tag = "type", content = "data")]
 #[serde(rename_all = "snake_case")]
 pub enum WsMessage {
     FullServerList(FullServerListPush),
-    ServiceMonitorResult(ServiceMonitorResultDetails),
+    ServiceMonitorResult(ServiceMonitorUpdate),
 }

@@ -79,7 +79,7 @@ const HomePage: React.FC = () => {
       }
     };
     fetchTags();
-  }, [isAuthenticated, vpsList]);
+  }, [isAuthenticated]);
 
   const groupFilteredServers = useMemo(() => {
     if (selectedGroup === 'ALL') return vpsList;

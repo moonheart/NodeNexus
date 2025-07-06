@@ -1,11 +1,10 @@
-import React, { useMemo, useEffect, useState, useRef } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend as RechartsLegend } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import { getLatestNMetrics } from '../services/metricsService';
-import { getMonitorResultsByVpsId } from '../services/serviceMonitorService';
 import type { PerformanceMetricPoint, ServiceMonitorResult } from '../types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import websocketService from '../services/websocketService';
+import { useServerListStore, type UnsubscribeFunction } from '../store/serverListStore';
 import { type ChartConfig } from "@/components/ui/chart";
 
 interface VpsMetricsChartProps {
@@ -20,54 +19,63 @@ const ServiceMonitorChart: React.FC<{ vpsId: number }> = ({ vpsId }) => {
   const { t } = useTranslation();
   const [results, setResults] = useState<ServiceMonitorResult[]>([]);
   const [loading, setLoading] = useState(true);
-  const [monitorIds, setMonitorIds] = useState<Set<number>>(new Set());
-  const newResultsBuffer = useRef<ServiceMonitorResult[]>([]);
+  const { getInitialVpsMonitorResults, subscribeToVpsMonitorResults } = useServerListStore();
 
   useEffect(() => {
-    const fetchInitialData = async () => {
+    let isMounted = true;
+    let unsubscribe: UnsubscribeFunction | null = null;
+
+    const setup = async () => {
       try {
         setLoading(true);
-        const data = await getMonitorResultsByVpsId(vpsId, undefined, undefined, 100); // Fetch last 100 points per monitor
-        const sortedData = data.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-        setResults(sortedData);
-        const ids = new Set(data.map(r => r.monitorId));
-        setMonitorIds(ids);
-      } catch (error) {
-        console.error(`Failed to fetch service monitor results:`, error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchInitialData();
-  }, [vpsId]);
+        // Fetch initial data using the new store function
+        const initialData = await getInitialVpsMonitorResults(vpsId, 500);
+        if (!isMounted) return;
 
-  useEffect(() => {
-    const handleNewResult = (result: ServiceMonitorResult) => {
-      if (monitorIds.has(result.monitorId)) {
-        newResultsBuffer.current.push(result);
-      }
-    };
+        setResults(initialData); // The store already sorts it
 
-    websocketService.on('service_monitor_result', handleNewResult);
-    return () => {
-      websocketService.off('service_monitor_result', handleNewResult);
-    };
-  }, [monitorIds]);
+        // Subscribe to updates for this specific VPS
+        unsubscribe = subscribeToVpsMonitorResults(vpsId, (newResults) => {
+          if (!isMounted) return;
+          setResults(prevResults => {
+            // The store now sends an array with a single new result
+            const updated = [...prevResults, ...newResults];
+            
+            // Group by monitor to manage points per monitor
+            const byMonitor = updated.reduce((acc, r) => {
+              if (!acc[r.monitorId]) acc[r.monitorId] = [];
+              acc[r.monitorId].push(r);
+              return acc;
+            }, {} as Record<number, ServiceMonitorResult[]>);
 
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      if (newResultsBuffer.current.length > 0) {
-        setResults(prevResults => {
-          const updatedResults = [...prevResults, ...newResultsBuffer.current]
-            .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-          newResultsBuffer.current = [];
-          return updatedResults.length > 500 ? updatedResults.slice(updatedResults.length - 500) : updatedResults;
+            // Flatten, sort, and slice
+            const final = Object.values(byMonitor).flatMap(monitorResults =>
+              monitorResults
+                .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+                .slice(-100) // Keep the last 100 points
+            );
+            
+            // Final sort by time
+            return final.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+          });
         });
-      }
-    }, 2000); // Update every 2 seconds
 
-    return () => clearInterval(intervalId);
-  }, []);
+      } catch (error) {
+        if (isMounted) console.error(`Failed to fetch or subscribe to service monitor results for VPS ${vpsId}:`, error);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    setup();
+
+    return () => {
+      isMounted = false;
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [vpsId, getInitialVpsMonitorResults, subscribeToVpsMonitorResults]);
 
   const { chartData, monitorLines } = useMemo(() => {
     if (results.length === 0) {

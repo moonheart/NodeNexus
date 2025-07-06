@@ -286,13 +286,16 @@ const VpsDetailPage: React.FC = () => {
       try {
         let results: ServiceMonitorResult[];
         if (selectedTimeRange === 'realtime') {
-          const endTime = new Date();
-          const startTime = new Date(endTime.getTime() - 300 * 1000);
-          results = await getMonitorResultsByVpsId(vpsId, startTime.toISOString(), endTime.toISOString());
+          console.log(`[VpsDetailPage] Fetching REALTIME monitor data for vpsId: ${vpsId} with limit: 300`);
+          // For realtime, fetch the last 300 data points instead of a fixed time window
+          results = await getMonitorResultsByVpsId(vpsId, undefined, undefined, 300);
+          console.log(`[VpsDetailPage] REALTIME monitor data received for vpsId: ${vpsId}`, { count: results.length, results });
         } else {
           const endTime = new Date();
           const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange]);
+          console.log(`[VpsDetailPage] Fetching HISTORICAL monitor data for vpsId: ${vpsId}`, { timeRange: selectedTimeRange, startTime: startTime.toISOString(), endTime: endTime.toISOString() });
           results = await getMonitorResultsByVpsId(vpsId, startTime.toISOString(), endTime.toISOString());
+          console.log(`[VpsDetailPage] HISTORICAL monitor data received for vpsId: ${vpsId}`, { count: results.length, results });
         }
         setMonitorResults(results);
       } catch (err) {

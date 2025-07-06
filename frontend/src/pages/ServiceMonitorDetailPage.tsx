@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getMonitorById, getMonitorResults } from '../services/serviceMonitorService';
+import { useServerListStore } from '../store/serverListStore';
 import type { ServiceMonitor, ServiceMonitorResult } from '../types';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceArea } from 'recharts';
-import websocketService from '../services/websocketService';
 import { ArrowLeft, CheckCircle, XCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -33,7 +33,6 @@ const formatTooltipLabel = (label: string) => new Date(label).toLocaleString([],
 
 const AGENT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F'];
 const MAX_HISTORICAL_POINTS = 300;
-const REALTIME_UPDATE_INTERVAL = 2000; // 2 seconds
 
 const ServiceMonitorDetailPage: React.FC = () => {
   const { monitorId } = useParams<{ monitorId: string }>();
@@ -43,8 +42,7 @@ const ServiceMonitorDetailPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('realtime');
   const [hiddenLines, setHiddenLines] = useState<Record<string, boolean>>({});
-  
-  const newResultsBuffer = useRef<ServiceMonitorResult[]>([]);
+  const { getInitialMonitorResults, subscribeToMonitorResults } = useServerListStore();
 
   const timeRangeToMillis = useMemo(() => ({ '1h': 36e5, '6h': 216e5, '24h': 864e5, '7d': 6048e5 }), []);
 
@@ -75,22 +73,38 @@ const ServiceMonitorDetailPage: React.FC = () => {
 
   useEffect(() => {
     if (!monitorId) return;
+    const monitorIdNum = parseInt(monitorId, 10);
 
-    const fetchInitialData = async () => {
+    let unsubscribe: () => void;
+
+    const setupSubscription = async () => {
       try {
         setIsLoading(true);
-        const monitorData = await getMonitorById(parseInt(monitorId, 10));
+        
+        // Fetch monitor details separately
+        const monitorData = await getMonitorById(monitorIdNum);
         setMonitor(monitorData);
 
-        let resultsData: ServiceMonitorResult[];
+        // Handle data fetching based on time range
         if (selectedTimeRange === 'realtime') {
-          resultsData = await getMonitorResults(parseInt(monitorId, 10), undefined, undefined, 500); // Fetch more for interpolation buffer
+            // Get initial data from the store (which fetches if not cached)
+            const initialResults = await getInitialMonitorResults(monitorIdNum, 500);
+            setResults(initialResults);
+
+            // Subscribe to live updates
+            unsubscribe = subscribeToMonitorResults(monitorIdNum, (updatedResults) => {
+                setResults(updatedResults);
+            });
         } else {
-          const endTime = new Date();
-          const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange as Exclude<TimeRangeOption, 'realtime'>]);
-          resultsData = await getMonitorResults(parseInt(monitorId, 10), startTime.toISOString(), endTime.toISOString());
+            // For historical data, we can still use a direct fetch for now,
+            // or enhance the store to handle time-ranged queries.
+            // For simplicity, we'll stick to the direct fetch for non-realtime views.
+            const endTime = new Date();
+            const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange as Exclude<TimeRangeOption, 'realtime'>]);
+            const historicalResults = await getMonitorResults(monitorIdNum, startTime.toISOString(), endTime.toISOString());
+            setResults(historicalResults.sort((a: ServiceMonitorResult, b: ServiceMonitorResult) => new Date(a.time).getTime() - new Date(b.time).getTime()));
         }
-        setResults(resultsData.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()));
+
         setError(null);
       } catch (err) {
         setError('无法获取监控详情。');
@@ -100,40 +114,15 @@ const ServiceMonitorDetailPage: React.FC = () => {
       }
     };
 
-    fetchInitialData();
-  }, [monitorId, selectedTimeRange, timeRangeToMillis]);
+    setupSubscription();
 
-  useEffect(() => {
-    if (!monitorId || selectedTimeRange !== 'realtime') return;
-
-    const handleNewResult = (result: ServiceMonitorResult) => {
-      if (result.monitorId !== parseInt(monitorId, 10)) return;
-      newResultsBuffer.current.push(result);
-    };
-
-    websocketService.on('service_monitor_result', handleNewResult);
+    // Cleanup function
     return () => {
-      websocketService.off('service_monitor_result', handleNewResult);
-    };
-  }, [monitorId, selectedTimeRange]);
-
-  useEffect(() => {
-    if (selectedTimeRange !== 'realtime') return;
-
-    const intervalId = setInterval(() => {
-      if (newResultsBuffer.current.length > 0) {
-        setResults(prevResults => {
-          const updatedResults = [...prevResults, ...newResultsBuffer.current]
-            .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-          newResultsBuffer.current = [];
-          // Keep a reasonable buffer size
-          return updatedResults.length > 1000 ? updatedResults.slice(updatedResults.length - 1000) : updatedResults;
-        });
+      if (unsubscribe) {
+        unsubscribe();
       }
-    }, REALTIME_UPDATE_INTERVAL);
-
-    return () => clearInterval(intervalId);
-  }, [selectedTimeRange]);
+    };
+  }, [monitorId, selectedTimeRange, timeRangeToMillis, getInitialMonitorResults, subscribeToMonitorResults]);
 
   const chartData = useMemo(() => {
     if (!results || results.length === 0) {

@@ -446,6 +446,32 @@ pub async fn get_tasks_for_agent(
     db: &DatabaseConnection,
     vps_id: i32,
 ) -> Result<Vec<ServiceMonitorTask>, DbErr> {
+    let monitors = get_runnable_monitors_for_vps(db, vps_id).await?;
+    let tasks = monitors
+        .into_iter()
+        .map(|monitor| ServiceMonitorTask {
+            monitor_id: monitor.id,
+            name: monitor.name,
+            monitor_type: monitor.monitor_type,
+            target: monitor.target,
+            frequency_seconds: monitor.frequency_seconds,
+            monitor_config_json: monitor
+                .monitor_config
+                .as_ref()
+                .map_or_else(|| "{}".to_string(), |json| json.to_string()),
+            timeout_seconds: monitor.timeout_seconds,
+        })
+        .collect();
+    Ok(tasks)
+}
+
+/// A helper function that determines which monitors a VPS should be running,
+/// considering direct and tag-based assignments with INCLUSIVE/EXCLUSIVE logic.
+/// This returns the full monitor models.
+pub async fn get_runnable_monitors_for_vps(
+    db: &DatabaseConnection,
+    vps_id: i32,
+) -> Result<Vec<service_monitor::Model>, DbErr> {
     // 1. Get user_id for the vps to scope the monitors
     let vps = Vps::find_by_id(vps_id)
         .one(db)
@@ -502,9 +528,9 @@ pub async fn get_tasks_for_agent(
     let vps_tag_ids: HashSet<i32> = vps_tags.into_iter().map(|t| t.tag_id).collect();
 
     // 5. Filter monitors based on assignment logic
-    let tasks = all_active_monitors
+    let runnable_monitors = all_active_monitors
         .into_iter()
-        .filter_map(|monitor| {
+        .filter(|monitor| {
             let empty_set = HashSet::new();
             let assigned_agents = monitor_agent_assignments
                 .get(&monitor.id)
@@ -516,35 +542,19 @@ pub async fn get_tasks_for_agent(
             let is_directly_assigned = assigned_agents.contains(&vps_id);
             let has_assigned_tag = !vps_tag_ids.is_disjoint(assigned_tags);
 
-            let should_run = if monitor.assignment_type == "EXCLUSIVE" {
+            if monitor.assignment_type == "EXCLUSIVE" {
                 // For EXCLUSIVE, run if NOT assigned directly and NOT assigned via tag
                 !is_directly_assigned && !has_assigned_tag
             } else {
                 // For INCLUSIVE, run if assigned directly OR via tag
                 is_directly_assigned || has_assigned_tag
-            };
-
-            if should_run {
-                Some(ServiceMonitorTask {
-                    monitor_id: monitor.id,
-                    name: monitor.name,
-                    monitor_type: monitor.monitor_type,
-                    target: monitor.target,
-                    frequency_seconds: monitor.frequency_seconds,
-                    monitor_config_json: monitor
-                        .monitor_config
-                        .as_ref()
-                        .map_or_else(|| "{}".to_string(), |json| json.to_string()),
-                    timeout_seconds: monitor.timeout_seconds,
-                })
-            } else {
-                None
             }
         })
         .collect();
 
-    Ok(tasks)
+    Ok(runnable_monitors)
 }
+
 /// Given a monitor ID, finds all VPS IDs that should be running this monitor.
 ///
 /// This is determined by looking at both direct agent assignments and tag-based assignments.
@@ -701,63 +711,52 @@ pub async fn get_monitor_results_by_id(
 pub async fn get_monitor_results_by_vps_id(
     db: &DatabaseConnection,
     vps_id: i32,
-    user_id: i32,
+    _user_id: i32,
     start_time: Option<DateTime<Utc>>,
     end_time: Option<DateTime<Utc>>,
     limit_per_monitor: Option<u64>,
 ) -> Result<Vec<ServiceMonitorResultDetails>, DbErr> {
-    // 1. Get all monitors associated with the VPS for the user
-    let monitors = get_monitors_for_vps(db, vps_id).await?;
+    // 1. Get all monitors associated with the VPS and owned by the user
+    let user_monitors = get_runnable_monitors_for_vps(db, vps_id).await?;
 
-    if monitors.is_empty() {
+    if user_monitors.is_empty() {
         return Ok(Vec::new());
     }
 
-    // Filter monitors by user_id to ensure authorization
-    let monitor_ids: Vec<i32> = monitors
-        .into_iter()
-        .filter(|m| m.user_id == user_id)
-        .map(|m| m.id)
-        .collect();
+    let monitor_name_map: HashMap<i32, String> =
+        user_monitors.iter().map(|m| (m.id, m.name.clone())).collect();
 
-    if monitor_ids.is_empty() {
-        return Ok(Vec::new());
+    // 2. Fetch results for each monitor individually
+    let mut all_results = Vec::new();
+    for monitor in &user_monitors {
+        let mut query = service_monitor_result::Entity::find()
+            .filter(service_monitor_result::Column::MonitorId.eq(monitor.id))
+            .filter(service_monitor_result::Column::AgentId.eq(vps_id));
+
+        if let Some(start) = start_time {
+            query = query.filter(service_monitor_result::Column::Time.gte(start));
+        }
+        if let Some(end) = end_time {
+            query = query.filter(service_monitor_result::Column::Time.lte(end));
+        }
+        if let Some(limit_val) = limit_per_monitor {
+            query = query.limit(limit_val);
+        }
+
+        let results_for_monitor = query
+            .order_by_desc(service_monitor_result::Column::Time)
+            .all(db)
+            .await?;
+
+        all_results.extend(results_for_monitor);
     }
 
-    // 2. Fetch results for these monitors
-    // Create a map of monitor_id to monitor_name for easy lookup
-    let monitor_name_map: HashMap<i32, String> = get_monitors_for_vps(db, vps_id)
-        .await?
-        .into_iter()
-        .map(|m| (m.id, m.name))
-        .collect();
-
-    // 2. Fetch results for these monitors
-    let mut query = service_monitor_result::Entity::find()
-        .filter(service_monitor_result::Column::MonitorId.is_in(monitor_ids));
-
-    if let Some(start) = start_time {
-        query = query.filter(service_monitor_result::Column::Time.gte(start));
-    }
-    if let Some(end) = end_time {
-        query = query.filter(service_monitor_result::Column::Time.lte(end));
-    }
-
-    if let Some(limit_val) = limit_per_monitor {
-        query = query.limit(limit_val);
-    }
-
-    let results = query
-        .order_by_desc(service_monitor_result::Column::Time)
-        .all(db)
-        .await?;
-
-    if results.is_empty() {
+    if all_results.is_empty() {
         return Ok(Vec::new());
     }
 
     // 3. Get agent names (which are VPS names)
-    let agent_ids: Vec<i32> = results
+    let agent_ids: Vec<i32> = all_results
         .iter()
         .map(|r| r.agent_id)
         .collect::<std::collections::HashSet<_>>()
@@ -770,7 +769,7 @@ pub async fn get_monitor_results_by_vps_id(
     let agent_name_map: HashMap<i32, String> = agents.into_iter().map(|a| (a.id, a.name)).collect();
 
     // 4. Construct the detailed response
-    let result_details = results
+    let result_details: Vec<ServiceMonitorResultDetails> = all_results
         .into_iter()
         .map(|result| {
             let agent_name = agent_name_map

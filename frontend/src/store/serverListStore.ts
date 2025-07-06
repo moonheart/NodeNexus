@@ -4,6 +4,27 @@ import websocketService from '../services/websocketService';
 import { useAuthStore } from './authStore';
 import type { VpsListItemResponse, FullServerListPushType, ViewMode, Tag, ServiceMonitorResult } from '../types';
 import * as tagService from '../services/tagService';
+import { getMonitorResultsByVpsId } from '../services/serviceMonitorService';
+
+// --- Service Monitor Pub/Sub System (Per VPS) ---
+// This system lives outside the Zustand state to avoid causing re-renders on data updates.
+// Components will subscribe to updates for a specific VPS and manage their own state.
+
+type VpsMonitorResultCallback = (results: ServiceMonitorResult[]) => void;
+type MonitorResultCallback = (results: ServiceMonitorResult[]) => void; // For monitor-specific page
+export type UnsubscribeFunction = () => void;
+
+// Cache to hold monitor results. Key is vpsId.
+const vpsMonitorResultsCache: Record<number, ServiceMonitorResult[]> = {};
+// Listeners for monitor updates. Key is vpsId.
+const vpsMonitorResultListeners: Record<number, Set<VpsMonitorResultCallback>> = {};
+const isFetchingInitialVpsData: Record<number, boolean> = {};
+
+// --- Legacy Pub/Sub for ServiceMonitorDetailPage ---
+const monitorResultsCache: Record<number, ServiceMonitorResult[]> = {};
+const monitorResultListeners: Record<number, Set<MonitorResultCallback>> = {};
+const isFetchingInitialData: Record<number, boolean> = {};
+
 
 export type ConnectionStatus =
     | 'disconnected'
@@ -25,6 +46,17 @@ export interface ServerListState { // Added export
     setViewMode: (mode: ViewMode) => void;
     init: () => void; // New action to start listening to auth changes
     disconnectWebSocket: () => void;
+
+    // Service Monitor Pub/Sub Actions (per VPS for homepage)
+    subscribeToVpsMonitorResults: (vpsId: number, callback: VpsMonitorResultCallback) => UnsubscribeFunction;
+    getInitialVpsMonitorResults: (vpsId: number, limit?: number) => Promise<ServiceMonitorResult[]>;
+    clearVpsMonitorResults: () => void;
+
+    // Service Monitor Pub/Sub Actions (per Monitor for detail page)
+    subscribeToMonitorResults: (monitorId: number, callback: MonitorResultCallback) => UnsubscribeFunction;
+    getInitialMonitorResults: (monitorId: number, limit?: number) => Promise<ServiceMonitorResult[]>;
+    clearMonitorResults: () => void;
+
     // Internal actions
     _initializeWebSocket: (isAuthenticated: boolean) => void;
     _handleWebSocketOpen: () => void;
@@ -45,6 +77,100 @@ export const useServerListStore = create<ServerListState>()(
       viewMode: 'card', // Default view mode
       allTags: [],
       isInitialized: false,
+
+    // --- Service Monitor Pub/Sub Implementation (Per VPS) ---
+    subscribeToVpsMonitorResults: (vpsId, callback) => {
+        if (!vpsMonitorResultListeners[vpsId]) {
+            vpsMonitorResultListeners[vpsId] = new Set();
+        }
+        vpsMonitorResultListeners[vpsId].add(callback);
+
+        // Return an unsubscribe function
+        return () => {
+            vpsMonitorResultListeners[vpsId]?.delete(callback);
+            if (vpsMonitorResultListeners[vpsId]?.size === 0) {
+                delete vpsMonitorResultListeners[vpsId];
+                // Optional: also clear cache for this vpsId if no longer needed
+                // delete vpsMonitorResultsCache[vpsId];
+            }
+        };
+    },
+
+    getInitialVpsMonitorResults: async (vpsId, limit = 500) => {
+        if (vpsMonitorResultsCache[vpsId]) {
+            return vpsMonitorResultsCache[vpsId];
+        }
+
+        if (isFetchingInitialVpsData[vpsId]) {
+            // Avoid race conditions where multiple components request the same data simultaneously
+            await new Promise(resolve => setTimeout(resolve, 100)); // simple wait
+            return get().getInitialVpsMonitorResults(vpsId, limit); // retry
+        }
+
+        try {
+            isFetchingInitialVpsData[vpsId] = true;
+            // Use the new service function to fetch by VPS ID
+            const results = await getMonitorResultsByVpsId(vpsId, undefined, undefined, limit);
+            const sortedResults = results.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+            vpsMonitorResultsCache[vpsId] = sortedResults;
+            return sortedResults;
+        } catch (error) {
+            console.error(`Failed to get initial monitor results for VPS ${vpsId}:`, error);
+            return []; // Return empty array on error
+        } finally {
+            isFetchingInitialVpsData[vpsId] = false;
+        }
+    },
+    
+    clearVpsMonitorResults: () => {
+        Object.keys(vpsMonitorResultsCache).forEach(key => delete vpsMonitorResultsCache[Number(key)]);
+        Object.keys(vpsMonitorResultListeners).forEach(key => delete vpsMonitorResultListeners[Number(key)]);
+        console.log('Cleared all VPS service monitor caches and listeners.');
+    },
+
+    // --- Legacy Pub/Sub Implementation for ServiceMonitorDetailPage ---
+    subscribeToMonitorResults: (monitorId, callback) => {
+        if (!monitorResultListeners[monitorId]) {
+            monitorResultListeners[monitorId] = new Set();
+        }
+        monitorResultListeners[monitorId].add(callback);
+
+        return () => {
+            monitorResultListeners[monitorId]?.delete(callback);
+            if (monitorResultListeners[monitorId]?.size === 0) {
+                delete monitorResultListeners[monitorId];
+            }
+        };
+    },
+
+    getInitialMonitorResults: async (monitorId, limit = 500) => {
+        if (monitorResultsCache[monitorId]) {
+            return monitorResultsCache[monitorId];
+        }
+        if (isFetchingInitialData[monitorId]) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            return get().getInitialMonitorResults(monitorId, limit);
+        }
+        try {
+            isFetchingInitialData[monitorId] = true;
+            const results = await getMonitorResultsByVpsId(monitorId, undefined, undefined, limit); // Note: This is a slight misuse, but works for the detail page
+            const sortedResults = results.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+            monitorResultsCache[monitorId] = sortedResults;
+            return sortedResults;
+        } catch (error) {
+            console.error(`Failed to get initial monitor results for monitor ${monitorId}:`, error);
+            return [];
+        } finally {
+            isFetchingInitialData[monitorId] = false;
+        }
+    },
+
+    clearMonitorResults: () => {
+        Object.keys(monitorResultsCache).forEach(key => delete monitorResultsCache[Number(key)]);
+        Object.keys(monitorResultListeners).forEach(key => delete monitorResultListeners[Number(key)]);
+        console.log('Cleared all service monitor caches and listeners.');
+    },
+
 
     fetchAllTags: async () => {
         try {
@@ -135,6 +261,10 @@ export const useServerListStore = create<ServerListState>()(
       websocketService.off('close', get()._handleWebSocketClose);
       websocketService.off('error', get()._handleWebSocketError);
       websocketService.off('permanent_failure', get()._handleWebSocketPermanentFailure);
+      
+      // Clean up monitor data on disconnect
+      get().clearVpsMonitorResults();
+      get().clearMonitorResults();
 
       set({ connectionStatus: 'disconnected' });
     },
@@ -152,8 +282,47 @@ export const useServerListStore = create<ServerListState>()(
     },
 
     _handleServiceMonitorResult: (data) => {
-        // This is handled by the detail page, but we could add logic here if needed globally.
-        console.log('Received service monitor result in store:', data.monitorId);
+        // Use agentId as the key for routing, as per user feedback.
+        const vpsId = data.agentId;
+
+        if (vpsId === undefined) {
+            console.warn('Received service monitor result without an agentId. Ignoring.', data);
+            return;
+        }
+        
+        // Update cache for the specific VPS (keyed by agentId)
+        if (!vpsMonitorResultsCache[vpsId]) {
+            vpsMonitorResultsCache[vpsId] = [];
+        }
+        vpsMonitorResultsCache[vpsId].push(data);
+
+        // Keep cache size reasonable
+        const CACHE_MAX_SIZE = 1000;
+        if (vpsMonitorResultsCache[vpsId].length > CACHE_MAX_SIZE) {
+            vpsMonitorResultsCache[vpsId] = vpsMonitorResultsCache[vpsId].slice(-CACHE_MAX_SIZE);
+        }
+
+        // Notify listeners subscribed to this specific vpsId (agentId)
+        if (vpsMonitorResultListeners[vpsId]) {
+            vpsMonitorResultListeners[vpsId].forEach(callback => {
+                callback([data]); // Pass new result as an array
+            });
+        }
+
+        // Also notify legacy listeners for the detail page (keyed by monitorId)
+        const { monitorId } = data;
+        if (monitorResultListeners[monitorId]) {
+            if (!monitorResultsCache[monitorId]) {
+                monitorResultsCache[monitorId] = [];
+            }
+            monitorResultsCache[monitorId].push(data);
+            if (monitorResultsCache[monitorId].length > CACHE_MAX_SIZE) {
+                monitorResultsCache[monitorId] = monitorResultsCache[monitorId].slice(-CACHE_MAX_SIZE);
+            }
+            monitorResultListeners[monitorId].forEach(callback => {
+                callback(monitorResultsCache[monitorId]);
+            });
+        }
     },
 
     _handleWebSocketClose: ({ isIntentional, event }) => {

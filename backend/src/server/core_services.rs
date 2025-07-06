@@ -360,8 +360,12 @@ pub async fn process_agent_stream<S>(
                                         if let Ok(mut details_vec) = details {
                                             if let Some(detail) = details_vec.pop() {
                                                 if ws_data_broadcaster_tx.receiver_count() > 0 {
+                                                    let update = crate::web::models::websocket_models::ServiceMonitorUpdate {
+                                                        result_details: detail,
+                                                        vps_id: vps_db_id_from_msg,
+                                                    };
                                                     let message =
-                                                        WsMessage::ServiceMonitorResult(detail);
+                                                        WsMessage::ServiceMonitorResult(update);
                                                     if let Err(e) =
                                                         ws_data_broadcaster_tx.send(message)
                                                     {
