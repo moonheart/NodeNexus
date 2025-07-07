@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import EditVpsModal from '../components/EditVpsModal';
 import CreateVpsModal from '../components/CreateVpsModal';
@@ -41,6 +41,8 @@ interface ServerManagementPageStateSlice {
     isLoading: boolean;
     error: string | null;
     connectionStatus: ConnectionStatus;
+    allTags: Tag[];
+    fetchAllTags: () => Promise<void>;
 }
 
 const selectServerManagementPageData = (state: ServerListState): ServerManagementPageStateSlice => ({
@@ -48,14 +50,21 @@ const selectServerManagementPageData = (state: ServerListState): ServerManagemen
     isLoading: state.isLoading,
     error: state.error,
     connectionStatus: state.connectionStatus,
+    allTags: state.allTags,
+    fetchAllTags: state.fetchAllTags,
 });
 
+interface EditingModalData {
+    vps: VpsListItemResponse;
+    groupOptions: { value: string; label: string }[];
+    tagOptions: { id: number; name: string; color: string }[];
+}
 
 const ServerManagementPage: React.FC = () => {
     const { t } = useTranslation();
     const [isCreateVpsModalOpen, setIsCreateVpsModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [editingVps, setEditingVps] = useState<VpsListItemResponse | null>(null);
+    const [editingModalData, setEditingModalData] = useState<EditingModalData | null>(null);
     const [vpsForCommand, setVpsForCommand] = useState<VpsListItemResponse | null>(null);
     const [isCopyCommandModalOpen, setIsCopyCommandModalOpen] = useState(false);
     const [selectedGroup, setSelectedGroup] = useState<string>('ALL');
@@ -71,10 +80,12 @@ const ServerManagementPage: React.FC = () => {
         isLoading: isLoadingServers,
         error: wsError,
         connectionStatus,
+        allTags,
+        fetchAllTags,
     } = useServerListStore(useShallow(selectServerManagementPageData));
 
     useEffect(() => {
-        const fetchTags = async () => {
+        const fetchInitialTags = async () => {
             try {
                 const tags = await tagService.getTags();
                 setAvailableTags(tags);
@@ -83,8 +94,9 @@ const ServerManagementPage: React.FC = () => {
                 toast.error(t('serverManagement.notifications.fetchTagsFailed'));
             }
         };
-        fetchTags();
-    }, [t]);
+        fetchInitialTags();
+        fetchAllTags();
+    }, [t, fetchAllTags]);
 
     const groupFilteredServers = useMemo(() => {
         if (selectedGroup === 'ALL') return vpsList;
@@ -108,10 +120,20 @@ const ServerManagementPage: React.FC = () => {
         handleOpenCopyCommandModal(vpsForCommand);
     };
 
-    const handleOpenEditModal = (server: VpsListItemResponse) => {
-        setEditingVps(server);
+    const handleOpenEditModal = useCallback((server: VpsListItemResponse) => {
+        // Fire and forget to refresh tags in the background for the next time
+        fetchAllTags();
+        const allGroups = new Set(vpsList.map(v => v.group).filter((g): g is string => !!g));
+        const groupOptions = [...allGroups].map(g => ({ value: g, label: g }));
+        const tagOptions = allTags.map(t => ({ id: t.id, name: t.name, color: t.color }));
+
+        setEditingModalData({
+            vps: server,
+            groupOptions,
+            tagOptions,
+        });
         setIsEditModalOpen(true);
-    };
+    }, [vpsList, allTags, fetchAllTags]);
 
     const handleOpenCopyCommandModal = async (server: VpsListItemResponse) => {
         try {
@@ -124,14 +146,14 @@ const ServerManagementPage: React.FC = () => {
         }
     };
 
-    const handleCloseEditModal = () => {
+    const handleCloseEditModal = useCallback(() => {
         setIsEditModalOpen(false);
-        setEditingVps(null);
-    };
+        setEditingModalData(null);
+    }, []);
 
-    const handleVpsUpdated = () => {
+    const handleVpsUpdated = useCallback(() => {
         handleCloseEditModal();
-    };
+    }, [handleCloseEditModal]);
 
     const handleCloseCopyCommandModal = () => {
         setIsCopyCommandModalOpen(false);
@@ -203,7 +225,16 @@ const ServerManagementPage: React.FC = () => {
                 </Button>
             </div>
             <CreateVpsModal isOpen={isCreateVpsModalOpen} onClose={handleCloseCreateVpsModal} onVpsCreated={handleVpsCreated} />
-            <EditVpsModal isOpen={isEditModalOpen} onClose={handleCloseEditModal} vps={editingVps} allVps={vpsList} onVpsUpdated={handleVpsUpdated} />
+            {editingModalData && (
+                <EditVpsModal
+                    isOpen={isEditModalOpen}
+                    onClose={handleCloseEditModal}
+                    vps={editingModalData.vps}
+                    groupOptions={editingModalData.groupOptions}
+                    tagOptions={editingModalData.tagOptions}
+                    onVpsUpdated={handleVpsUpdated}
+                />
+            )}
             <CopyCommandModal isOpen={isCopyCommandModalOpen} onClose={handleCloseCopyCommandModal} vps={vpsForCommand} />
 
             {statusMessage && <div className={`p-3 rounded-md text-sm text-center ${connectionStatus === 'error' || connectionStatus === 'permanently_failed' ? 'bg-destructive/10 text-destructive' : 'bg-warning text-warning'}`}>{statusMessage}</div>}

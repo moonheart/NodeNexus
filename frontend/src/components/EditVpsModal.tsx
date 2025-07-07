@@ -6,7 +6,6 @@ import * as z from 'zod';
 import { updateVps } from '../services/vpsService';
 import type { VpsListItemResponse } from '../types';
 import axios from 'axios';
-import { useServerListStore } from '../store/serverListStore';
 import { toast } from 'react-hot-toast';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -80,20 +79,19 @@ const getFormSchema = (t: (key: string) => string) => z.object({
 
 
 type FormValues = z.infer<ReturnType<typeof getFormSchema>>;
+type TagOption = { id: number; name: string; color: string };
 
 interface EditVpsModalProps {
   isOpen: boolean;
   onClose: () => void;
   vps: VpsListItemResponse | null;
-  allVps: VpsListItemResponse[];
+  groupOptions: { value: string; label: string }[];
+  tagOptions: TagOption[];
   onVpsUpdated: () => void;
 }
 
-const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, allVps, onVpsUpdated }) => {
+const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, groupOptions, tagOptions, onVpsUpdated }) => {
   const { t } = useTranslation();
-  const allTags = useServerListStore((state) => state.allTags);
-  const fetchAllTags = useServerListStore((state) => state.fetchAllTags);
-
   const formSchema = useMemo(() => getFormSchema(t), [t]);
 
   const form = useForm<FormValues>({
@@ -103,44 +101,32 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, allVp
 
   const { handleSubmit, control, reset, watch, setValue } = form;
 
-  const groupOptions = useMemo(() => {
-    const allGroups = new Set(allVps.map(v => v.group).filter((g): g is string => !!g));
-    return [...allGroups].map(g => ({ value: g, label: g }));
-  }, [allVps]);
-
-  const tagOptions = useMemo(() => {
-    return allTags.map(tag => ({ id: tag.id, name: tag.name, color: tag.color }));
-  }, [allTags]);
-
   useEffect(() => {
-    if (isOpen) {
-      fetchAllTags();
-      if (vps) {
-        const { value: trafficValue, unit: trafficUnit } = vps.trafficLimitBytes ? bytesToOptimalUnit(vps.trafficLimitBytes) : { value: '', unit: 'GB' };
-        reset({
-          name: vps.name || '',
-          group: vps.group || null,
-          tagIds: vps.tags ? vps.tags.map(t => t.id) : [],
-          trafficLimitInput: trafficValue.toString(),
-          trafficLimitUnit: trafficUnit,
-          trafficBillingRule: vps.trafficBillingRule || null,
-          trafficResetConfigType: vps.trafficResetConfigType || null,
-          trafficResetConfigValue: vps.trafficResetConfigValue || null,
-          nextTrafficResetAt: vps.nextTrafficResetAt ? new Date(vps.nextTrafficResetAt) : null,
-          renewalCycle: vps.renewalCycle || null,
-          renewalCycleCustomDays: vps.renewalCycleCustomDays?.toString() || null,
-          renewalPrice: vps.renewalPrice?.toString() || null,
-          renewalCurrency: vps.renewalCurrency || null,
-          nextRenewalDate: vps.nextRenewalDate ? new Date(vps.nextRenewalDate) : null,
-          lastRenewalDate: vps.lastRenewalDate ? new Date(vps.lastRenewalDate) : null,
-          serviceStartDate: vps.serviceStartDate ? new Date(vps.serviceStartDate) : null,
-          paymentMethod: vps.paymentMethod || null,
-          autoRenewEnabled: vps.autoRenewEnabled || false,
-          renewalNotes: vps.renewalNotes || null,
-        });
-      }
+    if (isOpen && vps) {
+      const { value: trafficValue, unit: trafficUnit } = vps.trafficLimitBytes ? bytesToOptimalUnit(vps.trafficLimitBytes) : { value: '', unit: 'GB' };
+      reset({
+        name: vps.name || '',
+        group: vps.group || null,
+        tagIds: vps.tags ? vps.tags.map(t => t.id) : [],
+        trafficLimitInput: trafficValue.toString(),
+        trafficLimitUnit: trafficUnit,
+        trafficBillingRule: vps.trafficBillingRule || null,
+        trafficResetConfigType: vps.trafficResetConfigType || null,
+        trafficResetConfigValue: vps.trafficResetConfigValue || null,
+        nextTrafficResetAt: vps.nextTrafficResetAt ? new Date(vps.nextTrafficResetAt) : null,
+        renewalCycle: vps.renewalCycle || null,
+        renewalCycleCustomDays: vps.renewalCycleCustomDays?.toString() || null,
+        renewalPrice: vps.renewalPrice?.toString() || null,
+        renewalCurrency: vps.renewalCurrency || null,
+        nextRenewalDate: vps.nextRenewalDate ? new Date(vps.nextRenewalDate) : null,
+        lastRenewalDate: vps.lastRenewalDate ? new Date(vps.lastRenewalDate) : null,
+        serviceStartDate: vps.serviceStartDate ? new Date(vps.serviceStartDate) : null,
+        paymentMethod: vps.paymentMethod || null,
+        autoRenewEnabled: vps.autoRenewEnabled || false,
+        renewalNotes: vps.renewalNotes || null,
+      });
     }
-  }, [isOpen, vps, reset, fetchAllTags]);
+  }, [isOpen, vps, reset]);
   
   const trafficResetConfigType = watch('trafficResetConfigType');
   const nextTrafficResetAt = watch('nextTrafficResetAt');
@@ -255,7 +241,7 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, allVp
     );
   };
 
-  const MultiSelectPopover = ({ field, options, placeholder }: { field: ControllerRenderProps<FormValues, 'tagIds'>, options: {id: number, name: string, color: string}[], placeholder: string }) => {
+  const MultiSelectPopover = ({ field, options, placeholder }: { field: ControllerRenderProps<FormValues, 'tagIds'>, options: TagOption[], placeholder: string }) => {
     return (
       <Popover>
         <PopoverTrigger asChild>
@@ -480,4 +466,4 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, allVp
   );
 };
 
-export default EditVpsModal;
+export default React.memo(EditVpsModal);

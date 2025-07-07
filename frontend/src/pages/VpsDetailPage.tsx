@@ -142,10 +142,12 @@ const VpsDetailPage: React.FC = () => {
   const { vpsId } = useParams<{ vpsId: string }>();
   const { isAuthenticated } = useAuthStore();
 
-  const { servers, connectionStatus, isLoading } = useServerListStore(useShallow(state => ({
+  const { servers, connectionStatus, isLoading, allTags, fetchAllTags } = useServerListStore(useShallow(state => ({
     servers: state.servers,
     connectionStatus: state.connectionStatus,
     isLoading: state.isLoading,
+    allTags: state.allTags,
+    fetchAllTags: state.fetchAllTags,
   })));
 
   const vpsDetail = useMemo(() => {
@@ -167,6 +169,11 @@ const VpsDetailPage: React.FC = () => {
   }, []);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingModalData, setEditingModalData] = useState<{
+    vps: VpsListItemResponse;
+    groupOptions: { value: string; label: string }[];
+    tagOptions: { id: number; name: string; color: string }[];
+  } | null>(null);
   const [isDismissingReminder, setIsDismissingReminder] = useState(false);
   const [dismissReminderError, setDismissReminderError] = useState<string | null>(null);
   const [dismissReminderSuccess, setDismissReminderSuccess] = useState<string | null>(null);
@@ -175,10 +182,35 @@ const VpsDetailPage: React.FC = () => {
   const [loadingMonitors, setLoadingMonitors] = useState(true);
   const [monitorError, setMonitorError] = useState<string | null>(null);
 
-  const handleVpsUpdated = () => {
+  const handleVpsUpdated = useCallback(() => {
     console.log('VPS updated, store should refresh via WebSocket.');
     setIsEditModalOpen(false);
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchAllTags();
+  }, [fetchAllTags]);
+
+  const handleOpenEditModal = useCallback(() => {
+    if (!vpsDetail) return;
+    // Fire and forget to refresh tags in the background for the next time
+    fetchAllTags();
+    const allGroups = new Set(servers.map(v => v.group).filter((g): g is string => !!g));
+    const groupOptions = [...allGroups].map(g => ({ value: g, label: g }));
+    const tagOptions = allTags.map(t => ({ id: t.id, name: t.name, color: t.color }));
+
+    setEditingModalData({
+        vps: vpsDetail,
+        groupOptions,
+        tagOptions,
+    });
+    setIsEditModalOpen(true);
+  }, [servers, vpsDetail, allTags, fetchAllTags]);
+
+  const handleCloseEditModal = useCallback(() => {
+    setIsEditModalOpen(false);
+    setEditingModalData(null);
+  }, []);
 
   const handleDismissReminder = async () => {
     if (!vpsDetail || !vpsDetail.id) return;
@@ -386,8 +418,15 @@ const VpsDetailPage: React.FC = () => {
 
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-6">
-      {isAuthenticated && vpsDetail && (
-        <EditVpsModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} vps={vpsDetail as VpsListItemResponse} allVps={servers} onVpsUpdated={handleVpsUpdated} />
+      {isAuthenticated && editingModalData && (
+        <EditVpsModal
+          isOpen={isEditModalOpen}
+          onClose={handleCloseEditModal}
+          vps={editingModalData.vps}
+          groupOptions={editingModalData.groupOptions}
+          tagOptions={editingModalData.tagOptions}
+          onVpsUpdated={handleVpsUpdated}
+        />
       )}
 
       <Card>
@@ -407,7 +446,7 @@ const VpsDetailPage: React.FC = () => {
             </Badge>
             <div className="flex items-center space-x-2 justify-end">
               {isAuthenticated && (
-                <Button variant="outline" size="sm" onClick={() => setIsEditModalOpen(true)}>
+                <Button variant="outline" size="sm" onClick={handleOpenEditModal}>
                   <Pencil className="w-4 h-4 mr-1.5" /> 编辑
                 </Button>
               )}
