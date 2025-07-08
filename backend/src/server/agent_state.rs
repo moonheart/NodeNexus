@@ -88,7 +88,7 @@ impl Sink<MessageToAgent> for AgentSender {
 #[derive(Clone)]
 pub struct AgentState {
     pub agent_id: String,
-    pub last_heartbeat_ms: i64,
+    pub last_seen_ms: i64,
     pub config: AgentConfig,
     pub vps_db_id: i32,
     pub sender: AgentSender,
@@ -102,7 +102,7 @@ impl fmt::Debug for AgentState {
         };
         f.debug_struct("AgentState")
             .field("agent_id", &self.agent_id)
-            .field("last_heartbeat_ms", &self.last_heartbeat_ms)
+            .field("last_seen_ms", &self.last_seen_ms)
             .field("config", &self.config)
             .field("vps_db_id", &self.vps_db_id)
             .field("sender_type", &sender_type)

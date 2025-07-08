@@ -255,10 +255,6 @@ pub async fn get_effective_vps_config(
         if !override_config.log_level.is_empty() {
             effective_config.log_level = override_config.log_level;
         }
-        if override_config.heartbeat_interval_seconds > 0 {
-            effective_config.heartbeat_interval_seconds =
-                override_config.heartbeat_interval_seconds;
-        }
         effective_config
             .feature_flags
             .extend(override_config.feature_flags);

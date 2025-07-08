@@ -111,7 +111,6 @@ pub async fn process_agent_stream<S>(
                             generic_metrics_upload_interval_seconds: 1,
                             feature_flags: std::collections::HashMap::new(),
                             log_level: "INFO".to_string(),
-                            heartbeat_interval_seconds: 30,
                             service_monitor_tasks: tasks,
                         };
 
@@ -141,7 +140,7 @@ pub async fn process_agent_stream<S>(
 
                         let agent_state = AgentState {
                             agent_id: assigned_agent_id.clone(),
-                            last_heartbeat_ms: Utc::now().timestamp_millis(),
+                            last_seen_ms: Utc::now().timestamp_millis(),
                             config: initial_config.clone(),
                             vps_db_id: vps_db_id_from_msg,
                             sender: agent_sender
@@ -208,23 +207,17 @@ pub async fn process_agent_stream<S>(
                     }
 
                     if let Some(session_id) = &current_session_agent_id {
+                        // Any message from an authenticated agent updates its liveness timestamp.
+                        {
+                            let mut agents_guard = connected_agents_arc.lock().await;
+                            if let Some(state) = agents_guard.agents.get_mut(session_id) {
+                                state.last_seen_ms = Utc::now().timestamp_millis();
+                                debug!(agent_id = %session_id, "Updated last_seen_ms for agent.");
+                            }
+                        }
+
                         if let Some(payload) = msg_to_server.payload {
                             match payload {
-                                ServerPayload::Heartbeat(heartbeat) => {
-                                    debug!(
-                                        client_msg_id = msg_to_server.client_message_id,
-                                        ts = heartbeat.timestamp_unix_ms,
-                                        "Received Heartbeat."
-                                    );
-                                    let mut agents_guard = connected_agents_arc.lock().await;
-                                    if let Some(state) = agents_guard.agents.get_mut(session_id) {
-                                        state.last_heartbeat_ms = Utc::now().timestamp_millis();
-                                    } else {
-                                        warn!(
-                                            "Received Heartbeat from unknown/deregistered agent. Ignoring."
-                                        );
-                                    }
-                                }
                                 ServerPayload::PerformanceBatch(batch) => {
                                     match services::save_performance_snapshot_batch(
                                         &pool,

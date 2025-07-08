@@ -13,7 +13,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "./proto/generic_metrics.proto",
         "./proto/command.proto",
         "./proto/pty.proto",
-        "./proto/heartbeat.proto",
         "./proto/messages.proto",
         "./proto/service.proto",
         "./proto/batch_command.proto",

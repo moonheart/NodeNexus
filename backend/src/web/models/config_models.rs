@@ -13,7 +13,6 @@ pub struct WebAgentConfig {
     pub generic_metrics_upload_interval_seconds: u32,
     pub feature_flags: HashMap<String, String>,
     pub log_level: String,
-    pub heartbeat_interval_seconds: u32,
     #[serde(default)]
     pub service_monitor_tasks: Vec<WebServiceMonitorTask>,
 }
@@ -42,7 +41,6 @@ impl From<crate::agent_service::AgentConfig> for WebAgentConfig {
             generic_metrics_upload_interval_seconds: proto.generic_metrics_upload_interval_seconds,
             feature_flags: proto.feature_flags,
             log_level: proto.log_level,
-            heartbeat_interval_seconds: proto.heartbeat_interval_seconds,
             service_monitor_tasks: proto.service_monitor_tasks.into_iter().map(Into::into).collect(),
         }
     }
@@ -60,7 +58,6 @@ impl From<WebAgentConfig> for crate::agent_service::AgentConfig {
             generic_metrics_upload_interval_seconds: web.generic_metrics_upload_interval_seconds,
             feature_flags: web.feature_flags,
             log_level: web.log_level,
-            heartbeat_interval_seconds: web.heartbeat_interval_seconds,
             service_monitor_tasks: web.service_monitor_tasks.into_iter().map(Into::into).collect(),
         }
     }

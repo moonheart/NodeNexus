@@ -12,7 +12,7 @@ use tokio::task::JoinHandle; // For task handles
 // Let's proceed assuming agent_modules are part of the backend crate library.
 use backend::agent_modules::command::tracker::RunningCommandsTracker;
 use backend::agent_modules::communication::{
-    ConnectionHandler, heartbeat_loop, server_message_handler_loop,
+    ConnectionHandler, server_message_handler_loop,
 };
 use backend::agent_modules::config::{AgentCliConfig, load_cli_config};
 use backend::agent_modules::metrics::metrics_collection_loop;
@@ -97,31 +97,6 @@ async fn spawn_and_monitor_core_tasks(
         info!(agent_id = %agent_id_for_log, "Metrics collection loop ended.");
     }));
 
-    // Heartbeat Task
-    let heartbeat_tx = tx_to_server.clone(); // tx_to_server is an mpsc::Sender, clone is cheap
-    let heartbeat_agent_config = Arc::clone(&shared_agent_config);
-    let heartbeat_agent_id = assigned_agent_id.clone();
-    let heartbeat_id_provider_counter = client_message_id_counter.clone();
-    let heartbeat_vps_id = agent_cli_config.vps_id;
-    let heartbeat_agent_secret = agent_cli_config.agent_secret.clone();
-    let heartbeat_id_provider =
-        backend::agent_modules::communication::ConnectionHandler::get_id_provider_closure(
-            heartbeat_id_provider_counter,
-        );
-
-    tasks.push(tokio::spawn(async move {
-        let agent_id_for_log = heartbeat_agent_id.clone(); // Clone for logging
-        heartbeat_loop(
-            heartbeat_tx,
-            heartbeat_agent_config,
-            heartbeat_agent_id,    // Ownership moved here
-            heartbeat_id_provider, // Pass the closure
-            heartbeat_vps_id,
-            heartbeat_agent_secret,
-        )
-        .await;
-        info!(agent_id = %agent_id_for_log, "Heartbeat loop ended.");
-    }));
 
     // Server Listener Task
     let listener_tx = tx_to_server.clone();

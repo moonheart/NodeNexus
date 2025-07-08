@@ -8,7 +8,6 @@ import "docker.proto";
 import "generic_metrics.proto";
 import "command.proto";
 import "pty.proto";
-import "heartbeat.proto";
 import "batch_command.proto"; // Added import
 
 message MessageToServer {
@@ -22,7 +21,6 @@ message MessageToServer {
     GenericMetricsBatch generic_metrics_batch = 5;
     CommandResponse command_response = 6;
     PtyDataToServer pty_data_to_server = 7;
-    Heartbeat heartbeat = 8;
     StaticSystemInfo static_system_info = 11; // New field for static info
     UpdateConfigResponse update_config_response = 12;
     BatchCommandOutputStream batch_command_output_stream = 13; // Added for batch command
@@ -65,7 +63,6 @@ message MessageToAgent {
     // AgentConfig is now sent only in ServerHandshakeAck, so field 3 is removed.
     CommandRequest command_request = 4; // For single, non-streaming commands
     PtyDataToAgent pty_data_to_agent = 5;
-    Heartbeat heartbeat_request = 6;
     UpdateConfigRequest update_config_request = 7;
     BatchAgentCommandRequest batch_agent_command_request = 8;       // Added for batch command
     BatchTerminateCommandRequest batch_terminate_command_request = 9; // Added for batch command

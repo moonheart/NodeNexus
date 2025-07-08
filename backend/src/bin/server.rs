@@ -166,14 +166,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let grpc_service = AgentCommunicationServiceServer::new(agent_comm_service);
 
-    // --- Agent Heartbeat Check Task ---
+    // --- Agent Liveness Check Task ---
     let connected_agents_for_check = connected_agents.clone();
     let pool_for_check = Arc::new(db_pool.clone());
     let trigger_for_check = update_trigger_tx.clone();
 
     tokio::spawn(async move {
         let mut interval = interval(Duration::from_secs(60)); // Check every 60 seconds
-        info!("Agent heartbeat check task started.");
+        info!("Agent liveness check task started.");
 
         loop {
             interval.tick().await;
@@ -182,11 +182,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             // Use retain to iterate and remove in-place
             agents_guard.agents.retain(|_agent_id, state| {
-                let is_alive = (Utc::now().timestamp_millis() - state.last_heartbeat_ms) < 90_000; // 90-second threshold
+                let is_alive = (Utc::now().timestamp_millis() - state.last_seen_ms) < 60_000; // 60-second threshold
                 if !is_alive {
                     warn!(
                         vps_id = state.vps_db_id,
-                        "Agent is considered disconnected due to heartbeat timeout."
+                        "Agent is considered disconnected due to inactivity timeout."
                     );
                     disconnected_vps_ids.push(state.vps_db_id);
                 }
@@ -217,7 +217,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 if needs_broadcast {
                     info!("Triggering broadcast after updating offline status.");
                     if trigger_for_check.send(()).await.is_err() {
-                        error!("Failed to send update trigger from heartbeat check task.");
+                        error!("Failed to send update trigger from liveness check task.");
                     }
                 }
             }
