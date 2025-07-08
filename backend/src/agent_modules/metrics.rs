@@ -207,7 +207,6 @@ fn collect_performance_snapshot(
 pub async fn metrics_collection_loop(
     tx_to_server: mpsc::Sender<MessageToServer>,
     shared_agent_config: Arc<RwLock<AgentConfig>>,
-    agent_id: String,
     mut id_provider: impl FnMut() -> u64 + Send + 'static,
     vps_db_id: i32,
     agent_secret: String,

@@ -87,7 +87,6 @@ impl Sink<MessageToAgent> for AgentSender {
 // 3. Update AgentState
 #[derive(Clone)]
 pub struct AgentState {
-    pub agent_id: String,
     pub last_seen_ms: i64,
     pub config: AgentConfig,
     pub vps_db_id: i32,
@@ -101,7 +100,6 @@ impl fmt::Debug for AgentState {
             AgentSender::WebSocket(_) => "WebSocket",
         };
         f.debug_struct("AgentState")
-            .field("agent_id", &self.agent_id)
             .field("last_seen_ms", &self.last_seen_ms)
             .field("config", &self.config)
             .field("vps_db_id", &self.vps_db_id)
@@ -112,7 +110,7 @@ impl fmt::Debug for AgentState {
 
 #[derive(Default, Debug)]
 pub struct ConnectedAgents {
-    pub agents: HashMap<String, AgentState>,
+    pub agents: HashMap<i32, AgentState>,
 }
 
 impl ConnectedAgents {
@@ -120,23 +118,23 @@ impl ConnectedAgents {
         Arc::new(Mutex::new(Self::default()))
     }
 
+    // The key of the agents HashMap is now the vps_db_id, so this is a direct lookup.
     pub fn find_by_vps_id(&self, vps_id: i32) -> Option<AgentState> {
-        self.agents
-            .values()
-            .find(|state| state.vps_db_id == vps_id)
-            .cloned()
+        self.agents.get(&vps_id).cloned()
     }
 
     // 4. Update send_update_check_command
     pub async fn send_update_check_command(&self, vps_id: i32) -> bool {
-        if let Some(mut agent_state) = self.find_by_vps_id(vps_id) {
+        if let Some(agent_state) = self.agents.get(&vps_id) {
             let command = MessageToAgent {
                 server_message_id: chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
                     as u64,
                 payload: Some(Payload::TriggerUpdateCheck(TriggerUpdateCheckCommand {})),
             };
 
-            match agent_state.sender.send(command).await {
+            // We need to clone the sender to use it, as we only have a &AgentState.
+            let mut sender = agent_state.sender.clone();
+            match sender.send(command).await {
                 Ok(_) => {
                     info!(
                         vps_id,

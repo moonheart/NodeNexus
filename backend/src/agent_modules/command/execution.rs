@@ -19,7 +19,6 @@ pub(super) async fn manage_command_lifecycle(
     request: BatchAgentCommandRequest,
     tx_to_server: mpsc::Sender<MessageToServer>,
     command_tracker: Arc<RunningCommandsTracker>,
-    _agent_id: String,
     vps_db_id: i32,
     agent_secret: String,
     id_provider: impl Fn() -> u64 + Send + Sync + Clone + 'static,

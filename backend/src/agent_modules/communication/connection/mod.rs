@@ -24,7 +24,6 @@ use self::websocket::WebSocketStreamAdapter;
 pub struct ConnectionHandler {
     pub in_stream: Pin<Box<dyn Stream<Item = Result<MessageToAgent, Status>> + Send + Unpin>>,
     pub tx_to_server: Pin<Box<dyn Sink<MessageToServer, Error = Status> + Send + Unpin>>,
-    pub assigned_agent_id: String,
     pub initial_agent_config: AgentConfig,
     pub client_message_id_counter: Arc<AtomicU64>,
 }
@@ -81,11 +80,10 @@ impl ConnectionHandler {
         if let Some(Ok(response_msg)) = adapter.next().await {
             if let Some(AgentPayload::ServerHandshakeAck(ack)) = response_msg.payload {
                 if ack.authentication_successful {
-                    info!(agent_id = %ack.assigned_agent_id, "Authenticated successfully. Server assigned Agent ID.");
+                    info!("Authenticated successfully via WebSocket.");
                     Ok(Self {
                         in_stream: Box::pin(adapter.clone()),
                         tx_to_server: Box::pin(adapter),
-                        assigned_agent_id: ack.assigned_agent_id,
                         initial_agent_config: ack.initial_config.unwrap_or_default(),
                         client_message_id_counter,
                     })
@@ -176,12 +174,11 @@ impl ConnectionHandler {
             Some(Ok(response_msg)) => {
                 if let Some(AgentPayload::ServerHandshakeAck(ack)) = response_msg.payload {
                     if ack.authentication_successful {
-                        info!(agent_id = %ack.assigned_agent_id, "Authenticated successfully. Server assigned Agent ID.");
+                        info!("Authenticated successfully via gRPC.");
                         let grpc_sink = GrpcSink { tx: tx_to_server };
                         Ok(Self {
                             in_stream: Box::pin(in_stream),
                             tx_to_server: Box::pin(grpc_sink),
-                            assigned_agent_id: ack.assigned_agent_id,
                             initial_agent_config: ack.initial_config.unwrap_or_default(),
                             client_message_id_counter,
                         })
@@ -224,7 +221,6 @@ impl ConnectionHandler {
         Pin<Box<dyn Stream<Item = Result<MessageToAgent, Status>> + Send + Unpin>>,
         mpsc::Sender<MessageToServer>,
         Arc<AtomicU64>,
-        String,
         AgentConfig,
     ) {
         let (tx, mut rx) = mpsc::channel(128);
@@ -242,7 +238,6 @@ impl ConnectionHandler {
             self.in_stream,
             tx,
             self.client_message_id_counter,
-            self.assigned_agent_id,
             self.initial_agent_config,
         )
     }

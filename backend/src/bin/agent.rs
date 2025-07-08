@@ -64,7 +64,6 @@ async fn spawn_and_monitor_core_tasks(
         in_stream,
         tx_to_server,
         client_message_id_counter, // This is an Arc<AtomicU64>
-        assigned_agent_id,
         _initial_agent_config, // No longer the source of truth, config is now in shared_agent_config
     ) = handler.split_for_tasks();
 
@@ -73,7 +72,6 @@ async fn spawn_and_monitor_core_tasks(
     // Metrics Task
     let metrics_tx = tx_to_server.clone();
     let metrics_agent_config = Arc::clone(&shared_agent_config);
-    let metrics_agent_id = assigned_agent_id.clone();
     let metrics_id_provider_counter = client_message_id_counter.clone();
     let metrics_vps_id = agent_cli_config.vps_id;
     let metrics_agent_secret = agent_cli_config.agent_secret.clone();
@@ -84,23 +82,20 @@ async fn spawn_and_monitor_core_tasks(
         );
 
     tasks.push(tokio::spawn(async move {
-        let agent_id_for_log = metrics_agent_id.clone(); // Clone for logging
         metrics_collection_loop(
             metrics_tx,
             metrics_agent_config,
-            metrics_agent_id,    // Ownership moved here
             metrics_id_provider, // Pass the closure
             metrics_vps_id,
             metrics_agent_secret,
         )
         .await;
-        info!(agent_id = %agent_id_for_log, "Metrics collection loop ended.");
+        info!("Metrics collection loop ended.");
     }));
 
 
     // Server Listener Task
     let listener_tx = tx_to_server.clone();
-    let listener_agent_id = assigned_agent_id.clone();
     let listener_id_provider_counter = client_message_id_counter.clone();
     let listener_vps_id = agent_cli_config.vps_id;
     let listener_agent_secret = agent_cli_config.agent_secret.clone();
@@ -115,11 +110,9 @@ async fn spawn_and_monitor_core_tasks(
 
     // Note: server_message_handler_loop takes ownership of in_stream
     tasks.push(tokio::spawn(async move {
-        let agent_id_for_log = listener_agent_id.clone();
         server_message_handler_loop(
             Box::pin(in_stream),
             listener_tx,
-            listener_agent_id,
             listener_id_provider,
             listener_vps_id,
             listener_agent_secret,
@@ -129,13 +122,12 @@ async fn spawn_and_monitor_core_tasks(
             listener_update_lock,
         )
         .await;
-        info!(agent_id = %agent_id_for_log, "Server message handler loop ended.");
+        info!("Server message handler loop ended.");
     }));
 
     // Service Monitor Task
     let monitor_tx = tx_to_server.clone();
     let monitor_agent_config = Arc::clone(&shared_agent_config);
-    let monitor_agent_id = assigned_agent_id.clone();
     let monitor_vps_id = agent_cli_config.vps_id;
     let monitor_agent_secret = agent_cli_config.agent_secret.clone();
     let monitor_id_provider =
@@ -153,9 +145,9 @@ async fn spawn_and_monitor_core_tasks(
                 monitor_id_provider,
             )
             .await;
-        info!(agent_id = %monitor_agent_id, "Service monitor loop ended.");
+        info!("Service monitor loop ended.");
     }));
-    info!(agent_id = %assigned_agent_id, "All core tasks spawned.");
+    info!("All core tasks spawned.");
     tasks
 }
 
@@ -398,8 +390,7 @@ async fn run_agent_logic() -> Result<(), Box<dyn Error + Send + Sync>> {
         let initial_id = INITIAL_CLIENT_MESSAGE_ID.load(std::sync::atomic::Ordering::SeqCst);
         match ConnectionHandler::connect_and_handshake(&agent_cli_config, initial_id).await {
             Ok(handler) => {
-                let assigned_agent_id_log = handler.assigned_agent_id.clone();
-                info!(agent_id = %assigned_agent_id_log, "Connection and handshake successful. Spawning tasks.");
+                info!("Connection and handshake successful. Spawning tasks.");
                 reconnect_delay_seconds = DEFAULT_RECONNECT_DELAY_SECONDS; // Reset delay on successful connection
 
                 // Create the shared, mutable configuration state
@@ -426,26 +417,26 @@ async fn run_agent_logic() -> Result<(), Box<dyn Error + Send + Sync>> {
                         Ok(_) => {
                             // Task completed without panic
                             // This is expected if a task like heartbeat_loop or server_message_handler_loop exits due to error (e.g., send fail, stream break)
-                            warn!(agent_id = %assigned_agent_id_log, "A core task finished. This usually indicates a connection issue or an internal task error.");
+                            warn!("A core task finished. This usually indicates a connection issue or an internal task error.");
                         }
                         Err(join_error) => {
                             // Task panicked
-                            error!(agent_id = %assigned_agent_id_log, error = ?join_error, "A core task panicked. This is a critical issue.");
+                            error!(error = ?join_error, "A core task panicked. This is a critical issue.");
                             // Depending on the error, might want a longer backoff or specific error handling.
                         }
                     }
 
                     // Abort all other running tasks to ensure a clean state before reconnecting.
-                    info!(agent_id = %assigned_agent_id_log, "Aborting remaining tasks before reconnecting...");
+                    info!("Aborting remaining tasks before reconnecting...");
                     for handle in remaining_handles {
                         handle.abort();
                     }
                 } else {
-                    error!(agent_id = %assigned_agent_id_log, "No tasks were spawned, which is unexpected after successful handshake. This should not happen.");
+                    error!("No tasks were spawned, which is unexpected after successful handshake. This should not happen.");
                     // This case implies an issue in spawn_and_monitor_core_tasks or ConnectionHandler::split_for_tasks
                 }
 
-                warn!(agent_id = %assigned_agent_id_log, "A task ended or an issue occurred. Preparing to reconnect...");
+                warn!("A task ended or an issue occurred. Preparing to reconnect...");
             }
             Err(e) => {
                 error!(error = %e, "Failed to connect or handshake. Will retry.");

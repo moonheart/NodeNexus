@@ -34,7 +34,6 @@ message CpuStaticInfo {
 message ServerHandshakeAck {
   bool authentication_successful = 1;
   string error_message = 2;
-  string assigned_agent_id = 3;
   AgentConfig initial_config = 4;
   string new_agent_secret = 5;
   int64 server_time_unix_ms = 6;

@@ -21,8 +21,9 @@ use backend::web::models::websocket_models::{ServerWithDetails, WsMessage};
 use chrono::Utc;
 use clap::Parser;
 use dotenv::dotenv;
+use futures_util::SinkExt;
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
-use std::collections::HashMap; // For initializing LiveServerDataCache
+use std::collections::HashMap;
 use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -177,23 +178,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         loop {
             interval.tick().await;
-            let mut disconnected_vps_ids = Vec::new();
             let mut agents_guard = connected_agents_for_check.lock().await;
 
-            // Use retain to iterate and remove in-place
-            agents_guard.agents.retain(|_agent_id, state| {
-                let is_alive = (Utc::now().timestamp_millis() - state.last_seen_ms) < 60_000; // 60-second threshold
-                if !is_alive {
+            let now = Utc::now().timestamp_millis();
+            let timeout_duration_ms = 60 * 1000; // 60-second threshold
+
+            let timed_out_agent_ids: Vec<i32> = agents_guard
+                .agents
+                .iter()
+                .filter(|(_, state)| now - state.last_seen_ms > timeout_duration_ms)
+                .map(|(id, _)| *id)
+                .collect();
+
+            let mut disconnected_vps_ids = Vec::new();
+            for agent_id in timed_out_agent_ids {
+                if let Some(mut state) = agents_guard.agents.remove(&agent_id) {
                     warn!(
                         vps_id = state.vps_db_id,
-                        "Agent is considered disconnected due to inactivity timeout."
+                        "Agent timed out. Closing connection gracefully."
                     );
                     disconnected_vps_ids.push(state.vps_db_id);
-                }
-                is_alive
-            });
 
-            drop(agents_guard); // Release the lock before async operations
+                    // Spawn a new task to close the connection gracefully without blocking the liveness check loop.
+                    tokio::spawn(async move {
+                        if let Err(e) = state.sender.close().await {
+                            warn!(vps_id = %state.vps_db_id, error = %e, "Error closing agent sender gracefully.");
+                        }
+                    });
+                }
+            }
+
+            drop(agents_guard); // Release the lock before async DB operations
 
             if !disconnected_vps_ids.is_empty() {
                 warn!(

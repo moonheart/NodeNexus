@@ -20,7 +20,6 @@ use tracing::{error, info, warn};
 pub async fn server_message_handler_loop(
     mut in_stream: Pin<Box<dyn Stream<Item = Result<MessageToAgent, Status>> + Send + Unpin>>,
     tx_to_server: mpsc::Sender<MessageToServer>,
-    agent_id: String,
     id_provider: impl Fn() -> u64 + Send + Sync + Clone + 'static,
     vps_db_id: i32,
     agent_secret: String,
@@ -113,7 +112,6 @@ pub async fn server_message_handler_loop(
                             info!(command_id = %batch_cmd_req.command_id, "Received BatchAgentCommandRequest.");
                             let tx_clone = tx_to_server.clone();
                             let tracker_clone = command_tracker.clone();
-                            let agent_id_clone = agent_id.clone();
                             let vps_db_id_clone = vps_db_id;
                             let agent_secret_clone = agent_secret.clone();
                             let id_provider_clone = id_provider.clone();
@@ -124,7 +122,6 @@ pub async fn server_message_handler_loop(
                                     tx_clone,
                                     tracker_clone,
                                     server_msg_id_clone,
-                                    agent_id_clone,
                                     vps_db_id_clone,
                                     agent_secret_clone,
                                     id_provider_clone,
@@ -136,7 +133,6 @@ pub async fn server_message_handler_loop(
                             info!(command_id = %batch_term_req.command_id, "Received BatchTerminateCommandRequest.");
                             let tx_clone = tx_to_server.clone();
                             let tracker_clone = command_tracker.clone();
-                            let agent_id_clone = agent_id.clone();
                             let vps_db_id_clone = vps_db_id;
                             let agent_secret_clone = agent_secret.clone();
                             let id_provider_clone = id_provider.clone();
@@ -147,7 +143,6 @@ pub async fn server_message_handler_loop(
                                     tx_clone,
                                     tracker_clone,
                                     server_msg_id_clone,
-                                    agent_id_clone,
                                     vps_db_id_clone,
                                     agent_secret_clone,
                                     id_provider_clone,
