@@ -131,23 +131,11 @@ async fn handle_socket(
                             )
                             .await;
 
-                        let (new_status, error_message) = if let Err(e) = dispatch_result {
+                        if let Err(e) = dispatch_result {
                             error!(child_task_id = %child_task.child_command_id, error = ?e, "Failed to dispatch command.");
-                            (ChildCommandStatus::AgentUnreachable, Some(e.to_string()))
-                        } else {
-                            (ChildCommandStatus::SentToAgent, None)
-                        };
-
-                        if let Err(update_err) = command_manager_clone
-                            .update_child_task_status(
-                                child_task.child_command_id,
-                                new_status,
-                                None,
-                                error_message,
-                            )
-                            .await
-                        {
-                            error!(child_task_id = %child_task.child_command_id, error = ?update_err, "Failed to update status after dispatch.");
+                            // The dispatcher already handles setting the status to AgentUnreachable on failure.
+                            // We might only need to log here, or if there's a specific state for "failed to even try sending", set that.
+                            // For now, the dispatcher's update is sufficient.
                         }
                     });
                 }
