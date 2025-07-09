@@ -166,25 +166,35 @@ impl CommandDispatcher {
                 };
 
                 if let Err(e) = sender.send(message_to_agent).await {
-                    // Log the error, but the task is already marked as Terminating in DB.
-                    // Further DB update here might be redundant or could conflict if agent is truly unreachable.
-                    // The primary responsibility here is to attempt sending the termination signal.
-                    error!(error = %e, "Failed to send terminate command to agent via mpsc.");
-                    // We might not want to return an error that stops processing other terminations.
-                    // The status in DB is already 'Terminating'.
-                    // Consider if this should return an error or just log. For now, let's log and continue.
-                    // return Err(DispatcherError::MpscSendError(e.to_string()));
+                    error!(error = %e, "Failed to send terminate command to agent via mpsc. Marking as terminated.");
+                    // If sending fails, the agent is unreachable. We should finalize the termination.
+                    self.batch_command_manager
+                        .update_child_task_status(
+                            child_task_id,
+                            ChildCommandStatus::Terminated,
+                            None,
+                            Some(format!("Agent unreachable during termination: {e}")),
+                        )
+                        .await
+                        .map_err(|db_err| DispatcherError::DbUpdateError(db_err.to_string()))?;
                 } else {
                     info!("Successfully dispatched terminate command to agent.");
                 }
             }
             None => {
-                // Agent not found. The task is already marked as Terminating in DB.
-                // Log this, but it's not necessarily an error for the dispatcher's attempt.
                 warn!(
-                    "Agent not found when trying to send terminate. Task already marked Terminating."
+                    "Agent not found when trying to send terminate. Marking as terminated."
                 );
-                // return Err(DispatcherError::AgentNotFound(vps_id_str.to_string()));
+                // Agent not found, so we can consider the termination complete for this task.
+                self.batch_command_manager
+                    .update_child_task_status(
+                        child_task_id,
+                        ChildCommandStatus::Terminated,
+                        None,
+                        Some("Agent not connected, task terminated.".to_string()),
+                    )
+                    .await
+                    .map_err(|e| DispatcherError::DbUpdateError(e.to_string()))?;
             }
         }
         Ok(())
