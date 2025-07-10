@@ -172,9 +172,10 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, group
 
   useEffect(() => {
     if (isOpen && vps) {
-      // 重置用户修改状态
-      userModifiedLastRenewalDate.current = false;
-      userModifiedNextRenewalDate.current = false;
+      // 如果vps数据中已存在日期，则将它们标记为“用户已修改”，
+      // 以防止自动填充效果在初始加载时覆盖它们。
+      userModifiedLastRenewalDate.current = !!vps.lastRenewalDate;
+      userModifiedNextRenewalDate.current = !!vps.nextRenewalDate;
       
       // 重置高亮状态
       setHighlightedFields({
