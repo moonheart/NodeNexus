@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { getVpsStatusAppearance } from '@/utils/vpsUtils';
 import { VpsTags } from '@/components/VpsTags';
+import { useTranslation } from 'react-i18next';
 
 // Helper to format date for XAxis
 const formatDateTick = (tickItem: string) => {
@@ -89,56 +90,8 @@ const formatUptime = (totalSeconds: number | null | undefined): string => {
   return uptimeString.trim();
 };
 
-const formatTrafficBillingRule = (rule: string | null | undefined): string => {
-  if (!rule) return '未设置';
-  switch (rule) {
-    case 'sum_in_out': return '双向流量 (IN + OUT)';
-    case 'out_only': return '出站流量 (OUT Only)';
-    case 'max_in_out': return '单向最大值 (Max(IN, OUT))';
-    default: return rule;
-  }
-};
-
-const formatTrafficDate = (dateString: string | null | undefined): string => {
-  if (!dateString) return 'N/A';
-  try {
-    const date = new Date(dateString);
-    return date.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-  } catch (e) {
-    console.error("Error formatting traffic date:", dateString, e);
-    return 'Invalid Date';
-  }
-};
-
-const formatRenewalCycle = (cycle?: string | null, customDays?: number | null): string => {
-  if (!cycle) return '未设置';
-  switch (cycle) {
-    case 'monthly': return '每月';
-    case 'quarterly': return '每季度';
-    case 'semi_annually': return '每半年';
-    case 'annually': return '每年';
-    case 'biennially': return '每两年';
-    case 'triennially': return '每三年';
-    case 'custom_days': return customDays ? `每 ${customDays} 天` : '自定义天数 (未指定天数)';
-    default: return cycle;
-  }
-};
-
-const formatBoolean = (value?: boolean | null): string => {
-  if (value === null || typeof value === 'undefined') return '未设置';
-  return value ? '是' : '否';
-};
-
-const TIME_RANGE_OPTIONS = [
-  { label: '实时', value: 'realtime' as const },
-  { label: '1H', value: '1h' as const },
-  { label: '6H', value: '6h' as const },
-  { label: '24H', value: '24h' as const },
-  { label: '7D', value: '7d' as const },
-];
-type TimeRangeOption = typeof TIME_RANGE_OPTIONS[number]['value'];
-
 const VpsDetailPage: React.FC = () => {
+  const { t } = useTranslation();
   const { vpsId } = useParams<{ vpsId: string }>();
   const { isAuthenticated } = useAuthStore();
 
@@ -182,6 +135,55 @@ const VpsDetailPage: React.FC = () => {
   const [loadingMonitors, setLoadingMonitors] = useState(true);
   const [monitorError, setMonitorError] = useState<string | null>(null);
 
+  const formatTrafficBillingRule = (rule: string | null | undefined): string => {
+    if (!rule) return t('vpsDetailPage.notSet');
+    switch (rule) {
+      case 'sum_in_out': return t('vpsDetailPage.trafficBillingRules.sumInOut');
+      case 'out_only': return t('vpsDetailPage.trafficBillingRules.outOnly');
+      case 'max_in_out': return t('vpsDetailPage.trafficBillingRules.maxInOut');
+      default: return rule;
+    }
+  };
+
+  const formatTrafficDate = (dateString: string | null | undefined): string => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      console.error("Error formatting traffic date:", dateString, e);
+      return t('vpsDetailPage.invalidDate');
+    }
+  };
+
+  const formatRenewalCycle = (cycle?: string | null, customDays?: number | null): string => {
+    if (!cycle) return t('vpsDetailPage.notSet');
+    switch (cycle) {
+      case 'monthly': return t('vpsDetailPage.renewalCycles.monthly');
+      case 'quarterly': return t('vpsDetailPage.renewalCycles.quarterly');
+      case 'semi_annually': return t('vpsDetailPage.renewalCycles.semiAnnually');
+      case 'annually': return t('vpsDetailPage.renewalCycles.annually');
+      case 'biennially': return t('vpsDetailPage.renewalCycles.biennially');
+      case 'triennially': return t('vpsDetailPage.renewalCycles.triennially');
+      case 'custom_days': return customDays ? t('vpsDetailPage.renewalCycles.customDays', { count: customDays }) : t('vpsDetailPage.renewalCycles.customDaysNotSet');
+      default: return cycle;
+    }
+  };
+
+  const formatBoolean = (value?: boolean | null): string => {
+    if (value === null || typeof value === 'undefined') return t('vpsDetailPage.notSet');
+    return value ? t('vpsDetailPage.yes') : t('vpsDetailPage.no');
+  };
+
+  const TIME_RANGE_OPTIONS = useMemo(() => [
+    { label: t('vpsDetailPage.timeRanges.realtime'), value: 'realtime' as const },
+    { label: t('vpsDetailPage.timeRanges.h1'), value: '1h' as const },
+    { label: t('vpsDetailPage.timeRanges.h6'), value: '6h' as const },
+    { label: t('vpsDetailPage.timeRanges.h24'), value: '24h' as const },
+    { label: t('vpsDetailPage.timeRanges.d7'), value: '7d' as const },
+  ], [t]);
+  type TimeRangeOption = typeof TIME_RANGE_OPTIONS[number]['value'];
+
   const handleVpsUpdated = useCallback(() => {
     console.log('VPS updated, store should refresh via WebSocket.');
     setIsEditModalOpen(false);
@@ -219,10 +221,10 @@ const VpsDetailPage: React.FC = () => {
     setDismissReminderSuccess(null);
     try {
       await dismissVpsRenewalReminder(vpsDetail.id);
-      setDismissReminderSuccess('续费提醒已成功清除。');
+      setDismissReminderSuccess(t('vpsDetailPage.notifications.dismissSuccess'));
     } catch (error: unknown) {
       console.error('Failed to dismiss reminder:', error);
-      let errorMessage = '清除提醒失败。';
+      let errorMessage = t('vpsDetailPage.notifications.dismissError');
       if (typeof error === 'object' && error !== null) {
         const errAsAxios = error as { response?: { data?: { error?: string } }, message?: string };
         if (errAsAxios.response?.data?.error) {
@@ -239,8 +241,8 @@ const VpsDetailPage: React.FC = () => {
 
   const isLoadingPage = isLoading && !vpsDetail;
   const pageError = (connectionStatus === 'error' || connectionStatus === 'permanently_failed')
-    ? "WebSocket 连接错误。"
-    : (connectionStatus === 'connected' && !vpsDetail && !isLoading ? "未找到 VPS 详细信息。" : null);
+    ? t('vpsDetailPage.errors.webSocket')
+    : (connectionStatus === 'connected' && !vpsDetail && !isLoading ? t('vpsDetailPage.errors.notFound') : null);
 
   const timeRangeToMillis: Record<Exclude<TimeRangeOption, 'realtime'>, number> = { '1h': 36e5, '6h': 216e5, '24h': 864e5, '7d': 6048e5 };
 
@@ -297,14 +299,14 @@ const VpsDetailPage: React.FC = () => {
         setDiskIoData(diskIoPoints);
       } catch (err) {
         console.error('Failed to fetch chart metrics:', err);
-        if (isMounted) setChartError('无法加载图表数据。');
+        if (isMounted) setChartError(t('vpsDetailPage.errors.loadChartData'));
       } finally {
         if (isMounted) setLoadingChartMetrics(false);
       }
     };
     fetchChartMetricsData();
     return () => { isMounted = false; };
-  }, [vpsId, selectedTimeRange, isAuthenticated]);
+  }, [vpsId, selectedTimeRange, isAuthenticated, t]);
 
   useEffect(() => {
     if (!vpsId || !isAuthenticated) {
@@ -332,14 +334,14 @@ const VpsDetailPage: React.FC = () => {
         setMonitorResults(results);
       } catch (err) {
         console.error('Failed to fetch service monitor results:', err);
-        setMonitorError('无法加载服务监控数据。');
+        setMonitorError(t('vpsDetailPage.errors.loadMonitorData'));
       } finally {
         setLoadingMonitors(false);
       }
     };
 
     fetchMonitorData();
-  }, [vpsId, selectedTimeRange, isAuthenticated]);
+  }, [vpsId, selectedTimeRange, isAuthenticated, t]);
 
   useEffect(() => {
     if (selectedTimeRange !== 'realtime' || !vpsDetail?.latestMetrics || !vpsId || !isAuthenticated) {
@@ -377,7 +379,7 @@ const VpsDetailPage: React.FC = () => {
   }, [vpsDetail?.latestMetrics?.time, vpsId, selectedTimeRange, isAuthenticated]);
 
   if (isLoadingPage) {
-    return <div className="flex justify-center items-center h-64"><p>正在加载服务器详情...</p></div>;
+    return <div className="flex justify-center items-center h-64"><p>{t('vpsDetailPage.loadingDetails')}</p></div>;
   }
 
   if (pageError) {
@@ -386,14 +388,14 @@ const VpsDetailPage: React.FC = () => {
         <XCircle className="w-16 h-16 text-destructive mx-auto mb-4" />
         <p className="text-xl text-destructive-foreground bg-destructive p-4 rounded-lg">{pageError}</p>
         <Button asChild className="mt-6">
-          <Link to={isAuthenticated ? "/servers" : "/"}><ArrowLeft className="w-4 h-4 mr-2" />返回仪表盘</Link>
+          <Link to={isAuthenticated ? "/servers" : "/"}><ArrowLeft className="w-4 h-4 mr-2" />{t('vpsDetailPage.backToDashboard')}</Link>
         </Button>
       </div>
     );
   }
 
   if (!vpsDetail) {
-    return <div className="text-center text-muted-foreground">服务器数据不可用。</div>;
+    return <div className="text-center text-muted-foreground">{t('vpsDetailPage.noData')}</div>;
   }
 
   const { icon: StatusIcon, variant: statusVariant } = getVpsStatusAppearance(vpsDetail.status);
@@ -447,11 +449,11 @@ const VpsDetailPage: React.FC = () => {
             <div className="flex items-center space-x-2 justify-end">
               {isAuthenticated && (
                 <Button variant="outline" size="sm" onClick={handleOpenEditModal}>
-                  <Pencil className="w-4 h-4 mr-1.5" /> 编辑
+                  <Pencil className="w-4 h-4 mr-1.5" /> {t('common.actions.edit')}
                 </Button>
               )}
               <Button variant="outline" size="sm" asChild>
-                <Link to={isAuthenticated ? "/servers" : "/"}><ArrowLeft className="w-4 h-4 mr-1.5" /> 返回</Link>
+                <Link to={isAuthenticated ? "/servers" : "/"}><ArrowLeft className="w-4 h-4 mr-1.5" /> {t('vpsDetailPage.back')}</Link>
               </Button>
             </div>
           </div>
@@ -459,27 +461,27 @@ const VpsDetailPage: React.FC = () => {
       </Card>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
-        <StatCard title="CPU 使用率" value={metrics?.cpuUsagePercent?.toFixed(1) ?? 'N/A'} unit="%" icon={<Cpu />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? "离线" : `${metadata?.cpu_static_info?.brand || ''}`} />
-        <StatCard title="内存使用率" value={memTotal > 0 ? ((memUsed / memTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<MemoryStick />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? "离线" : `${formatBytes(memUsed)} / ${formatBytes(memTotal)}`} />
-        <StatCard title="磁盘使用率" value={diskTotal > 0 ? ((diskUsed / diskTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<HardDrive />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? "离线" : `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`} />
-        <StatCard title="上传" value={formatNetworkSpeed(metrics?.networkTxInstantBps)} icon={<ArrowUp />} valueClassName="text-primary" description="当前出站" />
-        <StatCard title="下载" value={formatNetworkSpeed(metrics?.networkRxInstantBps)} icon={<ArrowDown />} valueClassName="text-primary" description="当前入站" />
-        <StatCard title="运行时间" value={formatUptime(metrics?.uptimeSeconds)} icon={<AlertTriangle />} valueClassName="text-primary" description="当前会话" />
+        <StatCard title={t('vpsDetailPage.statCards.cpuUsage')} value={metrics?.cpuUsagePercent?.toFixed(1) ?? 'N/A'} unit="%" icon={<Cpu />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? t('vpsDetailPage.offline') : `${metadata?.cpu_static_info?.brand || ''}`} />
+        <StatCard title={t('vpsDetailPage.statCards.memoryUsage')} value={memTotal > 0 ? ((memUsed / memTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<MemoryStick />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? t('vpsDetailPage.offline') : `${formatBytes(memUsed)} / ${formatBytes(memTotal)}`} />
+        <StatCard title={t('vpsDetailPage.statCards.diskUsage')} value={diskTotal > 0 ? ((diskUsed / diskTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<HardDrive />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? t('vpsDetailPage.offline') : `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`} />
+        <StatCard title={t('vpsDetailPage.statCards.upload')} value={formatNetworkSpeed(metrics?.networkTxInstantBps)} icon={<ArrowUp />} valueClassName="text-primary" description={t('vpsDetailPage.statCards.currentOutbound')} />
+        <StatCard title={t('vpsDetailPage.statCards.download')} value={formatNetworkSpeed(metrics?.networkRxInstantBps)} icon={<ArrowDown />} valueClassName="text-primary" description={t('vpsDetailPage.statCards.currentInbound')} />
+        <StatCard title={t('vpsDetailPage.statCards.uptime')} value={formatUptime(metrics?.uptimeSeconds)} icon={<AlertTriangle />} valueClassName="text-primary" description={t('vpsDetailPage.statCards.currentSession')} />
       </div>
 
       {isAuthenticated && vpsDetail.trafficBillingRule && (
         <Card>
-          <CardHeader><CardTitle>流量信息</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('vpsDetailPage.trafficInfo.title')}</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6 text-sm">
-            <InfoBlock title="流量限额" value={trafficLimit != null ? formatBytes(trafficLimit) : '未设置'} />
-            <InfoBlock title="计费规则" value={formatTrafficBillingRule(billingRule)} />
-            <InfoBlock title="下次重置时间" value={formatTrafficDate(vpsDetail.nextTrafficResetAt)} />
-            <InfoBlock title="本周期已用 (总计)" value={formatBytes(totalUsedTraffic)} />
-            {trafficLimit != null && <InfoBlock title="本周期剩余" value={trafficRemaining != null ? formatBytes(trafficRemaining) : 'N/A'} />}
-            {trafficUsagePercent != null && <InfoBlock title="使用率" value={`${trafficUsagePercent.toFixed(2)}%`} />}
-            <InfoBlock title="本周期 RX (入站)" value={formatBytes(currentRx)} />
-            <InfoBlock title="本周期 TX (出站)" value={formatBytes(currentTx)} />
-            <InfoBlock title="上次重置时间" value={formatTrafficDate(vpsDetail.trafficLastResetAt)} />
+            <InfoBlock title={t('vpsDetailPage.trafficInfo.limit')} value={trafficLimit != null ? formatBytes(trafficLimit) : t('vpsDetailPage.notSet')} />
+            <InfoBlock title={t('vpsDetailPage.trafficInfo.billingRule')} value={formatTrafficBillingRule(billingRule)} />
+            <InfoBlock title={t('vpsDetailPage.trafficInfo.nextResetDate')} value={formatTrafficDate(vpsDetail.nextTrafficResetAt)} />
+            <InfoBlock title={t('vpsDetailPage.trafficInfo.usedThisCycleTotal')} value={formatBytes(totalUsedTraffic)} />
+            {trafficLimit != null && <InfoBlock title={t('vpsDetailPage.trafficInfo.remainingThisCycle')} value={trafficRemaining != null ? formatBytes(trafficRemaining) : 'N/A'} />}
+            {trafficUsagePercent != null && <InfoBlock title={t('vpsDetailPage.trafficInfo.usagePercentage')} value={`${trafficUsagePercent.toFixed(2)}%`} />}
+            <InfoBlock title={t('vpsDetailPage.trafficInfo.rxThisCycle')} value={formatBytes(currentRx)} />
+            <InfoBlock title={t('vpsDetailPage.trafficInfo.txThisCycle')} value={formatBytes(currentTx)} />
+            <InfoBlock title={t('vpsDetailPage.trafficInfo.lastResetDate')} value={formatTrafficDate(vpsDetail.trafficLastResetAt)} />
           </CardContent>
         </Card>
       )}
@@ -487,7 +489,7 @@ const VpsDetailPage: React.FC = () => {
       <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-            <CardTitle>性能指标</CardTitle>
+            <CardTitle>{t('vpsDetailPage.performanceMetrics.title')}</CardTitle>
             <ToggleGroup type="single" value={selectedTimeRange} onValueChange={handleSetSelectedTimeRange} aria-label="Time range">
               {TIME_RANGE_OPTIONS.map(period => (
                 <ToggleGroupItem key={period.value} value={period.value}>{period.label}</ToggleGroupItem>
@@ -497,10 +499,10 @@ const VpsDetailPage: React.FC = () => {
         </CardHeader>
         <CardContent>
           {chartError && <p className="text-destructive text-center">{chartError}</p>}
-          {loadingChartMetrics ? <div className="h-72 flex justify-center items-center"><p>正在加载图表...</p></div> : (
+          {loadingChartMetrics ? <div className="h-72 flex justify-center items-center"><p>{t('vpsDetailPage.performanceMetrics.loadingCharts')}</p></div> : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-              <ChartComponent title="CPU 使用率 (%)" data={cpuData} dataKey="cpuUsagePercent" stroke="#8884d8" yDomain={[0, 100]} />
-              <ChartComponent title="内存使用率 (%)" data={memoryData} dataKey="memoryUsagePercent" stroke="#82ca9d" yDomain={[0, 100]} />
+              <ChartComponent title={t('vpsDetailPage.performanceMetrics.cpuUsageChartTitle')} data={cpuData} dataKey="cpuUsagePercent" stroke="#8884d8" yDomain={[0, 100]} />
+              <ChartComponent title={t('vpsDetailPage.performanceMetrics.memoryUsageChartTitle')} data={memoryData} dataKey="memoryUsagePercent" stroke="#82ca9d" yDomain={[0, 100]} />
               <NetworkChartComponent data={networkData} />
               <DiskIoChartComponent data={diskIoData} />
             </div>
@@ -513,12 +515,12 @@ const VpsDetailPage: React.FC = () => {
           <CardHeader>
             <CardTitle className="flex items-center">
               <BarChartHorizontal className="w-6 h-6 mr-2 text-primary" />
-              服务监控
+              {t('vpsDetailPage.serviceMonitoring.title')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             {monitorError && <p className="text-destructive text-center">{monitorError}</p>}
-            {loadingMonitors ? <div className="h-72 flex justify-center items-center"><p>正在加载监控图表...</p></div> : (
+            {loadingMonitors ? <div className="h-72 flex justify-center items-center"><p>{t('vpsDetailPage.serviceMonitoring.loadingCharts')}</p></div> : (
               <ServiceMonitorChartComponent results={monitorResults} />
             )}
           </CardContent>
@@ -526,21 +528,21 @@ const VpsDetailPage: React.FC = () => {
       )}
 
       <Card>
-        <CardHeader><CardTitle>系统信息</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('vpsDetailPage.systemInfo.title')}</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6 text-sm">
-          <InfoBlock title="主机名" value={`${metadata?.hostname || 'N/A'}`} />
-          <InfoBlock title="操作系统" value={`${metadata?.os_name || 'N/A'} (${metadata?.long_os_version || metadata?.os_version_detail || 'N/A'})`} />
-          <InfoBlock title="发行版 ID" value={`${metadata?.distribution_id || 'N/A'}`} />
-          <InfoBlock title="内核版本" value={`${metadata?.kernel_version || 'N/A'}`} />
-          <InfoBlock title="架构" value={`${metadata?.arch || 'N/A'}`} />
-          <InfoBlock title="CPU 品牌" value={`${metadata?.cpu_static_info?.brand || 'N/A'}`} />
-          <InfoBlock title="CPU 名称" value={`${metadata?.cpu_static_info?.name || 'N/A'}`} />
-          <InfoBlock title="CPU 频率" value={metadata?.cpu_static_info?.frequency ? `${metadata.cpu_static_info.frequency} MHz` : 'N/A'} />
-          <InfoBlock title="CPU 厂商 ID" value={`${metadata?.cpu_static_info?.vendorId || 'N/A'}`} />
-          <InfoBlock title="物理核心数" value={`${metadata?.physical_core_count ?? 'N/A'}`} />
-          <InfoBlock title="总内存" value={formatBytes(metadata?.total_memory_bytes ?? metrics?.memoryTotalBytes)} />
-          <InfoBlock title="总交换空间" value={formatBytes(metadata?.total_swap_bytes)} />
-          <InfoBlock title="总磁盘空间" value={formatBytes(metrics?.diskTotalBytes)} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.hostname')} value={`${metadata?.hostname || 'N/A'}`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.os')} value={`${metadata?.os_name || 'N/A'} (${metadata?.long_os_version || metadata?.os_version_detail || 'N/A'})`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.distroId')} value={`${metadata?.distribution_id || 'N/A'}`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.kernelVersion')} value={`${metadata?.kernel_version || 'N/A'}`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.arch')} value={`${metadata?.arch || 'N/A'}`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.cpuBrand')} value={`${metadata?.cpu_static_info?.brand || 'N/A'}`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.cpuName')} value={`${metadata?.cpu_static_info?.name || 'N/A'}`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.cpuFrequency')} value={metadata?.cpu_static_info?.frequency ? `${metadata.cpu_static_info.frequency} MHz` : 'N/A'} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.cpuVendorId')} value={`${metadata?.cpu_static_info?.vendorId || 'N/A'}`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.physicalCores')} value={`${metadata?.physical_core_count ?? 'N/A'}`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.totalMemory')} value={formatBytes(metadata?.total_memory_bytes ?? metrics?.memoryTotalBytes)} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.totalSwap')} value={formatBytes(metadata?.total_swap_bytes)} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.totalDisk')} value={formatBytes(metrics?.diskTotalBytes)} />
         </CardContent>
       </Card>
 
@@ -550,12 +552,12 @@ const VpsDetailPage: React.FC = () => {
             <div className="flex justify-between items-center">
               <CardTitle className="flex items-center">
                 <Info className="w-6 h-6 mr-2 text-primary" />
-                续费信息
+                {t('vpsDetailPage.renewalInfo.title')}
               </CardTitle>
               {vpsDetail.reminderActive && (
                 <Button variant="secondary" size="sm" onClick={handleDismissReminder} disabled={isDismissingReminder}>
                   <BellRing className="w-4 h-4 mr-1.5" />
-                  {isDismissingReminder ? '清除中...' : '清除提醒'}
+                  {isDismissingReminder ? t('vpsDetailPage.renewalInfo.dismissing') : t('vpsDetailPage.renewalInfo.dismiss')}
                 </Button>
               )}
             </div>
@@ -564,17 +566,17 @@ const VpsDetailPage: React.FC = () => {
             {dismissReminderError && <p className="text-sm text-destructive bg-destructive/10 p-2 rounded-md mb-4">{dismissReminderError}</p>}
             {dismissReminderSuccess && <p className="text-sm text-success bg-success/10 p-2 rounded-md mb-4">{dismissReminderSuccess}</p>}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6 text-sm">
-              <InfoBlock title="续费周期" value={formatRenewalCycle(vpsDetail.renewalCycle, vpsDetail.renewalCycleCustomDays)} />
-              <InfoBlock title="续费价格" value={vpsDetail.renewalPrice != null ? `${vpsDetail.renewalPrice} ${vpsDetail.renewalCurrency || ''}`.trim() : '未设置'} />
-              <InfoBlock title="下次续费日期" value={formatTrafficDate(vpsDetail.nextRenewalDate)} />
-              <InfoBlock title="上次续费日期" value={formatTrafficDate(vpsDetail.lastRenewalDate)} />
-              <InfoBlock title="服务开始日期" value={formatTrafficDate(vpsDetail.serviceStartDate)} />
-              <InfoBlock title="支付方式" value={vpsDetail.paymentMethod || '未设置'} />
-              <InfoBlock title="自动续费" value={formatBoolean(vpsDetail.autoRenewEnabled)} />
-              <InfoBlock title="提醒状态" value={formatBoolean(vpsDetail.reminderActive)} />
+              <InfoBlock title={t('vpsDetailPage.renewalInfo.cycle')} value={formatRenewalCycle(vpsDetail.renewalCycle, vpsDetail.renewalCycleCustomDays)} />
+              <InfoBlock title={t('vpsDetailPage.renewalInfo.price')} value={vpsDetail.renewalPrice != null ? `${vpsDetail.renewalPrice} ${vpsDetail.renewalCurrency || ''}`.trim() : t('vpsDetailPage.notSet')} />
+              <InfoBlock title={t('vpsDetailPage.renewalInfo.nextDate')} value={formatTrafficDate(vpsDetail.nextRenewalDate)} />
+              <InfoBlock title={t('vpsDetailPage.renewalInfo.lastDate')} value={formatTrafficDate(vpsDetail.lastRenewalDate)} />
+              <InfoBlock title={t('vpsDetailPage.renewalInfo.startDate')} value={formatTrafficDate(vpsDetail.serviceStartDate)} />
+              <InfoBlock title={t('vpsDetailPage.renewalInfo.paymentMethod')} value={vpsDetail.paymentMethod || t('vpsDetailPage.notSet')} />
+              <InfoBlock title={t('vpsDetailPage.renewalInfo.autoRenew')} value={formatBoolean(vpsDetail.autoRenewEnabled)} />
+              <InfoBlock title={t('vpsDetailPage.renewalInfo.reminderStatus')} value={formatBoolean(vpsDetail.reminderActive)} />
               {vpsDetail.renewalNotes && (
                 <div className="md:col-span-2 lg:col-span-3">
-                  <InfoBlock title="续费备注" value={vpsDetail.renewalNotes} />
+                  <InfoBlock title={t('vpsDetailPage.renewalInfo.notes')} value={vpsDetail.renewalNotes} />
                 </div>
               )}
             </div>
@@ -585,67 +587,76 @@ const VpsDetailPage: React.FC = () => {
   );
 };
 
-const ChartComponent: React.FC<{ title: string, data: PerformanceMetricPoint[], dataKey: keyof PerformanceMetricPoint, stroke: string, yDomain: [number, number] }> = React.memo(({ title, data, dataKey, stroke, yDomain }) => (
-  <div className="h-72 flex flex-col">
-    <h3 className="text-lg font-semibold text-center mb-2 flex-shrink-0">{title}</h3>
-    {data.length > 0 ? (
-      <div className="flex-grow">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
-            <YAxis domain={yDomain} tick={{ fontSize: 11 }} tickFormatter={(tick) => `${tick}%`} />
-            <Tooltip formatter={formatPercentForTooltip} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'hsl(var(--background) / 0.8)', backdropFilter: 'blur(2px)', borderRadius: 'var(--radius)', fontSize: '0.8rem' }} />
-            <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
-            <Line type="monotone" dataKey={dataKey} stroke={stroke} dot={false} name={title.split(' ')[0]} isAnimationActive={false} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    ) : <p className="text-center text-muted-foreground pt-16">无可用数据。</p>}
-  </div>
-));
+const ChartComponent: React.FC<{ title: string, data: PerformanceMetricPoint[], dataKey: keyof PerformanceMetricPoint, stroke: string, yDomain: [number, number] }> = React.memo(({ title, data, dataKey, stroke, yDomain }) => {
+  const { t } = useTranslation();
+  return (
+    <div className="h-72 flex flex-col">
+      <h3 className="text-lg font-semibold text-center mb-2 flex-shrink-0">{title}</h3>
+      {data.length > 0 ? (
+        <div className="flex-grow">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
+              <YAxis domain={yDomain} tick={{ fontSize: 11 }} tickFormatter={(tick) => `${tick}%`} />
+              <Tooltip formatter={formatPercentForTooltip} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'hsl(var(--background) / 0.8)', backdropFilter: 'blur(2px)', borderRadius: 'var(--radius)', fontSize: '0.8rem' }} />
+              <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
+              <Line type="monotone" dataKey={dataKey} stroke={stroke} dot={false} name={title.split(' ')[0]} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      ) : <p className="text-center text-muted-foreground pt-16">{t('vpsDetailPage.noDataAvailable')}</p>}
+    </div>
+  );
+});
 
-const NetworkChartComponent: React.FC<{ data: PerformanceMetricPoint[] }> = React.memo(({ data }) => (
-  <div className="h-72 flex flex-col">
-    <h3 className="text-lg font-semibold text-center mb-2 flex-shrink-0">网络速度</h3>
-    {data.length > 0 ? (
-      <div className="flex-grow">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={formatNetworkSpeed} width={80} tick={{ fontSize: 11 }} />
-            <Tooltip formatter={(value: ValueType) => formatNetworkSpeed(value as number)} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'hsl(var(--background) / 0.8)', backdropFilter: 'blur(2px)', borderRadius: 'var(--radius)', fontSize: '0.8rem' }} />
-            <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
-            <Line type="monotone" dataKey="avgNetworkRxInstantBps" stroke="hsl(var(--primary))" dot={false} name="下载" isAnimationActive={false} />
-            <Line type="monotone" dataKey="avgNetworkTxInstantBps" stroke="hsl(var(--secondary-foreground))" dot={false} name="上传" isAnimationActive={false} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    ) : <p className="text-center text-muted-foreground pt-16">无可用数据。</p>}
-  </div>
-));
+const NetworkChartComponent: React.FC<{ data: PerformanceMetricPoint[] }> = React.memo(({ data }) => {
+  const { t } = useTranslation();
+  return (
+    <div className="h-72 flex flex-col">
+      <h3 className="text-lg font-semibold text-center mb-2 flex-shrink-0">{t('vpsDetailPage.networkChart.title')}</h3>
+      {data.length > 0 ? (
+        <div className="flex-grow">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
+              <YAxis tickFormatter={formatNetworkSpeed} width={80} tick={{ fontSize: 11 }} />
+              <Tooltip formatter={(value: ValueType) => formatNetworkSpeed(value as number)} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'hsl(var(--background) / 0.8)', backdropFilter: 'blur(2px)', borderRadius: 'var(--radius)', fontSize: '0.8rem' }} />
+              <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
+              <Line type="monotone" dataKey="avgNetworkRxInstantBps" stroke="hsl(var(--primary))" dot={false} name={t('vpsDetailPage.networkChart.download')} isAnimationActive={false} />
+              <Line type="monotone" dataKey="avgNetworkTxInstantBps" stroke="hsl(var(--secondary-foreground))" dot={false} name={t('vpsDetailPage.networkChart.upload')} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      ) : <p className="text-center text-muted-foreground pt-16">{t('vpsDetailPage.noDataAvailable')}</p>}
+    </div>
+  );
+});
 
-const DiskIoChartComponent: React.FC<{ data: PerformanceMetricPoint[] }> = React.memo(({ data }) => (
-  <div className="h-72 flex flex-col">
-    <h3 className="text-lg font-semibold text-center mb-2 flex-shrink-0">磁盘 I/O 速度</h3>
-    {data.length > 0 ? (
-      <div className="flex-grow">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={formatNetworkSpeed} width={80} tick={{ fontSize: 11 }} />
-            <Tooltip formatter={(value: ValueType) => formatNetworkSpeed(value as number)} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'hsl(var(--background) / 0.8)', backdropFilter: 'blur(2px)', borderRadius: 'var(--radius)', fontSize: '0.8rem' }} />
-            <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
-            <Line type="monotone" dataKey="avgDiskIoReadBps" stroke="#ff7300" dot={false} name="读取" isAnimationActive={false} />
-            <Line type="monotone" dataKey="avgDiskIoWriteBps" stroke="#387908" dot={false} name="写入" isAnimationActive={false} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    ) : <p className="text-center text-muted-foreground pt-16">无可用数据。</p>}
-  </div>
-));
+const DiskIoChartComponent: React.FC<{ data: PerformanceMetricPoint[] }> = React.memo(({ data }) => {
+  const { t } = useTranslation();
+  return (
+    <div className="h-72 flex flex-col">
+      <h3 className="text-lg font-semibold text-center mb-2 flex-shrink-0">{t('vpsDetailPage.diskIoChart.title')}</h3>
+      {data.length > 0 ? (
+        <div className="flex-grow">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
+              <YAxis tickFormatter={formatNetworkSpeed} width={80} tick={{ fontSize: 11 }} />
+              <Tooltip formatter={(value: ValueType) => formatNetworkSpeed(value as number)} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'hsl(var(--background) / 0.8)', backdropFilter: 'blur(2px)', borderRadius: 'var(--radius)', fontSize: '0.8rem' }} />
+              <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
+              <Line type="monotone" dataKey="avgDiskIoReadBps" stroke="#ff7300" dot={false} name={t('vpsDetailPage.diskIoChart.read')} isAnimationActive={false} />
+              <Line type="monotone" dataKey="avgDiskIoWriteBps" stroke="#387908" dot={false} name={t('vpsDetailPage.diskIoChart.write')} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      ) : <p className="text-center text-muted-foreground pt-16">{t('vpsDetailPage.noDataAvailable')}</p>}
+    </div>
+  );
+});
 
 const formatLatencyForTooltip = (value: ValueType) => {
   if (typeof value === 'number') return `${value.toFixed(0)} ms`;
@@ -655,6 +666,7 @@ const formatLatencyForTooltip = (value: ValueType) => {
 const AGENT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
 const ServiceMonitorChartComponent: React.FC<{ results: ServiceMonitorResult[] }> = React.memo(({ results }) => {
+  const { t } = useTranslation();
   const [hiddenLines, setHiddenLines] = useState<Record<string, boolean>>({});
 
   const { chartData, monitorLines, downtimeAreas } = useMemo(() => {
@@ -674,7 +686,7 @@ const ServiceMonitorChartComponent: React.FC<{ results: ServiceMonitorResult[] }
     for (const monitorId in groupedByMonitorId) {
       if (Object.prototype.hasOwnProperty.call(groupedByMonitorId, monitorId)) {
         const firstResult = groupedByMonitorId[monitorId][0];
-        const monitorName = firstResult.monitorName || `Monitor #${monitorId}`;
+        const monitorName = firstResult.monitorName || t('vpsDetailPage.serviceMonitoring.monitorName', { id: monitorId });
         const color = AGENT_COLORS[colorIndex % AGENT_COLORS.length];
         monitorLines.push({ dataKey: `monitor_${monitorId}`, name: monitorName, stroke: color });
         colorIndex++;
@@ -709,7 +721,7 @@ const ServiceMonitorChartComponent: React.FC<{ results: ServiceMonitorResult[] }
       areas.push({ x1: downtimeStart, x2: timePoints[timePoints.length - 1] });
     }
     return { chartData, monitorLines, downtimeAreas: areas };
-  }, [results]);
+  }, [results, t]);
 
   const handleLegendClick: LegendProps['onClick'] = (data) => {
     const dataKey = data.dataKey as string;
@@ -725,7 +737,7 @@ const ServiceMonitorChartComponent: React.FC<{ results: ServiceMonitorResult[] }
   };
 
   if (results.length === 0) {
-    return <p className="text-center text-muted-foreground pt-16">此 VPS 无可用的服务监控数据。</p>;
+    return <p className="text-center text-muted-foreground pt-16">{t('vpsDetailPage.serviceMonitoring.noData')}</p>;
   }
 
   return (

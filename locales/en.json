@@ -775,5 +775,124 @@
       "selectTags": "Select tags...",
       "fetchDataError": "Failed to fetch agents and tags."
     }
+  },
+  "vpsDetailPage": {
+    "notSet": "Not Set",
+    "invalidDate": "Invalid Date",
+    "yes": "Yes",
+    "no": "No",
+    "offline": "Offline",
+    "back": "Back",
+    "backToDashboard": "Back to Dashboard",
+    "loadingDetails": "Loading server details...",
+    "noData": "Server data not available.",
+    "noDataAvailable": "No data available.",
+    "errors": {
+      "webSocket": "WebSocket connection error.",
+      "notFound": "VPS details not found.",
+      "loadChartData": "Failed to load chart data.",
+      "loadMonitorData": "Failed to load service monitor data."
+    },
+    "notifications": {
+      "dismissSuccess": "Renewal reminder dismissed successfully.",
+      "dismissError": "Failed to dismiss reminder."
+    },
+    "trafficBillingRules": {
+      "sumInOut": "Sum IN+OUT",
+      "outOnly": "OUT Only",
+      "maxInOut": "Max(IN, OUT)"
+    },
+    "renewalCycles": {
+      "monthly": "Monthly",
+      "quarterly": "Quarterly",
+      "semiAnnually": "Semi-Annually",
+      "annually": "Annually",
+      "biennially": "Biennially",
+      "triennially": "Triennially",
+      "customDays": "Every %{count} days",
+      "customDaysNotSet": "Custom Days (not specified)"
+    },
+    "timeRanges": {
+      "realtime": "Realtime",
+      "h1": "1H",
+      "h6": "6H",
+      "h24": "24H",
+      "d7": "7D"
+    },
+    "statCards": {
+      "cpuUsage": "CPU Usage",
+      "memoryUsage": "Memory Usage",
+      "diskUsage": "Disk Usage",
+      "upload": "Upload",
+      "download": "Download",
+      "uptime": "Uptime",
+      "currentOutbound": "Current Outbound",
+      "currentInbound": "Current Inbound",
+      "currentSession": "Current Session"
+    },
+    "trafficInfo": {
+      "title": "Traffic Information",
+      "limit": "Traffic Limit",
+      "billingRule": "Billing Rule",
+      "nextResetDate": "Next Reset Date",
+      "usedThisCycleTotal": "Used This Cycle (Total)",
+      "remainingThisCycle": "Remaining This Cycle",
+      "usagePercentage": "Usage",
+      "rxThisCycle": "RX This Cycle (Inbound)",
+      "txThisCycle": "TX This Cycle (Outbound)",
+      "lastResetDate": "Last Reset Date"
+    },
+    "performanceMetrics": {
+      "title": "Performance Metrics",
+      "loadingCharts": "Loading charts...",
+      "cpuUsageChartTitle": "CPU Usage (%)",
+      "memoryUsageChartTitle": "Memory Usage (%)"
+    },
+    "serviceMonitoring": {
+      "title": "Service Monitoring",
+      "loadingCharts": "Loading monitor charts...",
+      "monitorName": "Monitor #%{id}",
+      "noData": "No service monitor data available for this VPS."
+    },
+    "systemInfo": {
+      "title": "System Information",
+      "hostname": "Hostname",
+      "os": "Operating System",
+      "distroId": "Distribution ID",
+      "kernelVersion": "Kernel Version",
+      "arch": "Architecture",
+      "cpuBrand": "CPU Brand",
+      "cpuName": "CPU Name",
+      "cpuFrequency": "CPU Frequency",
+      "cpuVendorId": "CPU Vendor ID",
+      "physicalCores": "Physical Cores",
+      "totalMemory": "Total Memory",
+      "totalSwap": "Total Swap",
+      "totalDisk": "Total Disk Space"
+    },
+    "renewalInfo": {
+      "title": "Renewal Information",
+      "dismissing": "Dismissing...",
+      "dismiss": "Dismiss Reminder",
+      "cycle": "Renewal Cycle",
+      "price": "Renewal Price",
+      "nextDate": "Next Renewal Date",
+      "lastDate": "Last Renewal Date",
+      "startDate": "Service Start Date",
+      "paymentMethod": "Payment Method",
+      "autoRenew": "Auto-Renewal",
+      "reminderStatus": "Reminder Status",
+      "notes": "Renewal Notes"
+    },
+    "networkChart": {
+      "title": "Network Speed",
+      "download": "Download",
+      "upload": "Upload"
+    },
+    "diskIoChart": {
+      "title": "Disk I/O Speed",
+      "read": "Read",
+      "write": "Write"
+    }
   }
 }

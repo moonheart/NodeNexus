@@ -776,5 +776,124 @@
       "selectTags": "选择标签...",
       "fetchDataError": "获取代理和标签失败。"
     }
+  },
+  "vpsDetailPage": {
+    "notSet": "未设置",
+    "invalidDate": "无效日期",
+    "yes": "是",
+    "no": "否",
+    "offline": "离线",
+    "back": "返回",
+    "backToDashboard": "返回仪表盘",
+    "loadingDetails": "正在加载服务器详情...",
+    "noData": "服务器数据不可用。",
+    "noDataAvailable": "无可用数据。",
+    "errors": {
+      "webSocket": "WebSocket 连接错误。",
+      "notFound": "未找到 VPS 详细信息。",
+      "loadChartData": "无法加载图表数据。",
+      "loadMonitorData": "无法加载服务监控数据。"
+    },
+    "notifications": {
+      "dismissSuccess": "续费提醒已成功清除。",
+      "dismissError": "清除提醒失败。"
+    },
+    "trafficBillingRules": {
+      "sumInOut": "双向流量 (IN + OUT)",
+      "outOnly": "出站流量 (OUT Only)",
+      "maxInOut": "单向最大值 (Max(IN, OUT))"
+    },
+    "renewalCycles": {
+      "monthly": "每月",
+      "quarterly": "每季度",
+      "semiAnnually": "每半年",
+      "annually": "每年",
+      "biennially": "每两年",
+      "triennially": "每三年",
+      "customDays": "每 %{count} 天",
+      "customDaysNotSet": "自定义天数 (未指定天数)"
+    },
+    "timeRanges": {
+      "realtime": "实时",
+      "h1": "1小时",
+      "h6": "6小时",
+      "h24": "24小时",
+      "d7": "7天"
+    },
+    "statCards": {
+      "cpuUsage": "CPU 使用率",
+      "memoryUsage": "内存使用率",
+      "diskUsage": "磁盘使用率",
+      "upload": "上传",
+      "download": "下载",
+      "uptime": "运行时间",
+      "currentOutbound": "当前出站",
+      "currentInbound": "当前入站",
+      "currentSession": "当前会话"
+    },
+    "trafficInfo": {
+      "title": "流量信息",
+      "limit": "流量限额",
+      "billingRule": "计费规则",
+      "nextResetDate": "下次重置时间",
+      "usedThisCycleTotal": "本周期已用 (总计)",
+      "remainingThisCycle": "本周期剩余",
+      "usagePercentage": "使用率",
+      "rxThisCycle": "本周期 RX (入站)",
+      "txThisCycle": "本周期 TX (出站)",
+      "lastResetDate": "上次重置时间"
+    },
+    "performanceMetrics": {
+      "title": "性能指标",
+      "loadingCharts": "正在加载图表...",
+      "cpuUsageChartTitle": "CPU 使用率 (%)",
+      "memoryUsageChartTitle": "内存使用率 (%)"
+    },
+    "serviceMonitoring": {
+      "title": "服务监控",
+      "loadingCharts": "正在加载监控图表...",
+      "monitorName": "监控器 #%{id}",
+      "noData": "此 VPS 无可用的服务监控数据。"
+    },
+    "systemInfo": {
+      "title": "系统信息",
+      "hostname": "主机名",
+      "os": "操作系统",
+      "distroId": "发行版 ID",
+      "kernelVersion": "内核版本",
+      "arch": "架构",
+      "cpuBrand": "CPU 品牌",
+      "cpuName": "CPU 名称",
+      "cpuFrequency": "CPU 频率",
+      "cpuVendorId": "CPU 厂商 ID",
+      "physicalCores": "物理核心数",
+      "totalMemory": "总内存",
+      "totalSwap": "总交换空间",
+      "totalDisk": "总磁盘空间"
+    },
+    "renewalInfo": {
+      "title": "续费信息",
+      "dismissing": "清除中...",
+      "dismiss": "清除提醒",
+      "cycle": "续费周期",
+      "price": "续费价格",
+      "nextDate": "下次续费日期",
+      "lastDate": "上次续费日期",
+      "startDate": "服务开始日期",
+      "paymentMethod": "支付方式",
+      "autoRenew": "自动续费",
+      "reminderStatus": "提醒状态",
+      "notes": "续费备注"
+    },
+    "networkChart": {
+      "title": "网络速度",
+      "download": "下载",
+      "upload": "上传"
+    },
+    "diskIoChart": {
+      "title": "磁盘 I/O 速度",
+      "read": "读取",
+      "write": "写入"
+    }
   }
 }
