@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useForm, Controller, type ControllerRenderProps } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -42,6 +42,46 @@ const unitToBytes = (value: number, unit: string): number => {
     case 'GB': return Math.round(value * BYTES_IN_GB);
     case 'TB': return Math.round(value * BYTES_IN_TB);
     default: return 0;
+  }
+};
+
+// 计算下次续费日期的工具函数
+const calculateNextRenewalDate = (
+  startDate: Date,
+  cycle: string,
+  customDays?: string | null
+): Date | null => {
+  if (!startDate || !cycle) return null;
+  
+  const nextDate = new Date(startDate);
+  
+  switch (cycle) {
+    case 'monthly':
+      nextDate.setMonth(nextDate.getMonth() + 1);
+      return nextDate;
+    case 'quarterly':
+      nextDate.setMonth(nextDate.getMonth() + 3);
+      return nextDate;
+    case 'semi_annually':
+      nextDate.setMonth(nextDate.getMonth() + 6);
+      return nextDate;
+    case 'annually':
+      nextDate.setFullYear(nextDate.getFullYear() + 1);
+      return nextDate;
+    case 'biennially':
+      nextDate.setFullYear(nextDate.getFullYear() + 2);
+      return nextDate;
+    case 'triennially':
+      nextDate.setFullYear(nextDate.getFullYear() + 3);
+      return nextDate;
+    case 'custom_days':
+      if (customDays && !isNaN(parseInt(customDays, 10))) {
+        nextDate.setDate(nextDate.getDate() + parseInt(customDays, 10));
+        return nextDate;
+      }
+      return null;
+    default:
+      return null;
   }
 };
 
@@ -100,9 +140,48 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, group
   });
 
   const { handleSubmit, control, reset, watch, setValue } = form;
+  
+  // 追踪用户是否手动修改了日期字段
+  const userModifiedLastRenewalDate = React.useRef(false);
+  const userModifiedNextRenewalDate = React.useRef(false);
+  
+  // 高亮状态管理
+  const [highlightedFields, setHighlightedFields] = useState<{
+    lastRenewalDate: boolean;
+    nextRenewalDate: boolean;
+  }>({
+    lastRenewalDate: false,
+    nextRenewalDate: false
+  });
+  
+  // 高亮辅助函数
+  const highlightField = (fieldName: 'lastRenewalDate' | 'nextRenewalDate') => {
+    setHighlightedFields(prev => ({
+      ...prev,
+      [fieldName]: true
+    }));
+    
+    // 2秒后取消高亮
+    setTimeout(() => {
+      setHighlightedFields(prev => ({
+        ...prev,
+        [fieldName]: false
+      }));
+    }, 2000);
+  };
 
   useEffect(() => {
     if (isOpen && vps) {
+      // 重置用户修改状态
+      userModifiedLastRenewalDate.current = false;
+      userModifiedNextRenewalDate.current = false;
+      
+      // 重置高亮状态
+      setHighlightedFields({
+        lastRenewalDate: false,
+        nextRenewalDate: false
+      });
+      
       const { value: trafficValue, unit: trafficUnit } = vps.trafficLimitBytes ? bytesToOptimalUnit(vps.trafficLimitBytes) : { value: '', unit: 'GB' };
       reset({
         name: vps.name || '',
@@ -121,7 +200,7 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, group
         nextRenewalDate: vps.nextRenewalDate ? new Date(vps.nextRenewalDate) : null,
         lastRenewalDate: vps.lastRenewalDate ? new Date(vps.lastRenewalDate) : null,
         serviceStartDate: vps.serviceStartDate ? new Date(vps.serviceStartDate) : null,
-        paymentMethod: vps.paymentMethod || null,
+        paymentMethod: vps.paymentMethod || 'PayPal',
         autoRenewEnabled: vps.autoRenewEnabled || false,
         renewalNotes: vps.renewalNotes || null,
       });
@@ -130,6 +209,9 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, group
   
   const trafficResetConfigType = watch('trafficResetConfigType');
   const nextTrafficResetAt = watch('nextTrafficResetAt');
+  const serviceStartDate = watch('serviceStartDate');
+  const renewalCycle = watch('renewalCycle');
+  const renewalCycleCustomDays = watch('renewalCycleCustomDays');
 
   useEffect(() => {
     if (trafficResetConfigType === 'monthly_day_of_month' && nextTrafficResetAt) {
@@ -145,6 +227,48 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, group
       }
     }
   }, [nextTrafficResetAt, trafficResetConfigType, setValue]);
+  
+  // 监听serviceStartDate变化，自动填充lastRenewalDate和nextRenewalDate
+  useEffect(() => {
+    // 如果服务开始日期有值
+    if (serviceStartDate) {
+      console.log('服务开始日期变更为:', serviceStartDate);
+      
+      // 处理上次续费日期自动填充
+      if (!userModifiedLastRenewalDate.current) {
+        const lastRenewalDate = watch('lastRenewalDate');
+        console.log('当前上次续费日期:', lastRenewalDate);
+        
+        if (!lastRenewalDate) {
+          console.log('尝试自动填充上次续费日期');
+          setValue('lastRenewalDate', new Date(serviceStartDate));
+          highlightField('lastRenewalDate'); // 添加高亮反馈
+        }
+      }
+      
+      // 处理下次续费日期自动计算
+      if (!userModifiedNextRenewalDate.current) {
+        const nextRenewalDate = watch('nextRenewalDate');
+        console.log('当前下次续费日期:', nextRenewalDate);
+        console.log('当前续费周期:', renewalCycle);
+        
+        if (!nextRenewalDate && renewalCycle) {
+          // 使用工具函数计算下次续费日期
+          const nextDate = calculateNextRenewalDate(
+            new Date(serviceStartDate),
+            renewalCycle,
+            renewalCycleCustomDays
+          );
+          
+          if (nextDate) {
+            console.log('计算得到下次续费日期:', nextDate);
+            setValue('nextRenewalDate', nextDate);
+            highlightField('nextRenewalDate'); // 添加高亮反馈
+          }
+        }
+      }
+    }
+  }, [serviceStartDate, renewalCycle, renewalCycleCustomDays, setValue, watch]);
 
 
   const onSubmit = async (data: FormValues) => {
@@ -301,15 +425,15 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, group
             <TabsContent value="basic">
               <div className="space-y-4">
                 <div>
-                  <Label htmlFor="name">{t('serverManagement.modals.edit.basicInfo.name')}</Label>
+                  <Label htmlFor="name" className="mb-2 block">{t('serverManagement.modals.edit.basicInfo.name')}</Label>
                   <Controller name="name" control={control} render={({ field }) => <Input id="name" {...field} />} />
                 </div>
                 <div>
-                  <Label>{t('serverManagement.modals.edit.basicInfo.group')}</Label>
+                  <Label className="mb-2 block">{t('serverManagement.modals.edit.basicInfo.group')}</Label>
                   <Controller name="group" control={control} render={({ field }) => <CreatableCombobox field={field} options={groupOptions} placeholder={t('serverManagement.modals.edit.basicInfo.groupPlaceholder')} />} />
                 </div>
                 <div>
-                  <Label>{t('serverManagement.modals.edit.basicInfo.tags')}</Label>
+                  <Label className="mb-2 block">{t('serverManagement.modals.edit.basicInfo.tags')}</Label>
                   <Controller name="tagIds" control={control} render={({ field }) => <MultiSelectPopover field={field} options={tagOptions} placeholder={t('serverManagement.modals.edit.basicInfo.tagsPlaceholder')} />} />
                 </div>
               </div>
@@ -318,7 +442,7 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, group
             <TabsContent value="traffic">
               <div className="space-y-4">
                 <div>
-                  <Label>{t('serverManagement.modals.edit.trafficMonitoring.limit')}</Label>
+                  <Label className="mb-2 block">{t('serverManagement.modals.edit.trafficMonitoring.limit')}</Label>
                   <div className="flex space-x-2">
                     <Controller name="trafficLimitInput" control={control} render={({ field }) => <Input type="number" placeholder={t('serverManagement.modals.edit.trafficMonitoring.limitPlaceholder')} {...field} value={field.value || ''} />} />
                     <Controller name="trafficLimitUnit" control={control} render={({ field }) => (
@@ -334,7 +458,7 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, group
                   </div>
                 </div>
                 <div>
-                  <Label>{t('serverManagement.modals.edit.trafficMonitoring.billingRule')}</Label>
+                  <Label className="mb-2 block">{t('serverManagement.modals.edit.trafficMonitoring.billingRule')}</Label>
                   <Controller name="trafficBillingRule" control={control} render={({ field }) => (
                     <Select onValueChange={field.onChange} value={field.value || ''}>
                       <SelectTrigger><SelectValue placeholder={t('serverManagement.modals.edit.trafficMonitoring.billingRulePlaceholder')} /></SelectTrigger>
@@ -347,7 +471,7 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, group
                   )} />
                 </div>
                 <div>
-                  <Label>{t('serverManagement.modals.edit.trafficMonitoring.resetRuleType')}</Label>
+                  <Label className="mb-2 block">{t('serverManagement.modals.edit.trafficMonitoring.resetRuleType')}</Label>
                   <Controller name="trafficResetConfigType" control={control} render={({ field }) => (
                      <Select onValueChange={field.onChange} value={field.value || ''}>
                       <SelectTrigger><SelectValue placeholder={t('serverManagement.modals.edit.trafficMonitoring.resetRuleTypePlaceholder')} /></SelectTrigger>
@@ -360,12 +484,12 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, group
                 </div>
                 {watch('trafficResetConfigType') && (
                   <div>
-                    <Label>{t('serverManagement.modals.edit.trafficMonitoring.resetRuleValue')}</Label>
+                    <Label className="mb-2 block">{t('serverManagement.modals.edit.trafficMonitoring.resetRuleValue')}</Label>
                     <Controller name="trafficResetConfigValue" control={control} render={({ field }) => <Input {...field} value={field.value || ''} readOnly={watch('trafficResetConfigType') === 'monthly_day_of_month'} />} />
                   </div>
                 )}
                 <div>
-                  <Label>{t('serverManagement.modals.edit.trafficMonitoring.nextResetDate')}</Label>
+                  <Label className="mb-2 block">{t('serverManagement.modals.edit.trafficMonitoring.nextResetDate')}</Label>
                   <Controller name="nextTrafficResetAt" control={control} render={({ field }) => <DateTimePicker value={field.value ? new Date(field.value) : null} onChange={field.onChange} />} />
                 </div>
               </div>
@@ -374,35 +498,43 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, group
             <TabsContent value="renewal">
               <div className="space-y-4">
                 <div>
-                  <Label>{t('serverManagement.modals.edit.renewalSettings.cycle')}</Label>
-                  <Controller name="renewalCycle" control={control} render={({ field }) => (
-                    <Select onValueChange={field.onChange} value={field.value || ''}>
-                      <SelectTrigger><SelectValue placeholder={t('serverManagement.modals.edit.renewalSettings.cyclePlaceholder')} /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="monthly">{t('serverManagement.modals.edit.renewalSettings.cycles.monthly')}</SelectItem>
-                        <SelectItem value="quarterly">{t('serverManagement.modals.edit.renewalSettings.cycles.quarterly')}</SelectItem>
-                        <SelectItem value="semi_annually">{t('serverManagement.modals.edit.renewalSettings.cycles.semi_annually')}</SelectItem>
-                        <SelectItem value="annually">{t('serverManagement.modals.edit.renewalSettings.cycles.annually')}</SelectItem>
-                        <SelectItem value="biennially">{t('serverManagement.modals.edit.renewalSettings.cycles.biennially')}</SelectItem>
-                        <SelectItem value="triennially">{t('serverManagement.modals.edit.renewalSettings.cycles.triennially')}</SelectItem>
-                        <SelectItem value="custom_days">{t('serverManagement.modals.edit.renewalSettings.cycles.custom')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  )} />
+                  <Label className="mb-2 block">{t('serverManagement.modals.edit.renewalSettings.cycle')}</Label>
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <Controller name="renewalCycle" control={control} render={({ field }) => (
+                        <Select onValueChange={field.onChange} value={field.value || ''}>
+                          <SelectTrigger><SelectValue placeholder={t('serverManagement.modals.edit.renewalSettings.cyclePlaceholder')} /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="monthly">{t('serverManagement.modals.edit.renewalSettings.cycles.monthly')}</SelectItem>
+                            <SelectItem value="quarterly">{t('serverManagement.modals.edit.renewalSettings.cycles.quarterly')}</SelectItem>
+                            <SelectItem value="semi_annually">{t('serverManagement.modals.edit.renewalSettings.cycles.semi_annually')}</SelectItem>
+                            <SelectItem value="annually">{t('serverManagement.modals.edit.renewalSettings.cycles.annually')}</SelectItem>
+                            <SelectItem value="biennially">{t('serverManagement.modals.edit.renewalSettings.cycles.biennially')}</SelectItem>
+                            <SelectItem value="triennially">{t('serverManagement.modals.edit.renewalSettings.cycles.triennially')}</SelectItem>
+                            <SelectItem value="custom_days">{t('serverManagement.modals.edit.renewalSettings.cycles.custom')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )} />
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Controller name="autoRenewEnabled" control={control} render={({ field }) => <Checkbox id="autoRenewEnabled" checked={field.value} onCheckedChange={field.onChange} />} />
+                      <Label htmlFor="autoRenewEnabled" className="whitespace-nowrap">{t('serverManagement.modals.edit.renewalSettings.autoRenew')}</Label>
+                    </div>
+                  </div>
                 </div>
                 {watch('renewalCycle') === 'custom_days' && (
                   <div>
-                    <Label>{t('serverManagement.modals.edit.renewalSettings.customCycleDays')}</Label>
+                    <Label className="mb-2 block">{t('serverManagement.modals.edit.renewalSettings.customCycleDays')}</Label>
                     <Controller name="renewalCycleCustomDays" control={control} render={({ field }) => <Input type="number" {...field} value={field.value || ''} />} />
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <Label>{t('serverManagement.modals.edit.renewalSettings.price')}</Label>
+                        <Label className="mb-2 block">{t('serverManagement.modals.edit.renewalSettings.price')}</Label>
                         <Controller name="renewalPrice" control={control} render={({ field }) => <Input type="number" step="0.01" {...field} value={field.value || ''} />} />
                     </div>
                     <div>
-                        <Label>{t('serverManagement.modals.edit.renewalSettings.currency')}</Label>
+                        <Label className="mb-2 block">{t('serverManagement.modals.edit.renewalSettings.currency')}</Label>
                         <Controller name="renewalCurrency" control={control} render={({ field }) => <CreatableCombobox field={field} options={[
                            {value: 'USD', label: t('serverManagement.modals.edit.renewalSettings.currencies.usd')},
                            {value: 'CNY', label: t('serverManagement.modals.edit.renewalSettings.currencies.cny')},
@@ -416,19 +548,64 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, group
                     </div>
                 </div>
                 <div>
-                  <Label>{t('serverManagement.modals.edit.renewalSettings.startDate')}</Label>
-                  <Controller name="serviceStartDate" control={control} render={({ field }) => <DateTimePicker value={field.value ? new Date(field.value) : null} onChange={field.onChange} />} />
+                  <Label className="mb-2 block">{t('serverManagement.modals.edit.renewalSettings.startDate')}</Label>
+                  <Controller
+                    name="serviceStartDate"
+                    control={control}
+                    render={({ field }) => (
+                      <DateTimePicker
+                        value={field.value ? new Date(field.value) : null}
+                        onChange={field.onChange}
+                      />
+                    )}
+                  />
                 </div>
                 <div>
-                  <Label>{t('serverManagement.modals.edit.renewalSettings.lastDate')}</Label>
-                  <Controller name="lastRenewalDate" control={control} render={({ field }) => <DateTimePicker value={field.value ? new Date(field.value) : null} onChange={field.onChange} />} />
+                  <Label className="mb-2 block">{t('serverManagement.modals.edit.renewalSettings.lastDate')}</Label>
+                  <div className={`transition-all duration-300 ${
+                    highlightedFields.lastRenewalDate
+                      ? 'bg-green-50 border-green-300 rounded shadow-sm p-1'
+                      : ''
+                  }`}>
+                    <Controller
+                      name="lastRenewalDate"
+                      control={control}
+                      render={({ field }) => (
+                        <DateTimePicker
+                          value={field.value ? new Date(field.value) : null}
+                          onChange={(date) => {
+                            userModifiedLastRenewalDate.current = true;
+                            field.onChange(date);
+                          }}
+                        />
+                      )}
+                    />
+                  </div>
                 </div>
                 <div>
-                  <Label>{t('serverManagement.modals.edit.renewalSettings.nextDate')}</Label>
-                  <Controller name="nextRenewalDate" control={control} render={({ field }) => <DateTimePicker value={field.value ? new Date(field.value) : null} onChange={field.onChange} />} />
+                  <Label className="mb-2 block">{t('serverManagement.modals.edit.renewalSettings.nextDate')}</Label>
+                  <div className={`transition-all duration-300 ${
+                    highlightedFields.nextRenewalDate
+                      ? 'bg-green-50 border-green-300 rounded shadow-sm p-1'
+                      : ''
+                  }`}>
+                    <Controller
+                      name="nextRenewalDate"
+                      control={control}
+                      render={({ field }) => (
+                        <DateTimePicker
+                          value={field.value ? new Date(field.value) : null}
+                          onChange={(date) => {
+                            userModifiedNextRenewalDate.current = true;
+                            field.onChange(date);
+                          }}
+                        />
+                      )}
+                    />
+                  </div>
                 </div>
                 <div>
-                  <Label>{t('serverManagement.modals.edit.renewalSettings.paymentMethod')}</Label>
+                  <Label className="mb-2 block">{t('serverManagement.modals.edit.renewalSettings.paymentMethod')}</Label>
                   <Controller name="paymentMethod" control={control} render={({ field }) => <CreatableCombobox field={field} options={[
                     { value: 'PayPal', label: t('serverManagement.modals.edit.renewalSettings.paymentMethods.paypal') },
                     { value: 'Alipay', label: t('serverManagement.modals.edit.renewalSettings.paymentMethods.alipay') },
@@ -442,12 +619,8 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, group
                     ]} placeholder={t('serverManagement.modals.edit.renewalSettings.paymentMethodPlaceholder')} />} />
                 </div>
                 <div>
-                  <Label>{t('serverManagement.modals.edit.renewalSettings.notes')}</Label>
+                  <Label className="mb-2 block">{t('serverManagement.modals.edit.renewalSettings.notes')}</Label>
                   <Controller name="renewalNotes" control={control} render={({ field }) => <Textarea {...field} value={field.value || ''} />} />
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Controller name="autoRenewEnabled" control={control} render={({ field }) => <Checkbox id="autoRenewEnabled" checked={field.value} onCheckedChange={field.onChange} />} />
-                  <Label htmlFor="autoRenewEnabled">{t('serverManagement.modals.edit.renewalSettings.autoRenew')}</Label>
                 </div>
               </div>
             </TabsContent>

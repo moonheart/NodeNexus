@@ -30,19 +30,41 @@ export function DateTimePicker({ value, onChange }: DateTimePickerProps) {
   const { t, i18n } = useTranslation();
   const [date, setDate] = React.useState<Date | undefined>(value || undefined);
   const [time, setTime] = React.useState(value ? format(value, "HH:mm:ss") : "00:00:00");
+  const isInitialMount = React.useRef(true);
 
   const currentLocale = localeMap[i18n.language] || enUS;
 
   React.useEffect(() => {
+    // 当外部 value 变化时，同步内部 state
+    if (value?.getTime() !== date?.getTime()) {
+      setDate(value || undefined);
+    }
+    const newTime = value ? format(value, "HH:mm:ss") : "00:00:00";
+    if (newTime !== time) {
+      setTime(newTime);
+    }
+  }, [value]);
+
+  React.useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
     if (date) {
       const [hours, minutes, seconds] = time.split(':').map(Number);
       const newDate = new Date(date);
       newDate.setHours(hours, minutes, seconds);
-      onChange(newDate);
+      if (newDate.getTime() !== value?.getTime()) {
+        onChange(newDate);
+      }
     } else {
-      onChange(null);
+      if (value !== null) {
+        onChange(null);
+      }
     }
-  }, [date, time, onChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date, time]);
 
   const handleDateSelect = (selectedDate: Date | undefined) => {
     if (selectedDate) {
@@ -52,10 +74,8 @@ export function DateTimePicker({ value, onChange }: DateTimePickerProps) {
             newDate.setHours(hours, minutes, seconds);
         }
         setDate(newDate);
-        onChange(newDate);
     } else {
         setDate(undefined);
-        onChange(null);
     }
   }
 
