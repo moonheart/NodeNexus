@@ -43,7 +43,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server }) => {
     <TooltipProvider>
       <Card className={cn("flex flex-col transition-shadow duration-300 hover:shadow-lg py-0 gap-2", cardBorderClass)}>
         <RouterLink to={`/vps/${server.id}`} className="hover:bg-muted/50 transition-colors">
-          <CardHeader className="pb-2 pt-4 px-4 rounded-t-xl bg-gradient-to-r from-blue-05 to-indigo-100">
+          <CardHeader className="pb-2 pt-4 px-4 rounded-t-xl bg-secondary/20">
             <CardTitle className="text-base font-semibold truncate" title={server.name}>
               {server.name}
             </CardTitle>
