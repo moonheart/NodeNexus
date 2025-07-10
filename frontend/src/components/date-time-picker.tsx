@@ -30,7 +30,9 @@ export function DateTimePicker({ value, onChange }: DateTimePickerProps) {
   const { t, i18n } = useTranslation();
   const [date, setDate] = React.useState<Date | undefined>(value || undefined);
   const [time, setTime] = React.useState(value ? format(value, "HH:mm:ss") : "00:00:00");
+  const [isPickerOpen, setIsPickerOpen] = React.useState(false);
   const isInitialMount = React.useRef(true);
+  const isInternalChange = React.useRef(false);
 
   const currentLocale = localeMap[i18n.language] || enUS;
 
@@ -51,22 +53,26 @@ export function DateTimePicker({ value, onChange }: DateTimePickerProps) {
       return;
     }
 
-    if (date) {
-      const [hours, minutes, seconds] = time.split(':').map(Number);
-      const newDate = new Date(date);
-      newDate.setHours(hours, minutes, seconds);
-      if (newDate.getTime() !== value?.getTime()) {
-        onChange(newDate);
+    if (isInternalChange.current) {
+      if (date) {
+        const [hours, minutes, seconds] = time.split(':').map(Number);
+        const newDate = new Date(date);
+        newDate.setHours(hours, minutes, seconds);
+        if (newDate.getTime() !== value?.getTime()) {
+          onChange(newDate);
+        }
+      } else {
+        if (value !== null) {
+          onChange(null);
+        }
       }
-    } else {
-      if (value !== null) {
-        onChange(null);
-      }
+      isInternalChange.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, time]);
 
   const handleDateSelect = (selectedDate: Date | undefined) => {
+    isInternalChange.current = true;
     if (selectedDate) {
         const newDate = new Date(selectedDate);
         if (time) {
@@ -74,6 +80,7 @@ export function DateTimePicker({ value, onChange }: DateTimePickerProps) {
             newDate.setHours(hours, minutes, seconds);
         }
         setDate(newDate);
+        setIsPickerOpen(false); // Close picker on date select
     } else {
         setDate(undefined);
     }
@@ -81,7 +88,7 @@ export function DateTimePicker({ value, onChange }: DateTimePickerProps) {
 
   return (
     <div className="flex items-center gap-2">
-      <Popover>
+      <Popover open={isPickerOpen} onOpenChange={setIsPickerOpen}>
         <PopoverTrigger asChild>
           <Button
             variant={"outline"}
@@ -107,7 +114,10 @@ export function DateTimePicker({ value, onChange }: DateTimePickerProps) {
         type="time"
         step="1"
         value={time}
-        onChange={(e) => setTime(e.target.value)}
+        onChange={(e) => {
+          isInternalChange.current = true;
+          setTime(e.target.value);
+        }}
         className="w-[120px]"
       />
     </div>

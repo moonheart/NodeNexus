@@ -207,11 +207,44 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, group
     }
   }, [isOpen, vps, reset]);
   
+  // Watch for changes that trigger automatic date calculations
+  const watchedServiceStartDate = watch('serviceStartDate');
+  const watchedLastRenewalDate = watch('lastRenewalDate');
+  const watchedRenewalCycle = watch('renewalCycle');
+  const watchedRenewalCycleCustomDays = watch('renewalCycleCustomDays');
+
+  // Effect 1: Auto-fill Last Renewal Date from Service Start Date
+  useEffect(() => {
+    // Only fill if service start date is set and last renewal was not manually changed.
+    if (watchedServiceStartDate && !userModifiedLastRenewalDate.current) {
+      setValue('lastRenewalDate', new Date(watchedServiceStartDate));
+      highlightField('lastRenewalDate');
+    }
+  }, [watchedServiceStartDate, setValue]);
+
+  // Effect 2: Auto-fill Next Renewal Date from Last Renewal Date and Cycle
+  useEffect(() => {
+    // Only fill if we have a base date and a cycle, and next renewal was not manually changed.
+    if (watchedLastRenewalDate && watchedRenewalCycle && !userModifiedNextRenewalDate.current) {
+      const nextDate = calculateNextRenewalDate(
+        new Date(watchedLastRenewalDate),
+        watchedRenewalCycle,
+        watchedRenewalCycleCustomDays
+      );
+      
+      if (nextDate) {
+        const currentNextDateVal = watch('nextRenewalDate');
+        // Set value only if it's different to avoid re-renders/loops
+        if (!currentNextDateVal || new Date(currentNextDateVal).getTime() !== nextDate.getTime()) {
+          setValue('nextRenewalDate', nextDate);
+          highlightField('nextRenewalDate');
+        }
+      }
+    }
+  }, [watchedLastRenewalDate, watchedRenewalCycle, watchedRenewalCycleCustomDays, setValue]);
+
   const trafficResetConfigType = watch('trafficResetConfigType');
   const nextTrafficResetAt = watch('nextTrafficResetAt');
-  const serviceStartDate = watch('serviceStartDate');
-  const renewalCycle = watch('renewalCycle');
-  const renewalCycleCustomDays = watch('renewalCycleCustomDays');
 
   useEffect(() => {
     if (trafficResetConfigType === 'monthly_day_of_month' && nextTrafficResetAt) {
@@ -228,47 +261,6 @@ const EditVpsModal: React.FC<EditVpsModalProps> = ({ isOpen, onClose, vps, group
     }
   }, [nextTrafficResetAt, trafficResetConfigType, setValue]);
   
-  // 监听serviceStartDate变化，自动填充lastRenewalDate和nextRenewalDate
-  useEffect(() => {
-    // 如果服务开始日期有值
-    if (serviceStartDate) {
-      console.log('服务开始日期变更为:', serviceStartDate);
-      
-      // 处理上次续费日期自动填充
-      if (!userModifiedLastRenewalDate.current) {
-        const lastRenewalDate = watch('lastRenewalDate');
-        console.log('当前上次续费日期:', lastRenewalDate);
-        
-        if (!lastRenewalDate) {
-          console.log('尝试自动填充上次续费日期');
-          setValue('lastRenewalDate', new Date(serviceStartDate));
-          highlightField('lastRenewalDate'); // 添加高亮反馈
-        }
-      }
-      
-      // 处理下次续费日期自动计算
-      if (!userModifiedNextRenewalDate.current) {
-        const nextRenewalDate = watch('nextRenewalDate');
-        console.log('当前下次续费日期:', nextRenewalDate);
-        console.log('当前续费周期:', renewalCycle);
-        
-        if (!nextRenewalDate && renewalCycle) {
-          // 使用工具函数计算下次续费日期
-          const nextDate = calculateNextRenewalDate(
-            new Date(serviceStartDate),
-            renewalCycle,
-            renewalCycleCustomDays
-          );
-          
-          if (nextDate) {
-            console.log('计算得到下次续费日期:', nextDate);
-            setValue('nextRenewalDate', nextDate);
-            highlightField('nextRenewalDate'); // 添加高亮反馈
-          }
-        }
-      }
-    }
-  }, [serviceStartDate, renewalCycle, renewalCycleCustomDays, setValue, watch]);
 
 
   const onSubmit = async (data: FormValues) => {
