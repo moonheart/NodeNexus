@@ -62,7 +62,8 @@ const HistoricalMonitorChart: React.FC<HistoricalMonitorChartProps> = ({ monitor
       return acc;
     }, {} as Record<string, ServiceMonitorResult[]>);
 
-    const agentLines = Object.keys(groupedByAgent).map((agentName, index) => ({
+    const sortedAgentNames = Object.keys(groupedByAgent).sort();
+    const agentLines = sortedAgentNames.map((agentName, index) => ({
       dataKey: agentName,
       name: agentName,
       stroke: AGENT_COLORS[index % AGENT_COLORS.length],
@@ -129,7 +130,6 @@ const HistoricalMonitorChart: React.FC<HistoricalMonitorChartProps> = ({ monitor
               axisLine={false}
               tickMargin={8}
               tick={{ fontSize: 11 }}
-              allowDuplicatedCategory={false}
             />
             <YAxis
               width={80}

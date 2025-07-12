@@ -12,16 +12,10 @@ const formatLatencyForTooltip = (value: ValueType) => {
 };
 
 // Helper to format date for XAxis
-const formatDateTick = (tickItem: string) => {
-  const date = new Date(tickItem);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-};
+const formatDateTick = (tickItem: number) => new Date(tickItem).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
 // Helper to format the label in tooltips to local time
-const formatTooltipLabel = (label: string) => {
-  const date = new Date(label);
-  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-};
+const formatTooltipLabel = (label: number) => new Date(label).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 
 const AGENT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
@@ -44,42 +38,39 @@ export const ServiceMonitorChart: React.FC<{ results: ServiceMonitorResult[] }> 
             return acc;
         }, {} as Record<number, ServiceMonitorResult[]>);
 
-        const monitorLines: { dataKey: string; name: string; stroke: string }[] = [];
-        let colorIndex = 0;
-        for (const monitorId in groupedByMonitorId) {
-            if (Object.prototype.hasOwnProperty.call(groupedByMonitorId, monitorId)) {
-                const firstResult = groupedByMonitorId[monitorId][0];
-                const monitorName = firstResult.monitorName || `Monitor #${monitorId}`;
-                const color = AGENT_COLORS[colorIndex % AGENT_COLORS.length];
-                
-                monitorLines.push({
-                    dataKey: `monitor_${monitorId}`,
-                    name: monitorName,
-                    stroke: color,
-                });
-                colorIndex++;
-            }
-        }
+        const sortedMonitorIds = Object.keys(groupedByMonitorId).sort((a, b) => Number(a) - Number(b));
 
-        const timePoints = [...new Set(sortedResults.map(r => new Date(r.time).toISOString()))].sort();
+        const monitorLines = sortedMonitorIds.map((monitorId, index) => {
+            const firstResult = groupedByMonitorId[Number(monitorId)][0];
+            const monitorName = firstResult.monitorName || `Monitor #${monitorId}`;
+            const color = AGENT_COLORS[index % AGENT_COLORS.length];
+            
+            return {
+                dataKey: `monitor_${monitorId}`,
+                name: monitorName,
+                stroke: color,
+            };
+        });
+
+        const timePoints = [...new Set(sortedResults.map(r => new Date(r.time).getTime()))].sort((a, b) => a - b);
 
         const chartData = timePoints.map(time => {
-            const point: { time: string; [key: string]: number | null | string } = { time };
+            const point: { time: number; [key: string]: number | null } = { time };
             for (const monitorId in groupedByMonitorId) {
                 const dataKey = `monitor_${monitorId}`;
-                const resultForTime = groupedByMonitorId[monitorId].find(r => new Date(r.time).toISOString() === time);
+                const resultForTime = groupedByMonitorId[monitorId].find(r => new Date(r.time).getTime() === time);
                 point[dataKey] = resultForTime && resultForTime.isUp ? resultForTime.latencyMs : null;
             }
             return point;
         });
 
-        const areas: { x1: string, x2: string }[] = [];
-        let downtimeStart: string | null = null;
+        const areas: { x1: number, x2: number }[] = [];
+        let downtimeStart: number | null = null;
 
         for (let i = 0; i < timePoints.length; i++) {
             const time = timePoints[i];
             const isAnyDown = Object.values(groupedByMonitorId).some(monitorResults =>
-                monitorResults.some(r => new Date(r.time).toISOString() === time && !r.isUp)
+                monitorResults.some(r => new Date(r.time).getTime() === time && !r.isUp)
             );
 
             if (isAnyDown && !downtimeStart) {
@@ -119,9 +110,9 @@ export const ServiceMonitorChart: React.FC<{ results: ServiceMonitorResult[] }> 
             <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
+                    <XAxis dataKey="time" type="number" domain={['dataMin', 'dataMax']} tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
                     <YAxis tickFormatter={(tick) => `${tick} ms`} width={80} tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={formatLatencyForTooltip} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'hsl(var(--background) / 0.8)', backdropFilter: 'blur(2px)', borderRadius: 'var(--radius)', fontSize: '0.8rem' }} />
+                    <Tooltip formatter={formatLatencyForTooltip} labelFormatter={(label) => formatTooltipLabel(label as number)} contentStyle={{ backgroundColor: 'hsl(var(--background) / 0.8)', backdropFilter: 'blur(2px)', borderRadius: 'var(--radius)', fontSize: '0.8rem' }} />
                     <Legend wrapperStyle={{ fontSize: '0.8rem' }} onClick={handleLegendClick} formatter={renderLegendText} />
                     {downtimeAreas.map((area, index) => (
                         <ReferenceArea key={index} x1={area.x1} x2={area.x2} stroke="transparent" fill="hsl(var(--destructive))" fillOpacity={0.15} ifOverflow="visible" />

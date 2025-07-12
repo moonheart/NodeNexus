@@ -62,7 +62,13 @@ const RealtimeMonitorChart: React.FC<RealtimeMonitorChartProps> = ({ monitorId }
     if (!results || results.length === 0) {
       return { agentLines: [], chartConfig: {} as ChartConfig };
     }
-    const agentNames = [...new Set(results.map(r => r.agentName))].sort();
+    const groupedByAgent = results.reduce((acc, result) => {
+      if (!acc[result.agentName]) acc[result.agentName] = [];
+      acc[result.agentName].push(result);
+      return acc;
+    }, {} as Record<string, ServiceMonitorResult[]>);
+
+    const agentNames = Object.keys(groupedByAgent).sort();
     const agentLines = agentNames.map((agentName, index) => ({
       dataKey: agentName,
       name: agentName,
@@ -128,7 +134,6 @@ const RealtimeMonitorChart: React.FC<RealtimeMonitorChartProps> = ({ monitorId }
               axisLine={false}
               tickMargin={8}
               tick={{ fontSize: 11 }}
-              allowDuplicatedCategory={false}
             />
             <YAxis
               width={80}
