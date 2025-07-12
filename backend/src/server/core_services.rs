@@ -271,7 +271,7 @@ pub async fn process_agent_stream<S>(
                                     {
                                         error!(monitor_id = result.monitor_id, error = %e, "Failed to record monitor result.");
                                     } else {
-                                        let details = services::service_monitor_service::get_monitor_results_by_id(&pool, result.monitor_id, None, None, Some(1)).await;
+                                        let details = services::service_monitor_service::get_monitor_results_by_id(&pool, result.monitor_id, None, None, None, Some(1)).await;
                                         if let Ok(mut details_vec) = details {
                                             if let Some(detail) = details_vec.pop() {
                                                 if ws_data_broadcaster_tx.receiver_count() > 0 {

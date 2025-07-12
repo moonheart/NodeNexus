@@ -134,7 +134,8 @@ async fn delete_monitor(
 pub struct MonitorResultsQuery {
     pub start_time: Option<DateTime<Utc>>,
     pub end_time: Option<DateTime<Utc>>,
-    pub limit: Option<u64>,
+    pub interval: Option<String>,
+    pub points: Option<u64>,
 }
 
 #[axum::debug_handler]
@@ -152,7 +153,8 @@ async fn get_monitor_results(
         id,
         query.start_time,
         query.end_time,
-        query.limit,
+        query.interval,
+        query.points,
     )
     .await?;
     Ok(Json(results))

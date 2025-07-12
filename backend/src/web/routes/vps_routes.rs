@@ -673,7 +673,7 @@ async fn get_vps_monitor_results_handler(
         user_id,
         query.start_time,
         query.end_time,
-        query.limit,
+        query.points,
     )
     .await?;
 

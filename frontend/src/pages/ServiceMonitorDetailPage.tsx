@@ -39,6 +39,7 @@ const ServiceMonitorDetailPage: React.FC = () => {
   const [monitor, setMonitor] = useState<ServiceMonitor | null>(null);
   const [results, setResults] = useState<ServiceMonitorResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isChartLoading, setIsChartLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('realtime');
   const [hiddenLines, setHiddenLines] = useState<Record<string, boolean>>({});
@@ -71,41 +72,16 @@ const ServiceMonitorDetailPage: React.FC = () => {
   }, [results]);
 
 
+  // Effect to fetch monitor details
   useEffect(() => {
     if (!monitorId) return;
     const monitorIdNum = parseInt(monitorId, 10);
 
-    let unsubscribe: () => void;
-
-    const setupSubscription = async () => {
+    const fetchMonitorDetails = async () => {
       try {
         setIsLoading(true);
-        
-        // Fetch monitor details separately
         const monitorData = await getMonitorById(monitorIdNum);
         setMonitor(monitorData);
-
-        // Handle data fetching based on time range
-        if (selectedTimeRange === 'realtime') {
-            // Get initial data from the store (which fetches if not cached)
-            const initialResults = await getInitialMonitorResults(monitorIdNum, 500);
-            setResults(initialResults);
-
-            // Subscribe to live updates
-            unsubscribe = subscribeToMonitorResults(monitorIdNum, (updatedResults) => {
-                setResults(updatedResults);
-            });
-        } else {
-            // For historical data, we can still use a direct fetch for now,
-            // or enhance the store to handle time-ranged queries.
-            // For simplicity, we'll stick to the direct fetch for non-realtime views.
-            const endTime = new Date();
-            const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange as Exclude<TimeRangeOption, 'realtime'>]);
-            const historicalResults = await getMonitorResults(monitorIdNum, startTime.toISOString(), endTime.toISOString());
-            setResults(historicalResults.sort((a: ServiceMonitorResult, b: ServiceMonitorResult) => new Date(a.time).getTime() - new Date(b.time).getTime()));
-        }
-
-        setError(null);
       } catch (err) {
         setError('无法获取监控详情。');
         console.error(err);
@@ -114,9 +90,48 @@ const ServiceMonitorDetailPage: React.FC = () => {
       }
     };
 
-    setupSubscription();
+    fetchMonitorDetails();
+  }, [monitorId]);
 
-    // Cleanup function
+  // Effect to fetch monitor results based on time range
+  useEffect(() => {
+    if (!monitorId) return;
+    const monitorIdNum = parseInt(monitorId, 10);
+
+    let unsubscribe: () => void;
+
+    const fetchResults = async () => {
+      try {
+        setIsChartLoading(true);
+        
+        // Unsubscribe from previous real-time updates if any
+        if (unsubscribe) {
+          unsubscribe();
+        }
+
+        if (selectedTimeRange === 'realtime') {
+          const initialResults = await getInitialMonitorResults(monitorIdNum, 500);
+          setResults(initialResults);
+          unsubscribe = subscribeToMonitorResults(monitorIdNum, (updatedResults) => {
+            setResults(updatedResults);
+          });
+        } else {
+          const endTime = new Date();
+          const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange as Exclude<TimeRangeOption, 'realtime'>]);
+          const historicalResults = await getMonitorResults(monitorIdNum, startTime.toISOString(), endTime.toISOString(), MAX_HISTORICAL_POINTS);
+          setResults(historicalResults.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()));
+        }
+        setError(null);
+      } catch (err) {
+        setError('无法获取监控结果。');
+        console.error(err);
+      } finally {
+        setIsChartLoading(false);
+      }
+    };
+
+    fetchResults();
+
     return () => {
       if (unsubscribe) {
         unsubscribe();
@@ -128,63 +143,21 @@ const ServiceMonitorDetailPage: React.FC = () => {
     if (!results || results.length === 0) {
       return { chartData: [], downtimeAreas: [] };
     }
-    
-    const groupedByAgent = results.reduce((acc, result) => {
-      if (!acc[result.agentName]) acc[result.agentName] = [];
-      acc[result.agentName].push(result);
-      return acc;
-    }, {} as Record<string, ServiceMonitorResult[]>);
 
-    const latestTime = new Date(Math.max(...results.map(r => new Date(r.time).getTime())));
-    let startTime;
-    let step;
-
-    if (selectedTimeRange === 'realtime') {
-      const earliestTime = new Date(Math.min(...results.map(r => new Date(r.time).getTime())));
-      const timeDiff = latestTime.getTime() - earliestTime.getTime();
-      startTime = earliestTime;
-      step = Math.max(1000, timeDiff / MAX_HISTORICAL_POINTS); // Dynamic step for realtime
-    } else {
-      startTime = new Date(latestTime.getTime() - timeRangeToMillis[selectedTimeRange]);
-      const timeDiff = latestTime.getTime() - startTime.getTime();
-      step = Math.max(15 * 1000, timeDiff / MAX_HISTORICAL_POINTS);
-    }
-
-    const timePoints = [];
-    for (let t = startTime.getTime(); t <= latestTime.getTime(); t += step) {
-      timePoints.push(t);
-    }
-
-    const data = timePoints.map(timeNum => {
-      const time = new Date(timeNum).toISOString();
-      const point: ChartPoint = { time };
-
-      for (const agentName in groupedByAgent) {
-        const agentResults = groupedByAgent[agentName].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-        const resultIndex = agentResults.findIndex(r => new Date(r.time).getTime() >= timeNum);
-
-        if (resultIndex === -1 || resultIndex === 0) {
-          point[agentName] = null;
-        } else {
-          const p1 = agentResults[resultIndex - 1];
-          const p2 = agentResults[resultIndex];
-          if (!p1.isUp || !p2.isUp || typeof p1.latencyMs !== 'number' || typeof p2.latencyMs !== 'number') {
-            point[agentName] = null;
-          } else {
-            const t1 = new Date(p1.time).getTime();
-            const t2 = new Date(p2.time).getTime();
-            const v1 = p1.latencyMs;
-            const v2 = p2.latencyMs;
-            point[agentName] = v1 + (v2 - v1) * ((timeNum - t1) / (t2 - t1));
-          }
+    const groupedByTime = results.reduce((acc, result) => {
+        const time = result.time;
+        if (!acc[time]) {
+            acc[time] = { time };
         }
-      }
-      return point;
-    });
+        acc[time][result.agentName] = result.isUp ? result.latencyMs : null;
+        return acc;
+    }, {} as Record<string, ChartPoint>);
+
+    const chartData = Object.values(groupedByTime).sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
 
     const areas: { x1: string, x2: string }[] = [];
     // Downtime calculation can be added here if needed
-    return { chartData: data, downtimeAreas: areas };
+    return { chartData, downtimeAreas: areas };
   }, [results, selectedTimeRange, timeRangeToMillis]);
 
   const handleLegendClick = (data: { dataKey: string }) => {
@@ -249,122 +222,132 @@ const ServiceMonitorDetailPage: React.FC = () => {
             </ToggleGroup>
           </div>
         </CardHeader>
-        <CardContent className="h-96">
-          {chartData.chartData.length > 0 ? (
-            <ChartContainer config={agentConfig.chartConfig} className="h-full w-full">
-              <LineChart data={chartData.chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  dataKey="time"
-                  tickFormatter={formatDateTick}
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  tick={{ fontSize: 11 }}
-                  type="category"
-                  allowDuplicatedCategory={false}
-                />
-                <YAxis
-                  width={80}
-                  tickFormatter={(tick) => `${tick}ms`}
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  label={{ value: '延迟 (ms)', angle: -90, position: 'insideLeft', offset: -15 }}
-                />
-                <ChartTooltip
-                  cursor={true}
-                  content={({ active, payload, label }) => {
-                    if (active && payload && payload.length && label) {
-                      const labelStr = formatTooltipLabel(label);
-                      return (
-                        <div className="z-50 overflow-hidden rounded-md border bg-popover px-3 py-1.5 text-sm shadow-md animate-in fade-in-0 zoom-in-95">
-                          <div className="font-semibold">{labelStr}</div>
-                          <div className="mt-2 space-y-2">
-                            {payload.map((item) => {
-                              const key = item.dataKey as string;
-                              const config = agentConfig.chartConfig[key as keyof typeof agentConfig.chartConfig];
-                              const color = config?.color || item.color;
-                              
-                              if (item.value === null || item.value === undefined) return null;
-                              
-                              const value = typeof item.value === 'number' ? `${Math.round(item.value as number)} ms` : 'N/A';
-
-                              return (
-                                <div key={item.dataKey} className="flex items-center gap-2">
-                                  <div
-                                    className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
-                                    style={{ backgroundColor: color }}
-                                  />
-                                  <div className="flex flex-1 justify-between">
-                                    <span className="text-muted-foreground">{config?.label || item.name}:</span>
-                                    <span className="font-mono font-medium">{value}</span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <ChartLegend
-                  content={({ payload }) => (
-                    <div className="flex items-center justify-center gap-4 pt-3">
-                      {payload?.map((item) => {
-                        const key = item.dataKey as string;
-                        const itemConfig = agentConfig.chartConfig[key as keyof typeof agentConfig.chartConfig];
-                        const isHidden = hiddenLines[key];
-                        return (
-                          <div
-                            key={item.value}
-                            onClick={() => {
-                              if (typeof item.dataKey === 'string') {
-                                handleLegendClick({ dataKey: item.dataKey });
-                              }
-                            }}
-                            className="flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <div
-                              className="h-2 w-2 shrink-0 rounded-[2px]"
-                              style={{ backgroundColor: isHidden ? '#A0A0A0' : item.color }}
-                            />
-                            <span style={{ color: isHidden ? '#A0A0A0' : 'inherit' }}>
-                              {itemConfig?.label || item.value}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                />
-                {chartData.downtimeAreas.map((area, index) => (
-                  <ReferenceArea key={index} x1={area.x1} x2={area.x2} stroke="transparent" fill="hsl(var(--destructive))" fillOpacity={0.15} ifOverflow="extendDomain" />
-                ))}
-                {agentConfig.agentLines.map(line => (
-                  <Line
-                    key={line.dataKey}
-                    type="monotone"
-                    dataKey={line.dataKey}
-                    name={line.name}
-                    stroke={`var(--color-${line.dataKey})`}
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 6 }}
-                    connectNulls={true}
-                    hide={hiddenLines[line.dataKey]}
-                    isAnimationActive={true}
-                  />
-                ))}
-              </LineChart>
-            </ChartContainer>
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-muted-foreground">暂无监控结果。</p>
+        <CardContent className="h-96 relative flex flex-col">
+          {isChartLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
+              <div className="text-center">
+                <p className="text-lg font-semibold">正在加载图表...</p>
+                <p className="text-sm text-muted-foreground">请稍候</p>
+              </div>
             </div>
           )}
+          <div className={`flex-grow min-h-0 ${isChartLoading ? 'opacity-50' : ''}`}>
+            {chartData.chartData.length > 0 ? (
+              <ChartContainer config={agentConfig.chartConfig} className="h-full w-full">
+                <LineChart data={chartData.chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="time"
+                    tickFormatter={formatDateTick}
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    tick={{ fontSize: 11 }}
+                    type="category"
+                    allowDuplicatedCategory={false}
+                  />
+                  <YAxis
+                    width={80}
+                    tickFormatter={(tick) => `${tick}ms`}
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    label={{ value: '延迟 (ms)', angle: -90, position: 'insideLeft', offset: -15 }}
+                  />
+                  <ChartTooltip
+                    cursor={true}
+                    content={({ active, payload, label }) => {
+                      if (active && payload && payload.length && label) {
+                        const labelStr = formatTooltipLabel(label);
+                        return (
+                          <div className="z-50 overflow-hidden rounded-md border bg-popover px-3 py-1.5 text-sm shadow-md animate-in fade-in-0 zoom-in-95">
+                            <div className="font-semibold">{labelStr}</div>
+                            <div className="mt-2 space-y-2">
+                              {payload.map((item) => {
+                                const key = item.dataKey as string;
+                                const config = agentConfig.chartConfig[key as keyof typeof agentConfig.chartConfig];
+                                const color = config?.color || item.color;
+                                
+                                if (item.value === null || item.value === undefined) return null;
+                                
+                                const value = typeof item.value === 'number' ? `${Math.round(item.value as number)} ms` : 'N/A';
+
+                                return (
+                                  <div key={item.dataKey} className="flex items-center gap-2">
+                                    <div
+                                      className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                                      style={{ backgroundColor: color }}
+                                    />
+                                    <div className="flex flex-1 justify-between">
+                                      <span className="text-muted-foreground">{config?.label || item.name}:</span>
+                                      <span className="font-mono font-medium">{value}</span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <ChartLegend
+                    content={({ payload }) => (
+                      <div className="flex items-center justify-center gap-4 pt-3">
+                        {payload?.map((item) => {
+                          const key = item.dataKey as string;
+                          const itemConfig = agentConfig.chartConfig[key as keyof typeof agentConfig.chartConfig];
+                          const isHidden = hiddenLines[key];
+                          return (
+                            <div
+                              key={item.value}
+                              onClick={() => {
+                                if (typeof item.dataKey === 'string') {
+                                  handleLegendClick({ dataKey: item.dataKey });
+                                }
+                              }}
+                              className="flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <div
+                                className="h-2 w-2 shrink-0 rounded-[2px]"
+                                style={{ backgroundColor: isHidden ? '#A0A0A0' : item.color }}
+                              />
+                              <span style={{ color: isHidden ? '#A0A0A0' : 'inherit' }}>
+                                {itemConfig?.label || item.value}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  />
+                  {chartData.downtimeAreas.map((area, index) => (
+                    <ReferenceArea key={index} x1={area.x1} x2={area.x2} stroke="transparent" fill="hsl(var(--destructive))" fillOpacity={0.15} ifOverflow="extendDomain" />
+                  ))}
+                  {agentConfig.agentLines.map(line => (
+                    <Line
+                      key={line.dataKey}
+                      type="monotone"
+                      dataKey={line.dataKey}
+                      name={line.name}
+                      stroke={`var(--color-${line.dataKey})`}
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 6 }}
+                      connectNulls={true}
+                      hide={hiddenLines[line.dataKey]}
+                      isAnimationActive={!isChartLoading}
+                    />
+                  ))}
+                </LineChart>
+              </ChartContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-muted-foreground">暂无监控结果。</p>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

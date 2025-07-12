@@ -11,15 +11,17 @@ use crate::web::models::service_monitor_models::{
 };
 use futures::try_join;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter,
-    ConnectionTrait, QueryOrder, Set, Statement, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, FromQueryResult,
+    QueryFilter, ConnectionTrait, QueryOrder, Set, Statement, TransactionTrait,
 };
 use std::collections::{HashMap, HashSet};
 
 use crate::agent_service::{ServiceMonitorResult, ServiceMonitorTask};
 use crate::db::entities::{service_monitor_result, vps_tag};
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
+use sea_orm::sea_query::{Expr, Func, Query};
 use sea_orm::QuerySelect;
+
 pub async fn create_monitor(
     db: &DatabaseConnection,
     user_id: i32,
@@ -648,82 +650,158 @@ pub async fn record_monitor_result(
 
     Ok(())
 }
+
+#[derive(Debug, FromQueryResult)]
+struct AggregatedMonitorResult {
+    time: DateTime<Utc>,
+    monitor_id: i32,
+    agent_id: i32,
+    latency_ms: Option<i32>,
+    is_up: Option<f64>, // Representing availability percentage
+    details: Option<serde_json::Value>,
+}
+
 pub async fn get_monitor_results_by_id(
     db: &DatabaseConnection,
     monitor_id: i32,
     start_time: Option<DateTime<Utc>>,
     end_time: Option<DateTime<Utc>>,
-    limit: Option<u64>,
+    interval: Option<String>,
+    points: Option<u64>,
 ) -> Result<Vec<ServiceMonitorResultDetails>, DbErr> {
     let monitor = ServiceMonitor::find_by_id(monitor_id)
         .one(db)
         .await?
         .ok_or_else(|| DbErr::RecordNotFound("Monitor not found".to_string()))?;
 
-    let mut query = service_monitor_result::Entity::find()
-        .filter(service_monitor_result::Column::MonitorId.eq(monitor_id));
+    let should_aggregate = interval.is_some() || points.is_some();
 
-    if let Some(start) = start_time {
-        query = query.filter(service_monitor_result::Column::Time.gte(start));
+    if !should_aggregate {
+        // --- Existing logic for raw data ---
+        let mut query = service_monitor_result::Entity::find()
+            .filter(service_monitor_result::Column::MonitorId.eq(monitor_id));
+        if let Some(start) = start_time {
+            query = query.filter(service_monitor_result::Column::Time.gte(start));
+        }
+        if let Some(end) = end_time {
+            query = query.filter(service_monitor_result::Column::Time.lte(end));
+        }
+        
+        // The original implementation had a limit parameter, which is now removed from the function signature.
+        // We will fetch all results within the time range if no aggregation is requested.
+        let results = query
+            .order_by_desc(service_monitor_result::Column::Time)
+            .all(db)
+            .await?;
+
+        if results.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let agent_ids: Vec<i32> = results
+            .iter()
+            .map(|r| r.agent_id)
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        let agents = Vps::find()
+            .filter(vps::Column::Id.is_in(agent_ids))
+            .all(db)
+            .await?;
+        let agent_name_map: HashMap<i32, String> = agents.into_iter().map(|a| (a.id, a.name)).collect();
+
+        let result_details = results
+            .into_iter()
+            .map(|result| {
+                let agent_name = agent_name_map
+                    .get(&result.agent_id)
+                    .cloned()
+                    .unwrap_or_else(|| "Unknown Agent".to_string());
+                ServiceMonitorResultDetails {
+                    time: result.time.to_rfc3339(),
+                    monitor_id: result.monitor_id,
+                    monitor_name: monitor.name.clone(),
+                    agent_id: result.agent_id,
+                    agent_name,
+                    is_up: result.is_up,
+                    latency_ms: result.latency_ms,
+                    details: result.details,
+                }
+            })
+            .collect();
+
+        return Ok(result_details);
     }
-    if let Some(end) = end_time {
-        query = query.filter(service_monitor_result::Column::Time.lte(end));
-    }
 
-    if let Some(limit_val) = limit {
-        query = query.limit(limit_val);
-    }
+    // --- New logic for aggregated data ---
+    let start = start_time.unwrap_or_else(|| Utc::now() - Duration::hours(1));
+    let end = end_time.unwrap_or_else(Utc::now);
 
-    let results = query
-        .order_by_desc(service_monitor_result::Column::Time)
-        .all(db)
-        .await?;
+    let interval_string = interval.unwrap_or_else(|| {
+        let duration_secs = (end - start).num_seconds();
+        let num_points = points.unwrap_or(300).max(1);
+        let calculated_interval_secs = (duration_secs as u64 / num_points).max(1);
+        format!("{} seconds", calculated_interval_secs)
+    });
 
-    if results.is_empty() {
+    let db_backend = db.get_database_backend();
+    let query = Statement::from_sql_and_values(
+        db_backend,
+        r#"
+        SELECT
+            time_bucket($1::interval, "time") as time,
+            monitor_id,
+            agent_id,
+            AVG(latency_ms)::int as latency_ms,
+            CAST(SUM(CASE WHEN is_up THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as is_up,
+            (array_agg(details ORDER BY "time" DESC) FILTER (WHERE details IS NOT NULL))[1] as details
+        FROM service_monitor_results
+        WHERE monitor_id = $2 AND "time" >= $3 AND "time" <= $4
+        GROUP BY 1, 2, 3
+        ORDER BY 1 DESC
+        "#,
+        [
+            interval_string.into(),
+            monitor_id.into(),
+            start.into(),
+            end.into(),
+        ],
+    );
+
+    let aggregated_results = AggregatedMonitorResult::find_by_statement(query).all(db).await?;
+
+    if aggregated_results.is_empty() {
         return Ok(Vec::new());
     }
 
-    let agent_ids: Vec<i32> = results
-        .iter()
-        .map(|r| r.agent_id)
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-    let agents = Vps::find()
-        .filter(vps::Column::Id.is_in(agent_ids))
-        .all(db)
-        .await?;
+    let agent_ids: Vec<i32> = aggregated_results.iter().map(|r| r.agent_id).collect::<HashSet<_>>().into_iter().collect();
+    let agents = Vps::find().filter(vps::Column::Id.is_in(agent_ids)).all(db).await?;
     let agent_name_map: HashMap<i32, String> = agents.into_iter().map(|a| (a.id, a.name)).collect();
 
-    let result_details = results
-        .into_iter()
-        .map(|result| {
-            let agent_name = agent_name_map
-                .get(&result.agent_id)
-                .cloned()
-                .unwrap_or_else(|| "Unknown Agent".to_string());
-            ServiceMonitorResultDetails {
-                time: result.time.to_rfc3339(),
-                monitor_id: result.monitor_id,
-                monitor_name: monitor.name.clone(),
-                agent_id: result.agent_id,
-                agent_name,
-                is_up: result.is_up,
-                latency_ms: result.latency_ms,
-                details: result.details,
-            }
-        })
-        .collect();
+    let result_details = aggregated_results.into_iter().map(|result| {
+        let agent_name = agent_name_map.get(&result.agent_id).cloned().unwrap_or_else(|| "Unknown Agent".to_string());
+        ServiceMonitorResultDetails {
+            time: result.time.to_rfc3339(),
+            monitor_id: result.monitor_id,
+            monitor_name: monitor.name.clone(),
+            agent_id: result.agent_id,
+            agent_name,
+            is_up: result.is_up.map_or(false, |v| v > 0.5), // Convert availability back to a boolean for the frontend
+            latency_ms: result.latency_ms,
+            details: result.details,
+        }
+    }).collect();
 
     Ok(result_details)
 }
+
 pub async fn get_monitor_results_by_vps_id(
     db: &DatabaseConnection,
     vps_id: i32,
     _user_id: i32,
     start_time: Option<DateTime<Utc>>,
     end_time: Option<DateTime<Utc>>,
-    limit_per_monitor: Option<u64>,
+    points: Option<u64>,
 ) -> Result<Vec<ServiceMonitorResultDetails>, DbErr> {
     // 1. Get all monitors associated with the VPS and owned by the user
     let user_monitors = get_runnable_monitors_for_vps(db, vps_id).await?;
@@ -748,7 +826,7 @@ pub async fn get_monitor_results_by_vps_id(
         if let Some(end) = end_time {
             query = query.filter(service_monitor_result::Column::Time.lte(end));
         }
-        if let Some(limit_val) = limit_per_monitor {
+        if let Some(limit_val) = points {
             query = query.limit(limit_val);
         }
 
