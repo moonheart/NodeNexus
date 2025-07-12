@@ -400,11 +400,6 @@ const VpsDetailPage: React.FC = () => {
 
   const { icon: StatusIcon, variant: statusVariant } = getVpsStatusAppearance(vpsDetail.status);
   const { latestMetrics: metrics, metadata } = vpsDetail;
-  const memUsed = metrics?.memoryUsageBytes ?? 0;
-  const memTotal = metrics?.memoryTotalBytes ?? 0;
-  const diskUsed = metrics?.diskUsedBytes ?? 0;
-  const diskTotal = metrics?.diskTotalBytes ?? 0;
-
   const { trafficLimitBytes: trafficLimit, trafficCurrentCycleRxBytes, trafficCurrentCycleTxBytes, trafficBillingRule: billingRule } = vpsDetail;
   const currentRx = trafficCurrentCycleRxBytes ?? 0;
   const currentTx = trafficCurrentCycleTxBytes ?? 0;
@@ -460,14 +455,7 @@ const VpsDetailPage: React.FC = () => {
         </CardHeader>
       </Card>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
-        <StatCard title={t('vpsDetailPage.statCards.cpuUsage')} value={metrics?.cpuUsagePercent?.toFixed(1) ?? 'N/A'} unit="%" icon={<Cpu />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? t('vpsDetailPage.offline') : `${metadata?.cpu_static_info?.brand || ''}`} />
-        <StatCard title={t('vpsDetailPage.statCards.memoryUsage')} value={memTotal > 0 ? ((memUsed / memTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<MemoryStick />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? t('vpsDetailPage.offline') : `${formatBytes(memUsed)} / ${formatBytes(memTotal)}`} />
-        <StatCard title={t('vpsDetailPage.statCards.diskUsage')} value={diskTotal > 0 ? ((diskUsed / diskTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<HardDrive />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? t('vpsDetailPage.offline') : `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`} />
-        <StatCard title={t('vpsDetailPage.statCards.upload')} value={formatNetworkSpeed(metrics?.networkTxInstantBps)} icon={<ArrowUp />} valueClassName="text-primary" description={t('vpsDetailPage.statCards.currentOutbound')} />
-        <StatCard title={t('vpsDetailPage.statCards.download')} value={formatNetworkSpeed(metrics?.networkRxInstantBps)} icon={<ArrowDown />} valueClassName="text-primary" description={t('vpsDetailPage.statCards.currentInbound')} />
-        <StatCard title={t('vpsDetailPage.statCards.uptime')} value={formatUptime(metrics?.uptimeSeconds)} icon={<AlertTriangle />} valueClassName="text-primary" description={t('vpsDetailPage.statCards.currentSession')} />
-      </div>
+      <VpsStatCards vpsDetail={vpsDetail} />
 
       {isAuthenticated && vpsDetail.trafficBillingRule && (
         <Card>
@@ -586,6 +574,26 @@ const VpsDetailPage: React.FC = () => {
     </div>
   );
 };
+
+const VpsStatCards: React.FC<{ vpsDetail: VpsListItemResponse }> = React.memo(({ vpsDetail }) => {
+  const { t } = useTranslation();
+  const { latestMetrics: metrics, metadata } = vpsDetail;
+  const memUsed = metrics?.memoryUsageBytes ?? 0;
+  const memTotal = metrics?.memoryTotalBytes ?? 0;
+  const diskUsed = metrics?.diskUsedBytes ?? 0;
+  const diskTotal = metrics?.diskTotalBytes ?? 0;
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
+      <StatCard title={t('vpsDetailPage.statCards.cpuUsage')} value={metrics?.cpuUsagePercent?.toFixed(1) ?? 'N/A'} unit="%" icon={<Cpu />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? t('vpsDetailPage.offline') : `${metadata?.cpu_static_info?.brand || ''}`} />
+      <StatCard title={t('vpsDetailPage.statCards.memoryUsage')} value={memTotal > 0 ? ((memUsed / memTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<MemoryStick />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? t('vpsDetailPage.offline') : `${formatBytes(memUsed)} / ${formatBytes(memTotal)}`} />
+      <StatCard title={t('vpsDetailPage.statCards.diskUsage')} value={diskTotal > 0 ? ((diskUsed / diskTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<HardDrive />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? t('vpsDetailPage.offline') : `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`} />
+      <StatCard title={t('vpsDetailPage.statCards.upload')} value={formatNetworkSpeed(metrics?.networkTxInstantBps)} icon={<ArrowUp />} valueClassName="text-primary" description={t('vpsDetailPage.statCards.currentOutbound')} />
+      <StatCard title={t('vpsDetailPage.statCards.download')} value={formatNetworkSpeed(metrics?.networkRxInstantBps)} icon={<ArrowDown />} valueClassName="text-primary" description={t('vpsDetailPage.statCards.currentInbound')} />
+      <StatCard title={t('vpsDetailPage.statCards.uptime')} value={formatUptime(metrics?.uptimeSeconds)} icon={<AlertTriangle />} valueClassName="text-primary" description={t('vpsDetailPage.statCards.currentSession')} />
+    </div>
+  );
+});
 
 const ChartComponent: React.FC<{ title: string, data: PerformanceMetricPoint[], dataKey: keyof PerformanceMetricPoint, stroke: string, yDomain: [number, number] }> = React.memo(({ title, data, dataKey, stroke, yDomain }) => {
   const { t } = useTranslation();

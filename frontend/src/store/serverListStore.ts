@@ -4,6 +4,7 @@ import websocketService from '../services/websocketService';
 import { useAuthStore } from './authStore';
 import type { VpsListItemResponse, FullServerListPushType, ViewMode, Tag, ServiceMonitorResult } from '../types';
 import * as tagService from '../services/tagService';
+import equal from 'fast-deep-equal';
 import { getMonitorResultsByVpsId } from '../services/serviceMonitorService';
 
 // --- Service Monitor Pub/Sub System (Per VPS) ---
@@ -275,10 +276,36 @@ export const useServerListStore = create<ServerListState>()(
     },
 
     _handleWebSocketMessage: (data) => {
-        // For both authenticated and public views, a simple replacement is the most
-        // reliable way to handle additions, updates, and deletions from the server.
-        // The server is the source of truth.
-        set({ servers: data.servers, isLoading: false, connectionStatus: 'connected', error: null });
+        const newServers = data.servers;
+        const oldServers = get().servers;
+
+        // Create a map of new servers for efficient lookup
+        const newServersMap = new Map(newServers.map(s => [s.id, s]));
+
+        // Create a new array, reusing old server objects if they haven't changed.
+        const mergedServers = newServers.map(newServer => {
+            const oldServer = oldServers.find(s => s.id === newServer.id);
+            // If an old server exists and is deep-equal to the new one, reuse the old object reference
+            if (oldServer && equal(oldServer, newServer)) {
+                return oldServer;
+            }
+            // Otherwise, use the new server object
+            return newServer;
+        });
+
+        // Also, handle servers that might have been removed.
+        const finalServers = mergedServers.filter(s => newServersMap.has(s.id));
+        
+        // Check if the final array is different from the old one before setting state
+        if (!equal(oldServers, finalServers)) {
+            set({ servers: finalServers, isLoading: false, connectionStatus: 'connected', error: null });
+        } else {
+            // If nothing changed, we can avoid a state update entirely.
+            // But we still need to update loading/connection status on the first message.
+            if (get().isLoading || get().connectionStatus !== 'connected') {
+                 set({ isLoading: false, connectionStatus: 'connected', error: null });
+            }
+        }
     },
 
     _handleServiceMonitorResult: (data) => {

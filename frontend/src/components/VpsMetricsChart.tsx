@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect, useState } from 'react';
-import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend as RechartsLegend } from 'recharts';
+import { AreaChart, Area, LineChart, Line, XAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend as RechartsLegend } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import { getLatestNMetrics } from '../services/metricsService';
 import type { PerformanceMetricPoint, ServiceMonitorResult } from '../types';
@@ -10,12 +10,14 @@ import { type ChartConfig } from "@/components/ui/chart";
 interface VpsMetricsChartProps {
   vpsId: number;
   initialMetrics?: PerformanceMetricPoint | null;
+  activeTab: string;
+  onTabChange: (tab: string) => void;
 }
 
 const AGENT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
 // --- Service Monitor Chart Component ---
-const ServiceMonitorChart: React.FC<{ vpsId: number }> = ({ vpsId }) => {
+const ServiceMonitorChart: React.FC<{ vpsId: number }> = React.memo(({ vpsId }) => {
   const { t } = useTranslation();
   const [results, setResults] = useState<ServiceMonitorResult[]>([]);
   const [loading, setLoading] = useState(true);
@@ -145,7 +147,7 @@ const ServiceMonitorChart: React.FC<{ vpsId: number }> = ({ vpsId }) => {
           <Tooltip
             contentStyle={{
               backgroundColor: 'hsl(var(--background) / 0.8)',
-              backdropFilter: 'blur(2px)',
+              backdropFilter: 'blur(8px)',
               borderRadius: 'var(--radius)',
               fontSize: '0.75rem',
               padding: '4px 8px',
@@ -170,7 +172,8 @@ const ServiceMonitorChart: React.FC<{ vpsId: number }> = ({ vpsId }) => {
       </ResponsiveContainer>
     </div>
   );
-};
+});
+ServiceMonitorChart.displayName = 'ServiceMonitorChart';
 
 // --- CPU/RAM Chart Component ---
 const PerformanceChart: React.FC<{ vpsId: number; metricType: 'cpu' | 'ram'; initialMetrics: PerformanceMetricPoint | null }> = ({ vpsId, metricType, initialMetrics }) => {
@@ -241,7 +244,7 @@ const PerformanceChart: React.FC<{ vpsId: number; metricType: 'cpu' | 'ram'; ini
           <Tooltip
             contentStyle={{
               backgroundColor: 'hsl(var(--background) / 0.8)',
-              backdropFilter: 'blur(2px)',
+              backdropFilter: 'blur(8px)',
               borderRadius: 'var(--radius)',
               fontSize: '0.75rem',
               padding: '4px 8px',
@@ -257,11 +260,11 @@ const PerformanceChart: React.FC<{ vpsId: number; metricType: 'cpu' | 'ram'; ini
 };
 
 // --- Main Component with Tabs ---
-export const VpsMetricsChart: React.FC<VpsMetricsChartProps> = ({ vpsId, initialMetrics }) => {
+export const VpsMetricsChart: React.FC<VpsMetricsChartProps> = ({ vpsId, initialMetrics, activeTab, onTabChange }) => {
   const { t } = useTranslation();
 
   return (
-    <Tabs defaultValue="service" className="w-full">
+    <Tabs value={activeTab} onValueChange={onTabChange} className="w-full">
       <TabsList className="grid w-full grid-cols-3">
         <TabsTrigger value="service">{t('vps.serviceMonitor')}</TabsTrigger>
         <TabsTrigger value="cpu">{t('vps.cpu')}</TabsTrigger>

@@ -47,7 +47,7 @@ const UsageCell: React.FC<{ value: number | null, text: string, tooltipContent?:
   return cellContent;
 };
 
-const VpsTableRow: React.FC<VpsTableRowProps> = ({ server }) => {
+const VpsTableRow: React.FC<VpsTableRowProps> = React.memo(({ server }) => {
   const { t } = useTranslation();
   const { icon: StatusIcon, variant: statusVariant } = getVpsStatusAppearance(server.status);
   const metrics = server.latestMetrics;
@@ -133,6 +133,7 @@ const VpsTableRow: React.FC<VpsTableRowProps> = ({ server }) => {
       </TableRow>
     </TooltipProvider>
   );
-};
+});
+VpsTableRow.displayName = 'VpsTableRow';
 
 export default VpsTableRow;

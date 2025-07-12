@@ -20,9 +20,11 @@ import { cn } from '@/lib/utils';
 
 interface VpsCardProps {
   server: VpsListItemResponse;
+  activeChartTab: string;
+  onChartTabChange: (tab: string) => void;
 }
 
-const VpsCard: React.FC<VpsCardProps> = ({ server }) => {
+const VpsCard: React.FC<VpsCardProps> = React.memo(({ server, activeChartTab, onChartTabChange }) => {
   const { t } = useTranslation();
   const { icon: StatusIcon, variant: statusVariant, cardBorderClass } = getVpsStatusAppearance(server.status);
   const metrics = server.latestMetrics;
@@ -138,7 +140,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server }) => {
             />
           )}
           <div className="pt-2">
-            <VpsMetricsChart vpsId={server.id} initialMetrics={metrics} />
+            <VpsMetricsChart vpsId={server.id} initialMetrics={metrics} activeTab={activeChartTab} onTabChange={onChartTabChange} />
           </div>
         </CardContent>
         <CardFooter className="flex justify-between text-xs text-muted-foreground pt-2 pb-2 px-4 border-t">
@@ -152,6 +154,7 @@ const VpsCard: React.FC<VpsCardProps> = ({ server }) => {
       </Card>
     </TooltipProvider>
   );
-};
+});
+VpsCard.displayName = 'VpsCard';
 
 export default VpsCard;

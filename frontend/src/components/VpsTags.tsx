@@ -20,7 +20,7 @@ const getContrastingTextColor = (hexColor: string): string => {
     return (yiq >= 128) ? '#000000' : '#ffffff';
 };
 
-export const VpsTags: React.FC<VpsTagsProps> = ({ tags, className }) => {
+export const VpsTags: React.FC<VpsTagsProps> = React.memo(({ tags, className }) => {
   if (!tags || tags.length === 0) {
     return null;
   }
@@ -28,7 +28,6 @@ export const VpsTags: React.FC<VpsTagsProps> = ({ tags, className }) => {
   return (
     <div className={cn("mt-2 flex flex-wrap gap-1", className)}>
       {tags.filter(tag => tag.isVisible).map(tag => {
-        console.log('Rendering tag:', tag);
         const iconName = tag.icon as IconName;
         const tagContent = (
           <Badge
@@ -55,4 +54,6 @@ export const VpsTags: React.FC<VpsTagsProps> = ({ tags, className }) => {
       })}
     </div>
   );
-};
+});
+
+VpsTags.displayName = 'VpsTags';
