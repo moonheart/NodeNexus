@@ -12,7 +12,7 @@ use crate::web::models::service_monitor_models::{
 use futures::try_join;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter,
-    QueryOrder, Set, TransactionTrait,
+    ConnectionTrait, QueryOrder, Set, Statement, TransactionTrait,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -123,19 +123,28 @@ pub async fn get_monitors_with_details_by_user_id(
         tag_map.entry(tag.monitor_id).or_default().push(tag.tag_id);
     }
 
-    // 4. Fetch the latest result for each monitor
+    // 4. Fetch the latest result for each monitor using DISTINCT ON for efficiency
     let latest_results_future = service_monitor_result::Entity::find()
-        .filter(service_monitor_result::Column::MonitorId.is_in(monitor_ids.clone()))
-        .order_by_desc(service_monitor_result::Column::Time)
+        .from_raw_sql(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            r#"
+            SELECT * FROM (
+                SELECT DISTINCT ON (monitor_id) *
+                FROM service_monitor_results
+                WHERE monitor_id = ANY($1)
+                ORDER BY monitor_id, "time" DESC
+            ) as latest_results
+            ORDER BY "time" DESC
+            "#,
+            [monitor_ids.clone().into()],
+        ))
         .all(db);
 
     let latest_results = latest_results_future.await?;
-    let mut latest_result_map: HashMap<i32, service_monitor_result::Model> = HashMap::new();
-    for result in latest_results {
-        latest_result_map
-            .entry(result.monitor_id)
-            .or_insert(result);
-    }
+    let latest_result_map: HashMap<i32, service_monitor_result::Model> = latest_results
+        .into_iter()
+        .map(|result| (result.monitor_id, result))
+        .collect();
 
     // 5. Construct the final response models
     let details_list = monitors
