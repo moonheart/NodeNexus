@@ -5,7 +5,7 @@ import { useAuthStore } from './authStore';
 import type { VpsListItemResponse, FullServerListPushType, ViewMode, Tag, ServiceMonitorResult } from '../types';
 import * as tagService from '../services/tagService';
 import equal from 'fast-deep-equal';
-import { getMonitorResultsByVpsId } from '../services/serviceMonitorService';
+import { getMonitorResults, getMonitorResultsByVpsId } from '../services/serviceMonitorService';
 
 // --- Service Monitor Pub/Sub System (Per VPS) ---
 // This system lives outside the Zustand state to avoid causing re-renders on data updates.
@@ -154,7 +154,7 @@ export const useServerListStore = create<ServerListState>()(
         }
         try {
             isFetchingInitialData[monitorId] = true;
-            const results = await getMonitorResultsByVpsId(monitorId, undefined, undefined, limit); // Note: This is a slight misuse, but works for the detail page
+            const results = await getMonitorResults(monitorId, undefined, undefined, limit);
             const sortedResults = results.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
             monitorResultsCache[monitorId] = sortedResults;
             return sortedResults;
@@ -347,7 +347,9 @@ export const useServerListStore = create<ServerListState>()(
                 monitorResultsCache[monitorId] = monitorResultsCache[monitorId].slice(-CACHE_MAX_SIZE);
             }
             monitorResultListeners[monitorId].forEach(callback => {
-                callback(monitorResultsCache[monitorId]);
+                // Legacy system now also gets only the new result, just like the new system.
+                // The component is now responsible for accumulating the results.
+                callback([data]);
             });
         }
     },

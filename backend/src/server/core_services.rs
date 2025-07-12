@@ -1,6 +1,6 @@
-use chrono::Utc;
+use chrono::{TimeZone, Utc};
 use futures_util::{Sink, SinkExt, Stream};
-use sea_orm::DatabaseConnection;
+use sea_orm::{DatabaseConnection, EntityTrait};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio_stream::StreamExt;
@@ -271,24 +271,48 @@ pub async fn process_agent_stream<S>(
                                     {
                                         error!(monitor_id = result.monitor_id, error = %e, "Failed to record monitor result.");
                                     } else {
-                                        let details = services::service_monitor_service::get_monitor_results_by_id(&pool, result.monitor_id, None, None, None, Some(1)).await;
-                                        if let Ok(mut details_vec) = details {
-                                            if let Some(detail) = details_vec.pop() {
-                                                if ws_data_broadcaster_tx.receiver_count() > 0 {
+                                        // --- Start of fix: Manually construct broadcast message ---
+                                        // No need to re-fetch from DB. Use the data we just received.
+                                        if ws_data_broadcaster_tx.receiver_count() > 0 {
+                                            // Fetch monitor and agent names in parallel for efficiency
+                                            let monitor_future = crate::db::entities::service_monitor::Entity::find_by_id(result.monitor_id).one(&*pool);
+                                            let agent_future = crate::db::entities::vps::Entity::find_by_id(vps_db_id_from_msg).one(&*pool);
+
+                                            match tokio::try_join!(monitor_future, agent_future) {
+                                                Ok((Some(monitor), Some(agent))) => {
+                                                    let result_details = crate::web::models::service_monitor_models::ServiceMonitorResultDetails {
+                                                        time: chrono::Utc.timestamp_millis_opt(result.timestamp_unix_ms).unwrap().to_rfc3339(),
+                                                        monitor_id: result.monitor_id,
+                                                        monitor_name: monitor.name,
+                                                        agent_id: vps_db_id_from_msg,
+                                                        agent_name: agent.name,
+                                                        is_up: result.successful,
+                                                        latency_ms: result.response_time_ms,
+                                                        details: Some(serde_json::json!({ "message": &result.details })),
+                                                    };
+
                                                     let update = crate::web::models::websocket_models::ServiceMonitorUpdate {
-                                                        result_details: detail,
+                                                        result_details,
                                                         vps_id: vps_db_id_from_msg,
                                                     };
-                                                    let message =
-                                                        WsMessage::ServiceMonitorResult(update);
-                                                    if let Err(e) =
-                                                        ws_data_broadcaster_tx.send(message)
-                                                    {
+                                                    let message = WsMessage::ServiceMonitorResult(update);
+
+                                                    if let Err(e) = ws_data_broadcaster_tx.send(message) {
                                                         error!(error = %e, "Failed to broadcast service monitor result.");
                                                     }
                                                 }
+                                                Ok((None, _)) => {
+                                                    error!(monitor_id = result.monitor_id, "Cannot broadcast result: Monitor not found.");
+                                                }
+                                                Ok((_, None)) => {
+                                                    error!(vps_id = vps_db_id_from_msg, "Cannot broadcast result: Agent not found.");
+                                                }
+                                                Err(e) => {
+                                                    error!(error = %e, "Failed to fetch monitor/agent details for broadcast.");
+                                                }
                                             }
                                         }
+                                        // --- End of fix ---
                                     }
                             }
                             _ => {
