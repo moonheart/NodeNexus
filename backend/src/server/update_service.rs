@@ -2,6 +2,7 @@ use sea_orm::DatabaseConnection; // Replaced PgPool
 use tokio::sync::broadcast;
 use tracing::{debug, error};
 
+use crate::db::entities::performance_metric;
 use crate::db::services;
 use crate::server::agent_state::LiveServerDataCache;
 use crate::web::models::websocket_models::{FullServerListPush, ServerWithDetails, WsMessage};

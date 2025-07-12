@@ -68,6 +68,7 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>) {
             app_state.ws_data_broadcaster_tx.clone(),
             app_state.update_trigger_tx.clone(),
             app_state.batch_command_manager.clone(),
+            app_state.metric_sender.clone(),
         )
         .await;
     });

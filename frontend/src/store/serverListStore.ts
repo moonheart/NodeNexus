@@ -2,24 +2,32 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import websocketService from '../services/websocketService';
 import { useAuthStore } from './authStore';
-import type { VpsListItemResponse, FullServerListPushType, ViewMode, Tag, ServiceMonitorResult } from '../types';
+import type { VpsListItemResponse, FullServerListPushType, ViewMode, Tag, ServiceMonitorResult, PerformanceMetricPoint, PerformanceMetricBatch } from '../types';
 import * as tagService from '../services/tagService';
 import equal from 'fast-deep-equal';
 import { getMonitorResults, getMonitorResultsByVpsId } from '../services/serviceMonitorService';
+import { getLatestNMetrics } from '../services/metricsService';
 
-// --- Service Monitor Pub/Sub System (Per VPS) ---
-// This system lives outside the Zustand state to avoid causing re-renders on data updates.
-// Components will subscribe to updates for a specific VPS and manage their own state.
+// --- Pub/Sub Systems ---
+// These live outside Zustand state to avoid causing re-renders on every data update.
+// Components subscribe to updates for a specific entity (VPS, monitor) and manage their own state.
 
-type VpsMonitorResultCallback = (results: ServiceMonitorResult[]) => void;
-type MonitorResultCallback = (results: ServiceMonitorResult[]) => void; // For monitor-specific page
 export type UnsubscribeFunction = () => void;
 
-// Cache to hold monitor results. Key is vpsId.
+// --- Service Monitor Pub/Sub (Per VPS) ---
+type VpsMonitorResultCallback = (results: ServiceMonitorResult[]) => void;
 const vpsMonitorResultsCache: Record<number, ServiceMonitorResult[]> = {};
-// Listeners for monitor updates. Key is vpsId.
 const vpsMonitorResultListeners: Record<number, Set<VpsMonitorResultCallback>> = {};
 const isFetchingInitialVpsData: Record<number, boolean> = {};
+
+// --- Legacy Pub/Sub for ServiceMonitorDetailPage ---
+type MonitorResultCallback = (results: ServiceMonitorResult[]) => void;
+
+// --- Performance Metrics Pub/Sub (Per VPS) ---
+type VpsPerformanceMetricCallback = (metrics: PerformanceMetricPoint[]) => void;
+const vpsPerformanceMetricsCache: Record<number, PerformanceMetricPoint[]> = {};
+const vpsPerformanceMetricListeners: Record<number, Set<VpsPerformanceMetricCallback>> = {};
+const isFetchingInitialVpsMetrics: Record<number, boolean> = {};
 
 // --- Legacy Pub/Sub for ServiceMonitorDetailPage ---
 const monitorResultsCache: Record<number, ServiceMonitorResult[]> = {};
@@ -53,6 +61,11 @@ export interface ServerListState { // Added export
     getInitialVpsMonitorResults: (vpsId: number, limit?: number) => Promise<ServiceMonitorResult[]>;
     clearVpsMonitorResults: () => void;
 
+    // Performance Metrics Pub/Sub Actions (per VPS)
+    subscribeToVpsPerformanceMetrics: (vpsId: number, callback: VpsPerformanceMetricCallback) => UnsubscribeFunction;
+    getInitialVpsPerformanceMetrics: (vpsId: number, count?: number) => Promise<PerformanceMetricPoint[]>;
+    clearVpsPerformanceMetrics: () => void;
+
     // Service Monitor Pub/Sub Actions (per Monitor for detail page)
     subscribeToMonitorResults: (monitorId: number, callback: MonitorResultCallback) => UnsubscribeFunction;
     getInitialMonitorResults: (monitorId: number, limit?: number, startTime?: string, endTime?: string) => Promise<ServiceMonitorResult[]>;
@@ -63,6 +76,7 @@ export interface ServerListState { // Added export
     _handleWebSocketOpen: () => void;
     _handleWebSocketMessage: (data: FullServerListPushType) => void;
     _handleServiceMonitorResult: (data: ServiceMonitorResult) => void;
+    _handlePerformanceMetricBatch: (data: PerformanceMetricBatch) => void;
     _handleWebSocketClose: (data: { isIntentional: boolean; event: CloseEvent }) => void;
     _handleWebSocketError: (event: Event) => void;
     _handleWebSocketPermanentFailure: () => void;
@@ -129,6 +143,52 @@ export const useServerListStore = create<ServerListState>()(
         console.log('Cleared all VPS service monitor caches and listeners.');
     },
 
+    clearVpsPerformanceMetrics: () => {
+        Object.keys(vpsPerformanceMetricsCache).forEach(key => delete vpsPerformanceMetricsCache[Number(key)]);
+        Object.keys(vpsPerformanceMetricListeners).forEach(key => delete vpsPerformanceMetricListeners[Number(key)]);
+        console.log('Cleared all VPS performance metrics caches and listeners.');
+    },
+
+    // --- Performance Metrics Pub/Sub Implementation (Per VPS) ---
+    subscribeToVpsPerformanceMetrics: (vpsId, callback) => {
+        if (!vpsPerformanceMetricListeners[vpsId]) {
+            vpsPerformanceMetricListeners[vpsId] = new Set();
+        }
+        vpsPerformanceMetricListeners[vpsId].add(callback);
+
+        return () => {
+            vpsPerformanceMetricListeners[vpsId]?.delete(callback);
+            if (vpsPerformanceMetricListeners[vpsId]?.size === 0) {
+                delete vpsPerformanceMetricListeners[vpsId];
+            }
+        };
+    },
+
+    getInitialVpsPerformanceMetrics: async (vpsId, count = 60) => {
+        if (vpsPerformanceMetricsCache[vpsId]) {
+            return vpsPerformanceMetricsCache[vpsId];
+        }
+
+        if (isFetchingInitialVpsMetrics[vpsId]) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            return get().getInitialVpsPerformanceMetrics(vpsId, count);
+        }
+
+        try {
+            isFetchingInitialVpsMetrics[vpsId] = true;
+            // Using getLatestNMetrics as a proxy for the initial time window
+            const metrics = await getLatestNMetrics(vpsId, count);
+            const sortedMetrics = metrics.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+            vpsPerformanceMetricsCache[vpsId] = sortedMetrics;
+            return sortedMetrics;
+        } catch (error) {
+            console.error(`Failed to get initial performance metrics for VPS ${vpsId}:`, error);
+            return [];
+        } finally {
+            isFetchingInitialVpsMetrics[vpsId] = false;
+        }
+    },
+    
     // --- Legacy Pub/Sub Implementation for ServiceMonitorDetailPage ---
     subscribeToMonitorResults: (monitorId, callback) => {
         if (!monitorResultListeners[monitorId]) {
@@ -237,6 +297,7 @@ export const useServerListStore = create<ServerListState>()(
             websocketService.on('open', get()._handleWebSocketOpen);
             websocketService.on('full_server_list', get()._handleWebSocketMessage);
             websocketService.on('service_monitor_result', get()._handleServiceMonitorResult);
+            websocketService.on('performance_metric_batch', get()._handlePerformanceMetricBatch);
             websocketService.on('close', get()._handleWebSocketClose);
             websocketService.on('error', get()._handleWebSocketError);
             websocketService.on('permanent_failure', get()._handleWebSocketPermanentFailure);
@@ -263,6 +324,7 @@ export const useServerListStore = create<ServerListState>()(
       websocketService.off('open', get()._handleWebSocketOpen);
       websocketService.off('full_server_list', get()._handleWebSocketMessage);
       websocketService.off('service_monitor_result', get()._handleServiceMonitorResult);
+      websocketService.off('performance_metric_batch', get()._handlePerformanceMetricBatch);
       websocketService.off('close', get()._handleWebSocketClose);
       websocketService.off('error', get()._handleWebSocketError);
       websocketService.off('permanent_failure', get()._handleWebSocketPermanentFailure);
@@ -270,6 +332,7 @@ export const useServerListStore = create<ServerListState>()(
       // Clean up monitor data on disconnect
       get().clearVpsMonitorResults();
       get().clearMonitorResults();
+      get().clearVpsPerformanceMetrics();
 
       set({ connectionStatus: 'disconnected' });
     },
@@ -354,6 +417,34 @@ export const useServerListStore = create<ServerListState>()(
                 // Legacy system now also gets only the new result, just like the new system.
                 // The component is now responsible for accumulating the results.
                 callback([data]);
+            });
+        }
+    },
+
+    _handlePerformanceMetricBatch: (data: PerformanceMetricBatch) => {
+        const { vpsId, metrics } = data;
+
+        if (!metrics || metrics.length === 0) {
+            return; // Ignore empty batches
+        }
+
+        // Update cache
+        if (!vpsPerformanceMetricsCache[vpsId]) {
+            vpsPerformanceMetricsCache[vpsId] = [];
+        }
+        // Use concat for efficiency with arrays
+        vpsPerformanceMetricsCache[vpsId] = vpsPerformanceMetricsCache[vpsId].concat(metrics);
+
+        // Keep cache size reasonable
+        const CACHE_MAX_SIZE = 1000; // Same as service monitor results
+        if (vpsPerformanceMetricsCache[vpsId].length > CACHE_MAX_SIZE) {
+            vpsPerformanceMetricsCache[vpsId] = vpsPerformanceMetricsCache[vpsId].slice(-CACHE_MAX_SIZE);
+        }
+
+        // Notify listeners with the entire batch
+        if (vpsPerformanceMetricListeners[vpsId]) {
+            vpsPerformanceMetricListeners[vpsId].forEach(callback => {
+                callback(metrics); // Pass the array of new metric points
             });
         }
     },

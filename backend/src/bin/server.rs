@@ -12,6 +12,8 @@ use backend::db::services::{AlertService, BatchCommandManager}; // Added BatchCo
 use backend::notifications::{encryption::EncryptionService, service::NotificationService};
 use backend::server::agent_state::{ConnectedAgents, LiveServerDataCache}; // Added LiveServerDataCache
 use backend::server::config::ServerConfig;
+use backend::db::entities::performance_metric;
+use backend::server::metric_broadcaster::MetricBroadcaster;
 use backend::server::result_broadcaster::{BatchCommandUpdateMsg, ResultBroadcaster}; // Added ResultBroadcaster
 use backend::server::service::MyAgentCommService;
 use backend::server::update_service; // Added for cache population
@@ -120,6 +122,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (public_ws_data_broadcaster_tx, _) = broadcast::channel::<WsMessage>(100); // For public, desensitized data
     let (batch_command_updates_tx, _rx) = broadcast::channel::<BatchCommandUpdateMsg>(100); // Channel for batch command updates
 
+    // --- Metric Broadcaster Setup ---
+    let (metric_broadcaster, metric_sender) = MetricBroadcaster::new(ws_data_broadcaster_tx.clone());
+    metric_broadcaster.run();
+
+
     // Initialize the live server data cache
     let initial_cache_data_result = db_services::get_all_vps_with_details_for_cache(&db_pool).await;
     let initial_cache_map: HashMap<i32, ServerWithDetails> = match initial_cache_data_result {
@@ -163,6 +170,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ws_data_broadcaster_tx.clone(), // Pass broadcaster to gRPC service
         update_trigger_tx.clone(),      // Pass update trigger to gRPC service
         batch_command_manager.clone(),  // Pass BatchCommandManager to gRPC service
+        metric_sender.clone(),          // Pass the sender for the metric broadcaster
     );
 
     let grpc_service = AgentCommunicationServiceServer::new(agent_comm_service);
@@ -253,6 +261,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         batch_command_updates_tx.clone(),
         result_broadcaster.clone(),
         server_config.clone(),
+        metric_sender.clone(),
     );
 
     // --- Debounced Broadcast Task ---

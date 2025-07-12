@@ -150,9 +150,34 @@ pub struct ServiceMonitorUpdate {
 }
 
 #[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PerformanceMetricPoint {
+    pub time: DateTime<Utc>,
+    pub vps_id: i32,
+    pub cpu_usage_percent: Option<f64>,
+    pub memory_usage_bytes: Option<i64>,
+    pub memory_total_bytes: Option<i64>,
+    pub network_rx_instant_bps: Option<i64>,
+    pub network_tx_instant_bps: Option<i64>,
+    pub disk_io_read_bps: Option<i64>,
+    pub disk_io_write_bps: Option<i64>,
+    pub swap_usage_bytes: Option<i64>,
+    pub swap_total_bytes: Option<i64>,
+}
+
+/// Represents a batch of performance metrics for a single VPS, to be sent over WebSocket.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PerformanceMetricBatch {
+    pub vps_id: i32,
+    pub metrics: Vec<PerformanceMetricPoint>,
+}
+
+#[derive(Serialize, Clone, Debug)]
 #[serde(tag = "type", content = "data")]
 #[serde(rename_all = "snake_case")]
 pub enum WsMessage {
     FullServerList(FullServerListPush),
     ServiceMonitorResult(ServiceMonitorUpdate),
+    PerformanceMetricBatch(PerformanceMetricBatch),
 }

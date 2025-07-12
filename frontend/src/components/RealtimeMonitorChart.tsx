@@ -46,7 +46,7 @@ const RealtimeMonitorChart: React.FC<RealtimeMonitorChartProps> = ({ monitorId }
 
     fetchInitialData();
 
-    const unsubscribe = subscribeToMonitorResults(monitorId, (newResults) => {
+    const unsubscribe = subscribeToMonitorResults(monitorId, (newResults: ServiceMonitorResult[]) => {
       setResults(prevResults => {
         const updated = [...prevResults, ...newResults];
         const cutoff = Date.now() - REALTIME_WINDOW_MS;

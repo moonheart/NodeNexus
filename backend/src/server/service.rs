@@ -6,6 +6,7 @@ use tonic::{Request, Response, Status, Streaming};
 
 use super::agent_state::{ConnectedAgents, LiveServerDataCache};
 use super::handlers::handle_connection;
+use crate::db::entities::performance_metric;
 use crate::db::services::BatchCommandManager;
 use crate::web::models::websocket_models::WsMessage;
 use tokio::sync::broadcast; // Added BatchCommandManager
@@ -18,6 +19,7 @@ pub struct MyAgentCommService {
     pub ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     pub update_trigger_tx: mpsc::Sender<()>,
     pub batch_command_manager: Arc<BatchCommandManager>, // Added BatchCommandManager
+    pub metric_sender: mpsc::Sender<performance_metric::Model>,
 }
 
 impl MyAgentCommService {
@@ -28,6 +30,7 @@ impl MyAgentCommService {
         ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
         update_trigger_tx: mpsc::Sender<()>,
         batch_command_manager: Arc<BatchCommandManager>, // Added BatchCommandManager
+        metric_sender: mpsc::Sender<performance_metric::Model>,
     ) -> Self {
         Self {
             connected_agents,
@@ -36,6 +39,7 @@ impl MyAgentCommService {
             ws_data_broadcaster_tx,
             update_trigger_tx,
             batch_command_manager, // Store BatchCommandManager
+            metric_sender,
         }
     }
 }
@@ -59,6 +63,7 @@ impl crate::agent_service::agent_communication_service_server::AgentCommunicatio
             self.ws_data_broadcaster_tx.clone(),
             self.update_trigger_tx.clone(),
             self.batch_command_manager.clone(), // Pass BatchCommandManager
+            self.metric_sender.clone(),
         )
         .await
     }

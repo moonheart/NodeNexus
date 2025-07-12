@@ -99,6 +99,15 @@ export interface PerformanceMetricPoint {
 }
 
 /**
+ * Represents a batch of performance metrics for a single VPS,
+ * pushed via WebSocket.
+ */
+export interface PerformanceMetricBatch {
+  vpsId: number; // camelCase to match frontend conventions
+  metrics: PerformanceMetricPoint[];
+}
+
+/**
  * Represents the structure for CPU and Memory metrics to be displayed on charts.
  * Each array would contain points for a specific metric over time.
  */

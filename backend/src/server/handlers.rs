@@ -10,6 +10,7 @@ use tracing::info;
 
 use super::core_services::{self, AgentStream};
 use crate::agent_service::{MessageToAgent, MessageToServer};
+use crate::db::entities::performance_metric;
 use crate::server::agent_state::{AgentSender, ConnectedAgents, LiveServerDataCache};
 use crate::web::models::websocket_models::WsMessage;
 use tokio::sync::broadcast;
@@ -74,6 +75,7 @@ pub async fn handle_connection(
     ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     update_trigger_tx: mpsc::Sender<()>,
     batch_command_manager: Arc<crate::db::services::BatchCommandManager>,
+    metric_sender: mpsc::Sender<performance_metric::Model>,
 ) -> Result<Response<ReceiverStream<Result<MessageToAgent, Status>>>, Status> {
     let (tx_to_agent, rx_from_server) = mpsc::channel(128);
     info!("New gRPC connection stream established. Creating adapter.");
@@ -95,6 +97,7 @@ pub async fn handle_connection(
             ws_data_broadcaster_tx,
             update_trigger_tx,
             batch_command_manager,
+            metric_sender,
         )
         .await;
     });

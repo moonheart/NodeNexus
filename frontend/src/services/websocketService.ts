@@ -1,5 +1,5 @@
 import { EventEmitter } from './eventEmitter';
-import type { FullServerListPushType, ServiceMonitorResult } from '../types';
+import type { FullServerListPushType, ServiceMonitorResult, PerformanceMetricBatch } from '../types';
 import { throttle } from 'lodash';
 
 const isSecure = window.location.protocol === 'https:';
@@ -14,6 +14,7 @@ interface WebSocketEvents {
   permanent_failure: void;
   full_server_list: FullServerListPushType;
   service_monitor_result: ServiceMonitorResult;
+  performance_metric_batch: PerformanceMetricBatch;
   // Add other specific message types here
 }
 
@@ -92,6 +93,9 @@ class WebSocketService extends EventEmitter<WebSocketEvents> {
                             return;
                         case 'service_monitor_result':
                             this.emit('service_monitor_result', parsedData.data as ServiceMonitorResult);
+                            return;
+                        case 'performance_metric_batch':
+                            this.emit('performance_metric_batch', parsedData.data as PerformanceMetricBatch);
                             return;
                         // Note: 'full_server_list' might not be used if the raw object is sent instead
                         case 'full_server_list':

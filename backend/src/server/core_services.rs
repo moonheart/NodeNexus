@@ -12,6 +12,7 @@ use crate::agent_service::{
     AgentConfig, CommandStatus as GrpcCommandStatus, MessageToAgent, MessageToServer,
     OutputType as GrpcOutputType, ServerHandshakeAck,
 };
+use crate::db::entities::performance_metric;
 use crate::db::enums::ChildCommandStatus;
 use crate::db::services;
 use crate::server::agent_state::{AgentSender, AgentState, ConnectedAgents};
@@ -34,6 +35,7 @@ pub async fn process_agent_stream<S>(
     ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     update_trigger_tx: mpsc::Sender<()>,
     batch_command_manager: Arc<crate::db::services::BatchCommandManager>,
+    metric_sender: mpsc::Sender<performance_metric::Model>,
 ) where
     S: AgentStream,
 {
@@ -199,16 +201,31 @@ pub async fn process_agent_stream<S>(
                     if let Some(payload) = msg_to_server.payload {
                         match payload {
                             ServerPayload::PerformanceBatch(batch) => {
-                                if let Err(e) = services::save_performance_snapshot_batch(
+                                debug!(vps_id = vps_db_id_from_msg, "Received performance batch with {} records.", batch.snapshots.len());
+                                match services::save_performance_snapshot_batch(
                                     &pool,
                                     vps_db_id_from_msg,
                                     &batch,
                                 )
-                                .await {
-                                    error!(error = %e, "Failed to save performance batch.");
-                                } else {
-                                    if update_trigger_tx.send(()).await.is_err() {
-                                        error!("Failed to send update trigger after metrics batch.");
+                                .await
+                                {
+                                    Ok(saved_metrics) => {
+                                        debug!(vps_id = vps_db_id_from_msg, saved_count = saved_metrics.len(), "Successfully saved performance batch.");
+                                        let has_metrics = !saved_metrics.is_empty();
+                                        for metric in saved_metrics {
+                                            if let Err(e) = metric_sender.send(metric).await {
+                                                error!(error = %e, "Failed to send metric to broadcaster channel.");
+                                            }
+                                        }
+
+                                        if has_metrics {
+                                            if update_trigger_tx.send(()).await.is_err() {
+                                                error!("Failed to send update trigger after metrics batch.");
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!(vps_id = vps_db_id_from_msg, error = %e, "Failed to save performance batch.");
                                     }
                                 }
                             }

@@ -191,12 +191,13 @@ pub async fn save_performance_snapshot_batch(
     db: &DatabaseConnection,
     vps_id: i32,
     batch: &PerformanceSnapshotBatch,
-) -> Result<(), DbErr> {
+) -> Result<Vec<performance_metric::Model>, DbErr> {
     if batch.snapshots.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     let txn = db.begin().await?;
+    let mut saved_metrics = Vec::with_capacity(batch.snapshots.len());
 
     for snapshot in &batch.snapshots {
         let timestamp = Utc
@@ -214,10 +215,6 @@ pub async fn save_performance_snapshot_batch(
             swap_total_bytes: Set(snapshot.swap_total_bytes as i64),
             disk_io_read_bps: Set(snapshot.disk_total_io_read_bytes_per_sec as i64),
             disk_io_write_bps: Set(snapshot.disk_total_io_write_bytes_per_sec as i64),
-            // Note: network_rx_bps and network_tx_bps store CUMULATIVE bytes, despite the "bps" name.
-            // This is because the traffic calculation logic depends on the cumulative value.
-            // Note: network_rx_bps and network_tx_bps store CUMULATIVE bytes, despite the "bps" name.
-            // This is because the traffic calculation logic depends on the cumulative value.
             network_rx_cumulative: Set(snapshot.network_rx_bytes_cumulative as i64),
             network_tx_cumulative: Set(snapshot.network_tx_bytes_cumulative as i64),
             network_rx_instant_bps: Set(snapshot.network_rx_bytes_per_sec as i64),
@@ -242,6 +239,7 @@ pub async fn save_performance_snapshot_batch(
             };
             disk_usage_active_model.insert(&txn).await?;
         }
+        saved_metrics.push(metric_model);
     }
 
     // After saving all metrics in the batch, update the traffic stats ONCE
@@ -266,7 +264,7 @@ pub async fn save_performance_snapshot_batch(
     }
 
     txn.commit().await?;
-    Ok(())
+    Ok(saved_metrics)
 }
 
 /// Helper struct for the disk usage summary query

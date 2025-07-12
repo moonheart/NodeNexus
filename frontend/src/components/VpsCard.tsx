@@ -140,7 +140,7 @@ const VpsCard: React.FC<VpsCardProps> = React.memo(({ server, activeChartTab, on
             />
           )}
           <div className="pt-2">
-            <VpsMetricsChart vpsId={server.id} initialMetrics={metrics} activeTab={activeChartTab} onTabChange={onChartTabChange} />
+            <VpsMetricsChart vpsId={server.id} activeTab={activeChartTab} onTabChange={onChartTabChange} />
           </div>
         </CardContent>
         <CardFooter className="flex justify-between text-xs text-muted-foreground pt-2 pb-2 px-4 border-t">

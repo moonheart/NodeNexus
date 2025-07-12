@@ -9,6 +9,7 @@ prost = "0.13"
 tokio = { version = "1.45", features = ["macros", "rt-multi-thread", "sync", "time", "process"] } # Added "sync", "time", and "process"
 tonic = { version = "0.13", features = ["transport", "codegen", "prost", "tls-native-roots"] }
 tokio-rustls = "0.26"
+dashmap = "6.1"
 rustls = "0.23"
 chrono = { version = "0.4", features = ["serde"] } # Added for timestamp generation
 futures-util = { version = "0.3" }
