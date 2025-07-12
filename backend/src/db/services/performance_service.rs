@@ -191,7 +191,7 @@ pub async fn save_performance_snapshot_batch(
     db: &DatabaseConnection,
     vps_id: i32,
     batch: &PerformanceSnapshotBatch,
-) -> Result<Vec<performance_metric::Model>, DbErr> {
+) -> Result<Vec<(performance_metric::Model, Vec<performance_disk_usage::Model>)>, DbErr> {
     if batch.snapshots.is_empty() {
         return Ok(Vec::new());
     }
@@ -227,6 +227,7 @@ pub async fn save_performance_snapshot_batch(
         };
         let metric_model = metric_active_model.insert(&txn).await?;
 
+        let mut saved_disk_usages = Vec::with_capacity(snapshot.disk_usages.len());
         for disk_usage in &snapshot.disk_usages {
             let disk_usage_active_model = performance_disk_usage::ActiveModel {
                 performance_metric_id: Set(metric_model.id),
@@ -237,9 +238,10 @@ pub async fn save_performance_snapshot_batch(
                 usage_percent: Set(disk_usage.usage_percent),
                 ..Default::default() // For id
             };
-            disk_usage_active_model.insert(&txn).await?;
+            let disk_usage_model = disk_usage_active_model.insert(&txn).await?;
+            saved_disk_usages.push(disk_usage_model);
         }
-        saved_metrics.push(metric_model);
+        saved_metrics.push((metric_model, saved_disk_usages));
     }
 
     // After saving all metrics in the batch, update the traffic stats ONCE

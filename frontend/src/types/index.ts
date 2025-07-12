@@ -96,6 +96,9 @@ export interface PerformanceMetricPoint {
   diskIoWriteBps?: number | null;
   swapUsageBytes?: number | null;
   swapTotalBytes?: number | null;
+  diskUsedBytes?: number | null;
+  diskTotalBytes?: number | null;
+  uptimeSeconds?: number; // Added for uptime display
 }
 
 /**
@@ -134,7 +137,6 @@ export interface VpsListItemResponse {
   updatedAt: string; // camelCase
   tags?: Tag[];
   group?: string | null;
-  latestMetrics?: LatestPerformanceMetric | null; // camelCase
   configStatus: string;
   lastConfigUpdateAt?: string | null;
   lastConfigError?: string | null;
@@ -346,6 +348,7 @@ export interface VpsMetadata {
   physical_core_count?: number;
   total_memory_bytes?: number; // uint64 in backend
   total_swap_bytes?: number;   // uint64 in backend
+  total_disk_bytes?: number;   // uint64 in backend
   cpu_static_info?: CpuStaticInfo;
   country_code?: string; // Added for flag display
   // Add any other known metadata fields that might be present

@@ -116,7 +116,7 @@ const ServerManagementPage: React.FC = () => {
     const handleCloseCreateVpsModal = () => setIsCreateVpsModalOpen(false);
     const handleVpsCreated = (newVps: Vps) => {
         handleCloseCreateVpsModal();
-        const vpsForCommand: VpsListItemResponse = { ...newVps, userId: newVps.user_id, agentSecret: newVps.agent_secret, ipAddress: newVps.ip_address, osType: newVps.os_type, createdAt: newVps.created_at, updatedAt: newVps.updated_at, agentVersion: null, latestMetrics: null, configStatus: 'unknown', lastConfigUpdateAt: null, lastConfigError: null, renewalCycle: null, renewalCycleCustomDays: null, renewalPrice: null, renewalCurrency: null, nextRenewalDate: null, lastRenewalDate: null, serviceStartDate: null, paymentMethod: null, autoRenewEnabled: null, renewalNotes: null, reminderActive: null };
+        const vpsForCommand: VpsListItemResponse = { ...newVps, userId: newVps.user_id, agentSecret: newVps.agent_secret, ipAddress: newVps.ip_address, osType: newVps.os_type, createdAt: newVps.created_at, updatedAt: newVps.updated_at, agentVersion: null, configStatus: 'unknown', lastConfigUpdateAt: null, lastConfigError: null, renewalCycle: null, renewalCycleCustomDays: null, renewalPrice: null, renewalCurrency: null, nextRenewalDate: null, lastRenewalDate: null, serviceStartDate: null, paymentMethod: null, autoRenewEnabled: null, renewalNotes: null, reminderActive: null };
         handleOpenCopyCommandModal(vpsForCommand);
     };
 

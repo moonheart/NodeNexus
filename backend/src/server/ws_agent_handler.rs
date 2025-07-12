@@ -59,16 +59,20 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>) {
     // and perform the agent registration.
     // For now, we pass the adapter and the original AppState components.
     // We will adjust this call after updating process_agent_stream's signature.
+    let context = Arc::new(core_services::AgentStreamContext {
+        connected_agents: app_state.connected_agents.clone(),
+        db_pool: Arc::from(app_state.db_pool.clone()),
+        ws_data_broadcaster_tx: app_state.ws_data_broadcaster_tx.clone(),
+        update_trigger_tx: app_state.update_trigger_tx.clone(),
+        batch_command_manager: app_state.batch_command_manager.clone(),
+        metric_sender: app_state.metric_sender.clone(),
+    });
+
     tokio::spawn(async move {
         core_services::process_agent_stream(
             adapter,
             agent_sender,
-            app_state.connected_agents.clone(),
-            Arc::from(app_state.db_pool.clone()),
-            app_state.ws_data_broadcaster_tx.clone(),
-            app_state.update_trigger_tx.clone(),
-            app_state.batch_command_manager.clone(),
-            app_state.metric_sender.clone(),
+            context,
         )
         .await;
     });

@@ -2,6 +2,8 @@ import React from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { VpsListItemResponse } from '../types';
+import { useServerListStore } from '../store/serverListStore';
+import { useShallow } from 'zustand/react/shallow';
 import { ArrowUp, ArrowDown } from 'lucide-react';
 import {
   formatBytesForDisplay,
@@ -50,9 +52,11 @@ const UsageCell: React.FC<{ value: number | null, text: string, tooltipContent?:
 const VpsTableRow: React.FC<VpsTableRowProps> = React.memo(({ server }) => {
   const { t } = useTranslation();
   const { icon: StatusIcon, variant: statusVariant } = getVpsStatusAppearance(server.status);
-  const metrics = server.latestMetrics;
+  const metrics = useServerListStore(
+    useShallow(state => state.latestMetrics[server.id])
+  );
 
-  const memUsagePercent = metrics && metrics.memoryTotalBytes > 0 ? (metrics.memoryUsageBytes / metrics.memoryTotalBytes) * 100 : null;
+  const memUsagePercent = (metrics && metrics.memoryUsageBytes && metrics.memoryTotalBytes && metrics.memoryTotalBytes > 0) ? (metrics.memoryUsageBytes / metrics.memoryTotalBytes) * 100 : null;
   const upSpeed = metrics ? formatNetworkSpeed(metrics.networkTxInstantBps) : t('vps.na');
   const downSpeed = metrics ? formatNetworkSpeed(metrics.networkRxInstantBps) : t('vps.na');
 
@@ -86,12 +90,12 @@ const VpsTableRow: React.FC<VpsTableRowProps> = React.memo(({ server }) => {
         </TableCell>
         <TableCell className="truncate" title={server.osType ?? t('vps.na')}>{server.osType ?? t('vps.na')}</TableCell>
         <TableCell>
-          {metrics ? (
+          {metrics && metrics.cpuUsagePercent !== null && metrics.cpuUsagePercent !== undefined ? (
             <UsageCell value={metrics.cpuUsagePercent} text={`${metrics.cpuUsagePercent.toFixed(1)}%`} />
           ) : <span className="text-xs text-muted-foreground">{t('vps.na')}</span>}
         </TableCell>
         <TableCell>
-          {memUsagePercent !== null && metrics ? (
+          {memUsagePercent !== null && metrics && metrics.memoryUsageBytes && metrics.memoryTotalBytes ? (
             <UsageCell
               value={memUsagePercent}
               text={`${memUsagePercent.toFixed(1)}%`}

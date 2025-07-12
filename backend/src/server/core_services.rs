@@ -12,7 +12,7 @@ use crate::agent_service::{
     AgentConfig, CommandStatus as GrpcCommandStatus, MessageToAgent, MessageToServer,
     OutputType as GrpcOutputType, ServerHandshakeAck,
 };
-use crate::db::entities::performance_metric;
+use crate::db::entities::{performance_disk_usage, performance_metric};
 use crate::db::enums::ChildCommandStatus;
 use crate::db::services;
 use crate::server::agent_state::{AgentSender, AgentState, ConnectedAgents};
@@ -26,16 +26,27 @@ pub trait AgentStream:
 {
 }
 
+/// A context struct to hold all the shared state and channels needed by the agent stream processor.
+/// This helps to avoid having a function with too many arguments.
+#[derive(Clone)]
+pub struct AgentStreamContext {
+    pub connected_agents: Arc<Mutex<ConnectedAgents>>,
+    pub db_pool: Arc<DatabaseConnection>,
+    pub ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
+    pub update_trigger_tx: mpsc::Sender<()>,
+    pub batch_command_manager: Arc<crate::db::services::BatchCommandManager>,
+    pub metric_sender: mpsc::Sender<(
+        performance_metric::Model,
+        Vec<performance_disk_usage::Model>,
+    )>,
+}
+
+
 // 2. Create the new function that takes the generic stream
 pub async fn process_agent_stream<S>(
-    mut agent_stream: S,
+    agent_stream: S,
     agent_sender: AgentSender,
-    connected_agents_arc: Arc<Mutex<ConnectedAgents>>,
-    pool: Arc<DatabaseConnection>,
-    ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
-    update_trigger_tx: mpsc::Sender<()>,
-    batch_command_manager: Arc<crate::db::services::BatchCommandManager>,
-    metric_sender: mpsc::Sender<performance_metric::Model>,
+    context: Arc<AgentStreamContext>,
 ) where
     S: AgentStream,
 {
@@ -54,7 +65,7 @@ pub async fn process_agent_stream<S>(
                 let mut error_message_for_ack = String::new();
 
                 // Authenticate every message
-                match services::get_vps_by_id(&pool, vps_db_id_from_msg).await {
+                match services::get_vps_by_id(&context.db_pool, vps_db_id_from_msg).await {
                     Ok(Some(vps_record)) => {
                         if vps_record.agent_secret == *agent_secret_from_msg {
                             auth_successful_for_msg = true;
@@ -108,7 +119,7 @@ pub async fn process_agent_stream<S>(
                     handshake_completed = true;
 
                     let tasks = match services::service_monitor_service::get_tasks_for_agent(
-                        &pool,
+                        &context.db_pool,
                         vps_db_id_from_msg,
                     )
                     .await
@@ -134,16 +145,15 @@ pub async fn process_agent_stream<S>(
                     };
 
                     if let Err(e) = services::update_vps_info_on_handshake(
-                        &pool,
+                        &context.db_pool,
                         vps_db_id_from_msg,
                         handshake,
                     )
-                    .await {
+                    .await
+                    {
                         error!(error = %e, "Failed to update VPS info on handshake.");
-                    } else {
-                        if update_trigger_tx.send(()).await.is_err() {
-                            error!("Failed to send update trigger after handshake.");
-                        }
+                    } else if context.update_trigger_tx.send(()).await.is_err() {
+                        error!("Failed to send update trigger after handshake.");
                     }
 
                     let agent_state = AgentState {
@@ -157,7 +167,7 @@ pub async fn process_agent_stream<S>(
 
                     // Insert the new state, which returns the old state if it existed.
                     let old_state = {
-                        let mut agents_guard = connected_agents_arc.lock().await;
+                        let mut agents_guard = context.connected_agents.lock().await;
                         agents_guard.agents.insert(vps_db_id_from_msg, agent_state)
                     };
 
@@ -192,7 +202,7 @@ pub async fn process_agent_stream<S>(
                 } else if handshake_completed {
                     // Any subsequent message from an authenticated agent updates its liveness timestamp.
                     {
-                        let mut agents_guard = connected_agents_arc.lock().await;
+                        let mut agents_guard = context.connected_agents.lock().await;
                         if let Some(state) = agents_guard.agents.get_mut(&vps_db_id_from_msg) {
                             state.last_seen_ms = Utc::now().timestamp_millis();
                         }
@@ -203,7 +213,7 @@ pub async fn process_agent_stream<S>(
                             ServerPayload::PerformanceBatch(batch) => {
                                 debug!(vps_id = vps_db_id_from_msg, "Received performance batch with {} records.", batch.snapshots.len());
                                 match services::save_performance_snapshot_batch(
-                                    &pool,
+                                    &context.db_pool,
                                     vps_db_id_from_msg,
                                     &batch,
                                 )
@@ -213,15 +223,13 @@ pub async fn process_agent_stream<S>(
                                         debug!(vps_id = vps_db_id_from_msg, saved_count = saved_metrics.len(), "Successfully saved performance batch.");
                                         let has_metrics = !saved_metrics.is_empty();
                                         for metric in saved_metrics {
-                                            if let Err(e) = metric_sender.send(metric).await {
+                                            if let Err(e) = context.metric_sender.send(metric).await {
                                                 error!(error = %e, "Failed to send metric to broadcaster channel.");
                                             }
                                         }
 
-                                        if has_metrics {
-                                            if update_trigger_tx.send(()).await.is_err() {
-                                                error!("Failed to send update trigger after metrics batch.");
-                                            }
+                                        if has_metrics && context.update_trigger_tx.send(()).await.is_err() {
+                                            error!("Failed to send update trigger after metrics batch.");
                                         }
                                     }
                                     Err(e) => {
@@ -233,23 +241,22 @@ pub async fn process_agent_stream<S>(
                                 let status = if response.success { "synced" } else { "failed" };
                                 let error_msg = if response.success { None } else { Some(response.error_message.as_str()) };
                                 if let Err(e) = services::update_vps_config_status(
-                                    &pool,
+                                    &context.db_pool,
                                     vps_db_id_from_msg,
                                     status,
                                     error_msg,
                                 )
-                                .await {
+                                .await
+                                {
                                     error!(error = %e, "Failed to update config status.");
-                                } else {
-                                    if update_trigger_tx.send(()).await.is_err() {
-                                        error!("Failed to send update trigger after config update.");
-                                    }
+                                } else if context.update_trigger_tx.send(()).await.is_err() {
+                                    error!("Failed to send update trigger after config update.");
                                 }
                             }
                             ServerPayload::BatchCommandOutputStream(output_stream) => {
                                 if let Ok(child_task_id) = Uuid::parse_str(&output_stream.command_id) {
                                     let stream_type = GrpcOutputType::try_from(output_stream.stream_type).unwrap_or(GrpcOutputType::Unspecified);
-                                    if let Err(e) = batch_command_manager.record_child_task_output(
+                                    if let Err(e) = context.batch_command_manager.record_child_task_output(
                                         child_task_id,
                                         stream_type,
                                         output_stream.chunk.into_bytes(),
@@ -268,7 +275,7 @@ pub async fn process_agent_stream<S>(
                                         _ => ChildCommandStatus::AgentError,
                                     };
                                     let error_message = if command_result.error_message.is_empty() { None } else { Some(command_result.error_message) };
-                                    if let Err(e) = batch_command_manager.update_child_task_status(
+                                    if let Err(e) = context.batch_command_manager.update_child_task_status(
                                         child_task_id,
                                         new_status,
                                         Some(command_result.exit_code),
@@ -280,22 +287,22 @@ pub async fn process_agent_stream<S>(
                             }
                             ServerPayload::ServiceMonitorResult(result) => {
                                 if let Err(e) = services::service_monitor_service::record_monitor_result(
-                                    &pool,
+                                    &context.db_pool,
                                     vps_db_id_from_msg,
                                     &result,
                                 )
                                 .await
-                                    {
-                                        error!(monitor_id = result.monitor_id, error = %e, "Failed to record monitor result.");
-                                    } else {
-                                        // --- Start of fix: Manually construct broadcast message ---
-                                        // No need to re-fetch from DB. Use the data we just received.
-                                        if ws_data_broadcaster_tx.receiver_count() > 0 {
-                                            // Fetch monitor and agent names in parallel for efficiency
-                                            let monitor_future = crate::db::entities::service_monitor::Entity::find_by_id(result.monitor_id).one(&*pool);
-                                            let agent_future = crate::db::entities::vps::Entity::find_by_id(vps_db_id_from_msg).one(&*pool);
+                                {
+                                    error!(monitor_id = result.monitor_id, error = %e, "Failed to record monitor result.");
+                                } else {
+                                    // --- Start of fix: Manually construct broadcast message ---
+                                    // No need to re-fetch from DB. Use the data we just received.
+                                    if context.ws_data_broadcaster_tx.receiver_count() > 0 {
+                                        // Fetch monitor and agent names in parallel for efficiency
+                                        let monitor_future = crate::db::entities::service_monitor::Entity::find_by_id(result.monitor_id).one(&*context.db_pool);
+                                        let agent_future = crate::db::entities::vps::Entity::find_by_id(vps_db_id_from_msg).one(&*context.db_pool);
 
-                                            match tokio::try_join!(monitor_future, agent_future) {
+                                        match tokio::try_join!(monitor_future, agent_future) {
                                                 Ok((Some(monitor), Some(agent))) => {
                                                     let result_details = crate::web::models::service_monitor_models::ServiceMonitorResultDetails {
                                                         time: chrono::Utc.timestamp_millis_opt(result.timestamp_unix_ms).unwrap().to_rfc3339(),
@@ -314,7 +321,7 @@ pub async fn process_agent_stream<S>(
                                                     };
                                                     let message = WsMessage::ServiceMonitorResult(update);
 
-                                                    if let Err(e) = ws_data_broadcaster_tx.send(message) {
+                                                    if let Err(e) = context.ws_data_broadcaster_tx.send(message) {
                                                         error!(error = %e, "Failed to broadcast service monitor result.");
                                                     }
                                                 }

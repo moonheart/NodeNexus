@@ -95,12 +95,13 @@ const VpsDetailPage: React.FC = () => {
   const { vpsId } = useParams<{ vpsId: string }>();
   const { isAuthenticated } = useAuthStore();
 
-  const { servers, connectionStatus, isLoading, allTags, fetchAllTags } = useServerListStore(useShallow(state => ({
+  const { servers, connectionStatus, isLoading, allTags, fetchAllTags, latestMetrics } = useServerListStore(useShallow(state => ({
     servers: state.servers,
     connectionStatus: state.connectionStatus,
     isLoading: state.isLoading,
     allTags: state.allTags,
     fetchAllTags: state.fetchAllTags,
+    latestMetrics: state.latestMetrics,
   })));
 
   const vpsDetail = useMemo(() => {
@@ -108,6 +109,12 @@ const VpsDetailPage: React.FC = () => {
     const numericVpsId = parseInt(vpsId, 10);
     return servers.find(server => server.id === numericVpsId) || null;
   }, [vpsId, servers]);
+
+  const latestMetricForVps = useMemo(() => {
+    if (!vpsId) return null;
+    const numericVpsId = parseInt(vpsId, 10);
+    return latestMetrics[numericVpsId] || null;
+  }, [vpsId, latestMetrics]);
 
   const [cpuData, setCpuData] = useState<PerformanceMetricPoint[]>([]);
   const [memoryData, setMemoryData] = useState<PerformanceMetricPoint[]>([]);
@@ -341,14 +348,15 @@ const VpsDetailPage: React.FC = () => {
     };
 
     fetchMonitorData();
-  }, [vpsId, selectedTimeRange, isAuthenticated, t]);
+  }, [vpsId, selectedTimeRange, isAuthenticated, t, timeRangeToMillis]);
+
 
   useEffect(() => {
-    if (selectedTimeRange !== 'realtime' || !vpsDetail?.latestMetrics || !vpsId || !isAuthenticated) {
+    if (selectedTimeRange !== 'realtime' || !latestMetricForVps || !vpsId || !isAuthenticated) {
       return;
     }
 
-    const newMetrics = vpsDetail.latestMetrics;
+    const newMetrics = latestMetricForVps;
     const newTime = newMetrics.time;
     const numericVpsId = parseInt(vpsId, 10);
 
@@ -376,7 +384,7 @@ const VpsDetailPage: React.FC = () => {
     if (newMetrics.diskIoReadBps != null || newMetrics.diskIoWriteBps != null) {
       setDiskIoData(prev => appendAndTrim(prev, { time: newTime, vpsId: numericVpsId, avgDiskIoReadBps: newMetrics.diskIoReadBps, avgDiskIoWriteBps: newMetrics.diskIoWriteBps } as PerformanceMetricPoint));
     }
-  }, [vpsDetail?.latestMetrics?.time, vpsId, selectedTimeRange, isAuthenticated]);
+  }, [latestMetricForVps, vpsId, selectedTimeRange, isAuthenticated]);
 
   if (isLoadingPage) {
     return <div className="flex justify-center items-center h-64"><p>{t('vpsDetailPage.loadingDetails')}</p></div>;
@@ -399,7 +407,8 @@ const VpsDetailPage: React.FC = () => {
   }
 
   const { icon: StatusIcon, variant: statusVariant } = getVpsStatusAppearance(vpsDetail.status);
-  const { latestMetrics: metrics, metadata } = vpsDetail;
+  const metrics = latestMetricForVps;
+  const { metadata } = vpsDetail;
   const { trafficLimitBytes: trafficLimit, trafficCurrentCycleRxBytes, trafficCurrentCycleTxBytes, trafficBillingRule: billingRule } = vpsDetail;
   const currentRx = trafficCurrentCycleRxBytes ?? 0;
   const currentTx = trafficCurrentCycleTxBytes ?? 0;
@@ -530,7 +539,7 @@ const VpsDetailPage: React.FC = () => {
           <InfoBlock title={t('vpsDetailPage.systemInfo.physicalCores')} value={`${metadata?.physical_core_count ?? 'N/A'}`} />
           <InfoBlock title={t('vpsDetailPage.systemInfo.totalMemory')} value={formatBytes(metadata?.total_memory_bytes ?? metrics?.memoryTotalBytes)} />
           <InfoBlock title={t('vpsDetailPage.systemInfo.totalSwap')} value={formatBytes(metadata?.total_swap_bytes)} />
-          <InfoBlock title={t('vpsDetailPage.systemInfo.totalDisk')} value={formatBytes(metrics?.diskTotalBytes)} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.totalDisk')} value={formatBytes(metrics?.diskTotalBytes ?? metadata?.total_disk_bytes)} />
         </CardContent>
       </Card>
 
@@ -577,11 +586,20 @@ const VpsDetailPage: React.FC = () => {
 
 const VpsStatCards: React.FC<{ vpsDetail: VpsListItemResponse }> = React.memo(({ vpsDetail }) => {
   const { t } = useTranslation();
-  const { latestMetrics: metrics, metadata } = vpsDetail;
+  const { vpsId } = useParams<{ vpsId: string }>();
+  const { latestMetrics } = useServerListStore(useShallow(state => ({ latestMetrics: state.latestMetrics })));
+  
+  const metrics = useMemo(() => {
+    if (!vpsId) return null;
+    const numericVpsId = parseInt(vpsId, 10);
+    return latestMetrics[numericVpsId] || null;
+  }, [vpsId, latestMetrics]);
+
+  const { metadata } = vpsDetail;
   const memUsed = metrics?.memoryUsageBytes ?? 0;
-  const memTotal = metrics?.memoryTotalBytes ?? 0;
+  const memTotal = metrics?.memoryTotalBytes ?? metadata?.total_memory_bytes ?? 0;
   const diskUsed = metrics?.diskUsedBytes ?? 0;
-  const diskTotal = metrics?.diskTotalBytes ?? 0;
+  const diskTotal = metrics?.diskTotalBytes ?? metadata?.total_disk_bytes ?? 0;
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">

@@ -75,7 +75,6 @@ pub struct ServerMetricsSnapshot {
 pub struct ServerWithDetails {
     #[serde(flatten)]
     pub basic_info: ServerBasicInfo,
-    pub latest_metrics: Option<ServerMetricsSnapshot>,
     pub os_type: Option<String>,
     pub created_at: DateTime<Utc>, // Assuming this comes from the database Vps model
     pub metadata: Option<serde_json::Value>, // Added to include VPS metadata
@@ -163,6 +162,8 @@ pub struct PerformanceMetricPoint {
     pub disk_io_write_bps: Option<i64>,
     pub swap_usage_bytes: Option<i64>,
     pub swap_total_bytes: Option<i64>,
+    pub disk_used_bytes: Option<i64>,
+    pub disk_total_bytes: Option<i64>,
 }
 
 /// Represents a batch of performance metrics for a single VPS, to be sent over WebSocket.

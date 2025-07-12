@@ -6,15 +6,20 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::time;
 use tracing::{debug, error, info};
 
-use crate::db::entities::performance_metric;
-use crate::web::models::websocket_models::{PerformanceMetricBatch, PerformanceMetricPoint, WsMessage};
+use crate::db::entities::{performance_disk_usage, performance_metric};
+use crate::web::models::websocket_models::{
+    PerformanceMetricBatch, PerformanceMetricPoint, WsMessage,
+};
 
 /// A service that buffers performance metrics and broadcasts them in batches periodically.
 /// This helps to reduce the frequency of WebSocket messages.
 #[derive(Debug)]
 pub struct MetricBroadcaster {
     /// Receives individual metric points from the gRPC service.
-    metric_receiver: mpsc::Receiver<performance_metric::Model>,
+    metric_receiver: mpsc::Receiver<(
+        performance_metric::Model,
+        Vec<performance_disk_usage::Model>,
+    )>,
     /// Broadcasts batched metrics to all connected WebSocket clients.
     ws_broadcaster: broadcast::Sender<WsMessage>,
     /// A concurrent map to buffer metrics per VPS.
@@ -26,7 +31,13 @@ impl MetricBroadcaster {
     /// Creates a new `MetricBroadcaster` and the sender part of its channel.
     pub fn new(
         ws_broadcaster: broadcast::Sender<WsMessage>,
-    ) -> (Self, mpsc::Sender<performance_metric::Model>) {
+    ) -> (
+        Self,
+        mpsc::Sender<(
+            performance_metric::Model,
+            Vec<performance_disk_usage::Model>,
+        )>,
+    ) {
         let (metric_sender, metric_receiver) = mpsc::channel(2048); // Buffer up to 2048 metrics
         let broadcaster = Self {
             metric_receiver,
@@ -42,7 +53,11 @@ impl MetricBroadcaster {
         // Task 1: Receive incoming metrics and put them into the buffer.
         let buffer_clone = Arc::clone(&self.buffer);
         tokio::spawn(async move {
-            while let Some(metric) = self.metric_receiver.recv().await {
+            while let Some((metric, disk_usages)) = self.metric_receiver.recv().await {
+                // Sum up disk usage from all mount points
+                let total_disk_bytes: i64 = disk_usages.iter().map(|d| d.total_bytes).sum();
+                let used_disk_bytes: i64 = disk_usages.iter().map(|d| d.used_bytes).sum();
+
                 let point = PerformanceMetricPoint {
                     time: metric.time,
                     vps_id: metric.vps_id,
@@ -55,6 +70,8 @@ impl MetricBroadcaster {
                     disk_io_write_bps: Some(metric.disk_io_write_bps),
                     swap_usage_bytes: Some(metric.swap_usage_bytes),
                     swap_total_bytes: Some(metric.swap_total_bytes),
+                    disk_used_bytes: Some(used_disk_bytes),
+                    disk_total_bytes: Some(total_disk_bytes),
                 };
                 buffer_clone.entry(metric.vps_id).or_default().push(point);
             }

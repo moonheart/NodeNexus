@@ -26,6 +26,7 @@ interface HomePageStateSlice {
   connectionStatus: ConnectionStatus;
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
+  latestMetrics: ServerListState['latestMetrics'];
 }
 
 const selectHomePageData = (state: ServerListState): HomePageStateSlice => ({
@@ -35,6 +36,7 @@ const selectHomePageData = (state: ServerListState): HomePageStateSlice => ({
   connectionStatus: state.connectionStatus,
   viewMode: state.viewMode,
   setViewMode: state.setViewMode,
+  latestMetrics: state.latestMetrics,
 });
 
 const statusColorMap: Record<ServerStatusType, string> = {
@@ -64,6 +66,7 @@ const HomePage: React.FC = () => {
     connectionStatus,
     viewMode,
     setViewMode,
+    latestMetrics,
   } = useServerListStore(useShallow(selectHomePageData));
 
   useEffect(() => {
@@ -103,16 +106,17 @@ const HomePage: React.FC = () => {
     const sorted = [...tagFilteredServers];
     sorted.sort((a, b) => {
       const getVal = (server: VpsListItemResponse, key: string) => {
+        const metrics = latestMetrics[server.id];
         switch (key) {
           case 'id': return server.id;
           case 'name': return server.name.toLowerCase();
           case 'status': return server.status;
           case 'ipAddress': return server.ipAddress?.toLowerCase() || null;
           case 'osType': return server.osType?.toLowerCase() || null;
-          case 'cpu': return server.latestMetrics?.cpuUsagePercent ?? null;
+          case 'cpu': return metrics?.cpuUsagePercent ?? null;
           case 'memory': {
-            const memUsage = server.latestMetrics?.memoryUsageBytes;
-            const memTotal = server.latestMetrics?.memoryTotalBytes;
+            const memUsage = metrics?.memoryUsageBytes;
+            const memTotal = metrics?.memoryTotalBytes;
             if (memUsage === undefined || memUsage === null || memTotal === undefined || memTotal === null || memTotal === 0) return null;
             return memUsage / memTotal;
           }
@@ -122,8 +126,8 @@ const HomePage: React.FC = () => {
             if (rx === undefined || rx === null || tx === undefined || tx === null) return null;
             return rx + tx;
           }
-          case 'networkUp': return server.latestMetrics?.networkTxInstantBps ?? null;
-          case 'networkDown': return server.latestMetrics?.networkRxInstantBps ?? null;
+          case 'networkUp': return metrics?.networkTxInstantBps ?? null;
+          case 'networkDown': return metrics?.networkRxInstantBps ?? null;
           default: return null;
         }
       };
@@ -145,7 +149,7 @@ const HomePage: React.FC = () => {
       return 0;
     });
     return sorted;
-  }, [tagFilteredServers, sortKey, sortDirection]);
+  }, [tagFilteredServers, sortKey, sortDirection, latestMetrics]);
 
   const displayedServers = sortedServers;
 
@@ -169,9 +173,9 @@ const HomePage: React.FC = () => {
 
   const currentAvailableTags = isAuthenticated ? availableTags : uniqueTagsForPublicView;
 
-  const onlineServersForNetworkTotals = useMemo(() => displayedServers.filter(s => s.status === STATUS_ONLINE && s.latestMetrics), [displayedServers]);
-  const totalNetworkUp = useMemo(() => onlineServersForNetworkTotals.reduce((acc, server) => acc + (server.latestMetrics?.networkTxInstantBps || 0), 0), [onlineServersForNetworkTotals]);
-  const totalNetworkDown = useMemo(() => onlineServersForNetworkTotals.reduce((acc, server) => acc + (server.latestMetrics?.networkRxInstantBps || 0), 0), [onlineServersForNetworkTotals]);
+  const onlineServersForNetworkTotals = useMemo(() => displayedServers.filter(s => s.status === STATUS_ONLINE && latestMetrics[s.id]), [displayedServers, latestMetrics]);
+  const totalNetworkUp = useMemo(() => onlineServersForNetworkTotals.reduce((acc, server) => acc + (latestMetrics[server.id]?.networkTxInstantBps || 0), 0), [onlineServersForNetworkTotals, latestMetrics]);
+  const totalNetworkDown = useMemo(() => onlineServersForNetworkTotals.reduce((acc, server) => acc + (latestMetrics[server.id]?.networkRxInstantBps || 0), 0), [onlineServersForNetworkTotals, latestMetrics]);
   const formatNetworkSpeedForDisplay = (bps: number): [string, string] => {
     if (bps < 1024) return [bps.toFixed(0), 'Bps'];
     if (bps < 1024 * 1024) return [(bps / 1024).toFixed(1), 'KBps'];

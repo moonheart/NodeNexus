@@ -88,7 +88,6 @@ pub struct VpsListItemResponse {
     #[serde(rename = "group")]
     pub group: Option<String>,
     pub tags: Option<Vec<crate::web::models::websocket_models::Tag>>,
-    pub latest_metrics: Option<crate::web::models::websocket_models::ServerMetricsSnapshot>,
     pub config_status: String,
     pub last_config_update_at: Option<String>,
     pub last_config_error: Option<String>,
@@ -139,7 +138,6 @@ impl From<crate::web::models::websocket_models::ServerWithDetails> for VpsListIt
             created_at: details.created_at.to_rfc3339(),
             group: details.basic_info.group,
             tags: details.basic_info.tags,
-            latest_metrics: details.latest_metrics,
             config_status: details.basic_info.config_status,
             last_config_update_at: details
                 .basic_info

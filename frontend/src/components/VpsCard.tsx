@@ -2,6 +2,7 @@ import React from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { VpsListItemResponse } from '../types';
+import { useServerListStore } from '../store/serverListStore';
 import { Cpu, MemoryStick, HardDrive, ArrowUp, ArrowDown, Signal, CalendarClock } from 'lucide-react';
 import {
   formatBytesForDisplay,
@@ -27,7 +28,7 @@ interface VpsCardProps {
 const VpsCard: React.FC<VpsCardProps> = React.memo(({ server, activeChartTab, onChartTabChange }) => {
   const { t } = useTranslation();
   const { icon: StatusIcon, variant: statusVariant, cardBorderClass } = getVpsStatusAppearance(server.status);
-  const metrics = server.latestMetrics;
+  const metrics = useServerListStore(state => state.latestMetrics[server.id]);
 
   const cpuUsage = metrics?.cpuUsagePercent ?? null;
   const memoryUsageBytes = metrics?.memoryUsageBytes ?? null;

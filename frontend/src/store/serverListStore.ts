@@ -45,6 +45,7 @@ export type ConnectionStatus =
 
 export interface ServerListState { // Added export
     servers: VpsListItemResponse[];
+    latestMetrics: Record<number, PerformanceMetricPoint>;
     connectionStatus: ConnectionStatus;
     isLoading: boolean; // For initial load or when explicitly loading/reconnecting
     error: string | null; // For WebSocket related errors
@@ -86,6 +87,7 @@ export const useServerListStore = create<ServerListState>()(
   persist(
     (set, get) => ({
       servers: [],
+      latestMetrics: {},
       connectionStatus: 'disconnected',
       isLoading: true, // Assume loading initially until first connection or message
       error: null,
@@ -428,6 +430,21 @@ export const useServerListStore = create<ServerListState>()(
             return; // Ignore empty batches
         }
 
+        // Get the latest metric from the batch
+        const latestMetricInBatch = metrics.reduce((latest, current) => {
+            return new Date(current.time) > new Date(latest.time) ? current : latest;
+        });
+
+        // Update the Zustand store with the latest metric for the specific vpsId
+        set(state => ({
+            latestMetrics: {
+                ...state.latestMetrics,
+                [vpsId]: latestMetricInBatch,
+            }
+        }));
+
+        // --- The existing Pub/Sub logic for real-time charts remains unchanged ---
+        
         // Update cache
         if (!vpsPerformanceMetricsCache[vpsId]) {
             vpsPerformanceMetricsCache[vpsId] = [];
