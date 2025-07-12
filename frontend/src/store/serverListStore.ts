@@ -55,7 +55,7 @@ export interface ServerListState { // Added export
 
     // Service Monitor Pub/Sub Actions (per Monitor for detail page)
     subscribeToMonitorResults: (monitorId: number, callback: MonitorResultCallback) => UnsubscribeFunction;
-    getInitialMonitorResults: (monitorId: number, limit?: number) => Promise<ServiceMonitorResult[]>;
+    getInitialMonitorResults: (monitorId: number, limit?: number, startTime?: string, endTime?: string) => Promise<ServiceMonitorResult[]>;
     clearMonitorResults: () => void;
 
     // Internal actions
@@ -144,18 +144,22 @@ export const useServerListStore = create<ServerListState>()(
         };
     },
 
-    getInitialMonitorResults: async (monitorId, limit = 500) => {
-        if (monitorResultsCache[monitorId]) {
-            return monitorResultsCache[monitorId];
-        }
+    getInitialMonitorResults: async (monitorId, limit, startTime, endTime) => {
+        // For realtime chart, we don't cache, as the time window is always moving.
+        // For historical charts, caching might be useful but is complex to manage with different time ranges.
+        // For simplicity, we are not caching for now. A more advanced implementation could use a key based on monitorId and time range.
+
         if (isFetchingInitialData[monitorId]) {
             await new Promise(resolve => setTimeout(resolve, 100));
-            return get().getInitialMonitorResults(monitorId, limit);
+            return get().getInitialMonitorResults(monitorId, limit, startTime, endTime);
         }
         try {
             isFetchingInitialData[monitorId] = true;
-            const results = await getMonitorResults(monitorId, undefined, undefined, limit);
+            // Pass startTime and endTime, but crucially, pass `undefined` for points to get raw data for the realtime chart.
+            const points = startTime && endTime ? undefined : limit;
+            const results = await getMonitorResults(monitorId, startTime, endTime, points);
             const sortedResults = results.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+            // We still update the cache, which can be used by other non-time-sensitive components if needed.
             monitorResultsCache[monitorId] = sortedResults;
             return sortedResults;
         } catch (error) {

@@ -34,6 +34,7 @@ export const getMonitorResults = async (
   const params = new URLSearchParams();
   if (startTime) params.append('start_time', startTime);
   if (endTime) params.append('end_time', endTime);
+  // The 'points' parameter is intentionally NOT appended if it's undefined.
   if (points) params.append('points', points.toString());
 
   const response = await apiClient.get(`/monitors/${id}/results`, { params });
