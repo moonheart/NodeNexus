@@ -166,11 +166,10 @@ pub struct PerformanceMetricPoint {
     pub disk_total_bytes: Option<i64>,
 }
 
-/// Represents a batch of performance metrics for a single VPS, to be sent over WebSocket.
+/// Represents a batch of performance metrics from one or more VPS, to be sent over WebSocket.
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PerformanceMetricBatch {
-    pub vps_id: i32,
     pub metrics: Vec<PerformanceMetricPoint>,
 }
 

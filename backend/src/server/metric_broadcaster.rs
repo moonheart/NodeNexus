@@ -96,30 +96,29 @@ impl MetricBroadcaster {
                 }
 
                 // Step 1: Atomically take the metrics from the buffer, minimizing lock time.
-                let mut batches_to_send = Vec::new();
+                let mut all_metrics = Vec::new();
                 for mut entry in buffer_clone.iter_mut() {
-                    let (vps_id, metrics_vec) = entry.pair_mut();
-                    if !metrics_vec.is_empty() {
-                        // `std::mem::take` replaces the value in the map with an empty Vec
-                        // and returns the owned Vec of metrics, all atomically.
-                        let metrics = std::mem::take(metrics_vec);
-                        batches_to_send.push(PerformanceMetricBatch {
-                            vps_id: *vps_id,
-                            metrics,
-                        });
+                    if !entry.value().is_empty() {
+                        let mut metrics = std::mem::take(entry.value_mut());
+                        all_metrics.append(&mut metrics);
                     }
                 }
 
                 // Step 2: Drop the lock by ending the iteration, then send the data.
-                if !batches_to_send.is_empty() {
-                    debug!("Broadcasting {} metric batches.", batches_to_send.len());
-                    for batch in batches_to_send {
-                        let message = WsMessage::PerformanceMetricBatch(batch);
-                        if let Err(e) = ws_broadcaster_clone.send(message) {
-                            // This error typically means there are no active subscribers.
-                            // It's noisy, so let's log it at a lower level.
-                            debug!("Failed to broadcast performance metric batch (no subscribers?): {}", e);
-                        }
+                if !all_metrics.is_empty() {
+                    debug!(
+                        "Broadcasting {} metric points in a single batch.",
+                        all_metrics.len()
+                    );
+                    let batch = PerformanceMetricBatch {
+                        metrics: all_metrics,
+                    };
+                    let message = WsMessage::PerformanceMetricBatch(batch);
+                    if let Err(e) = ws_broadcaster_clone.send(message) {
+                        debug!(
+                            "Failed to broadcast performance metric batch (no subscribers?): {}",
+                            e
+                        );
                     }
                 }
             }
