@@ -147,12 +147,10 @@ pub async fn get_monitors_with_details_by_user_id(
         .from_raw_sql(sea_orm::Statement::from_sql_and_values(
             db.get_database_backend(),
             r#"
-            SELECT * FROM (
-                SELECT *, ROW_NUMBER() OVER(PARTITION BY monitor_id ORDER BY "time" DESC) as rn
-                FROM service_monitor_results
-                WHERE monitor_id = ANY($1)
-            ) t
-            WHERE rn = 1
+            SELECT DISTINCT ON (monitor_id) *
+            FROM service_monitor_results
+            WHERE monitor_id = ANY($1)
+            ORDER BY monitor_id, "time" DESC
             "#,
             [monitor_ids.clone().into()],
         ))
