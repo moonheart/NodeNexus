@@ -1,23 +1,22 @@
 use crate::db::{
-    entities::{tag, vps},                             // Changed to use entities
+    entities::{service_monitor, tag, vps},
     models::PerformanceMetric as DbPerformanceMetric, // Keep DbPerformanceMetric for now
     services,
 };
 use crate::server::update_service;
-use crate::web::models::AuthenticatedUser;
 use crate::web::models::service_monitor_models::ServiceMonitorResultDetails;
-use crate::web::service_monitor_routes::MonitorResultsQuery;
-use crate::web::{AppError, AppState, config_routes};
+use crate::web::models::AuthenticatedUser;
+use crate::web::{config_routes, AppError, AppState, routes::metrics_routes};
 use axum::{
-    Json,
-    Router,
     extract::{Extension, Path, Query, State}, // Added Query
     http::StatusCode,
     routing::{delete, get, post, put},
+    Json, Router,
 };
-use chrono::{DateTime, Utc}; // Added for DateTime<Utc>
-use sea_orm::DbErr; // Added DbErr for error handling
+use chrono::{DateTime, Duration, Utc}; // Added for DateTime<Utc>
+use sea_orm::{ColumnTrait, DbErr, EntityTrait, QueryFilter}; // Added DbErr for error handling
 use serde::{Deserialize, Serialize}; // Added Serialize
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::error;
 
@@ -647,17 +646,45 @@ async fn dismiss_renewal_reminder_handler(
     }
 }
 
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct MonitorTimeseriesQuery {
+    pub start_time: DateTime<Utc>,
+    #[serde(default = "default_end_time")]
+    pub end_time: DateTime<Utc>,
+    pub interval: Option<String>,
+}
+
+fn default_end_time() -> DateTime<Utc> {
+    Utc::now()
+}
+
+pub fn parse_interval_to_seconds(interval: Option<String>) -> Option<i64> {
+    interval.and_then(|s| {
+        let s = s.trim();
+        if let Some(seconds_str) = s.strip_suffix('s') {
+            seconds_str.parse::<i64>().ok()
+        } else if let Some(minutes_str) = s.strip_suffix('m') {
+            minutes_str.parse::<i64>().ok().map(|m| m * 60)
+        } else if let Some(hours_str) = s.strip_suffix('h') {
+            hours_str.parse::<i64>().ok().map(|h| h * 3600)
+        } else if let Some(days_str) = s.strip_suffix('d') {
+            days_str.parse::<i64>().ok().map(|d| d * 86400)
+        } else {
+            s.parse::<i64>().ok()
+        }
+    })
+}
+
 async fn get_vps_monitor_results_handler(
     Extension(authenticated_user): Extension<AuthenticatedUser>,
     State(app_state): State<Arc<AppState>>,
     Path(vps_id): Path<i32>,
-    Query(query): Query<MonitorResultsQuery>,
+    Query(query): Query<MonitorTimeseriesQuery>,
 ) -> Result<Json<Vec<ServiceMonitorResultDetails>>, AppError> {
     let user_id = authenticated_user.id;
 
     // Authorization: Verify the user owns the VPS.
-    // This is implicitly handled by `get_monitor_results_by_vps_id` which filters by user_id.
-    // An explicit check could be added here if desired for early exit.
     let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
         .await?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
@@ -665,17 +692,96 @@ async fn get_vps_monitor_results_handler(
         return Err(AppError::Unauthorized("Access denied".to_string()));
     }
 
-    let results = services::get_monitor_results_by_vps_id(
+    let interval_seconds = parse_interval_to_seconds(query.interval);
+
+    let points_result = services::get_monitor_results_by_vps_id(
         &app_state.db_pool,
         vps_id,
-        user_id,
         query.start_time,
         query.end_time,
-        query.points,
+        interval_seconds,
     )
-    .await?;
+    .await;
+
+    let points = match points_result {
+        Ok(points) => points,
+        Err(e) => {
+            error!("Error fetching monitor results for VPS {}: {:?}", vps_id, e);
+            return Err(e.into());
+        }
+    };
+
+    if points.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
+
+    // --- Conversion from ServiceMonitorPoint to ServiceMonitorResultDetails ---
+    // 1. Get all unique monitor IDs from the results
+    let monitor_ids: Vec<i32> = points
+        .iter()
+        .map(|p| p.monitor_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    // 2. Fetch all monitor models for these IDs
+    let monitors = service_monitor::Entity::find()
+        .filter(service_monitor::Column::Id.is_in(monitor_ids))
+        .all(&app_state.db_pool)
+        .await?;
+    let monitor_name_map: HashMap<i32, String> =
+        monitors.into_iter().map(|m| (m.id, m.name)).collect();
+
+    // 3. The agent name is just the VPS name, which we already have.
+    let agent_name = vps.name;
+
+    // 4. Map the points to the final details struct
+    let results = points
+        .into_iter()
+        .map(|point| {
+            let monitor_name = monitor_name_map
+                .get(&point.monitor_id)
+                .cloned()
+                .unwrap_or_else(|| "Unknown Monitor".to_string());
+
+            ServiceMonitorResultDetails {
+                time: point.time.to_rfc3339(),
+                monitor_id: point.monitor_id,
+                agent_id: point.agent_id,
+                agent_name: agent_name.clone(),
+                monitor_name,
+                // For aggregated data, is_up is a float (availability). Convert back to bool.
+                // We consider > 50% availability as "up". For raw data, it will be 1.0 or 0.0.
+                is_up: point.is_up.map_or(false, |v| v > 0.5),
+                latency_ms: point.latency_ms.map(|f| f as i32),
+                details: point.details,
+            }
+        })
+        .collect();
 
     Ok(Json(results))
+}
+
+async fn get_vps_monitors_handler(
+    Extension(authenticated_user): Extension<AuthenticatedUser>,
+    State(app_state): State<Arc<AppState>>,
+    Path(vps_id): Path<i32>,
+) -> Result<Json<Vec<service_monitor::Model>>, AppError> {
+    let user_id = authenticated_user.id;
+
+    // Authorize: Check if user owns the VPS
+    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
+
+    if vps.user_id != user_id {
+        return Err(AppError::Unauthorized("Access denied".to_string()));
+    }
+
+    // Fetch all monitors associated with the VPS (directly or via tags)
+    let monitors = services::get_monitors_for_vps(&app_state.db_pool, vps_id).await?;
+
+    Ok(Json(monitors))
 }
 
 pub fn vps_router() -> Router<Arc<AppState>> {
@@ -698,6 +804,10 @@ pub fn vps_router() -> Router<Arc<AppState>> {
             post(dismiss_renewal_reminder_handler),
         ) // New route
         .route(
+            "/{vps_id}/monitors",
+            get(get_vps_monitors_handler),
+        ) // New route
+        .route(
             "/{vps_id}/monitor-results",
             get(get_vps_monitor_results_handler),
         ) // New route
@@ -707,6 +817,7 @@ pub fn vps_router() -> Router<Arc<AppState>> {
         ) // New route for agent update
         .nest("/{vps_id}/tags", vps_tags_router()) // Nest the tags router
         .merge(config_routes::create_vps_config_router())
+        .merge(metrics_routes::metrics_router())
 }
 
 async fn trigger_update_check_handler(

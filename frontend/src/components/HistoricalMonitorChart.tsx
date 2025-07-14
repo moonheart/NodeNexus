@@ -8,8 +8,7 @@ import {
   ChartLegend,
   type ChartConfig,
 } from "@/components/ui/chart";
-
-type TimeRangeOption = '1h' | '6h' | '24h' | '7d';
+import { Skeleton } from './ui/skeleton';
 
 type ChartPoint = { time: number; [key: string]: number | null };
 
@@ -17,29 +16,26 @@ const formatDateTick = (tickItem: number) => new Date(tickItem).toLocaleTimeStri
 const formatTooltipLabel = (label: number) => new Date(label).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 
 const AGENT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F'];
-const MAX_HISTORICAL_POINTS = 300;
 
 interface HistoricalMonitorChartProps {
   monitorId: number;
-  timeRange: Exclude<TimeRangeOption, 'realtime'>;
+  startTime: string;
+  endTime: string;
+  interval: string | null;
 }
 
-const HistoricalMonitorChart: React.FC<HistoricalMonitorChartProps> = ({ monitorId, timeRange }) => {
+const HistoricalMonitorChart: React.FC<HistoricalMonitorChartProps> = ({ monitorId, startTime, endTime, interval }) => {
   const [results, setResults] = useState<ServiceMonitorResult[]>([]);
   const [isChartLoading, setIsChartLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hiddenLines, setHiddenLines] = useState<Record<string, boolean>>({});
-
-  const timeRangeToMillis = useMemo(() => ({ '1h': 36e5, '6h': 216e5, '24h': 864e5, '7d': 6048e5 }), []);
 
   useEffect(() => {
     const fetchResults = async () => {
       setIsChartLoading(true);
       setError(null);
       try {
-        const endTime = new Date();
-        const startTime = new Date(endTime.getTime() - timeRangeToMillis[timeRange]);
-        const historicalResults = await getMonitorResults(monitorId, startTime.toISOString(), endTime.toISOString(), MAX_HISTORICAL_POINTS);
+        const historicalResults = await getMonitorResults(monitorId, startTime, endTime, interval);
         setResults(historicalResults.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()));
       } catch (err) {
         setError('无法获取监控结果。');
@@ -50,7 +46,7 @@ const HistoricalMonitorChart: React.FC<HistoricalMonitorChartProps> = ({ monitor
     };
 
     fetchResults();
-  }, [monitorId, timeRange, timeRangeToMillis]);
+  }, [monitorId, startTime, endTime, interval]);
 
   const agentConfig = useMemo(() => {
     if (!results || results.length === 0) {
@@ -101,14 +97,7 @@ const HistoricalMonitorChart: React.FC<HistoricalMonitorChartProps> = ({ monitor
   };
 
   if (isChartLoading) {
-    return (
-      <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
-        <div className="text-center">
-          <p className="text-lg font-semibold">正在加载图表...</p>
-          <p className="text-sm text-muted-foreground">请稍候</p>
-        </div>
-      </div>
-    );
+    return <Skeleton className="h-full w-full" />;
   }
 
   if (error) {

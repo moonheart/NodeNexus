@@ -6,7 +6,7 @@ import type { VpsListItemResponse, FullServerListPushType, ViewMode, Tag, Servic
 import * as tagService from '../services/tagService';
 import equal from 'fast-deep-equal';
 import { getMonitorResults, getMonitorResultsByVpsId } from '../services/serviceMonitorService';
-import { getLatestNMetrics } from '../services/metricsService';
+import { getVpsMetrics } from '../services/metricsService';
 
 // --- Pub/Sub Systems ---
 // These live outside Zustand state to avoid causing re-renders on every data update.
@@ -59,17 +59,17 @@ export interface ServerListState { // Added export
 
     // Service Monitor Pub/Sub Actions (per VPS for homepage)
     subscribeToVpsMonitorResults: (vpsId: number, callback: VpsMonitorResultCallback) => UnsubscribeFunction;
-    getInitialVpsMonitorResults: (vpsId: number, limit?: number) => Promise<ServiceMonitorResult[]>;
+    getInitialVpsMonitorResults: (vpsId: number) => Promise<ServiceMonitorResult[]>;
     clearVpsMonitorResults: () => void;
 
     // Performance Metrics Pub/Sub Actions (per VPS)
     subscribeToVpsPerformanceMetrics: (vpsId: number, callback: VpsPerformanceMetricCallback) => UnsubscribeFunction;
-    getInitialVpsPerformanceMetrics: (vpsId: number, count?: number) => Promise<PerformanceMetricPoint[]>;
+    getInitialVpsPerformanceMetrics: (vpsId: number) => Promise<PerformanceMetricPoint[]>;
     clearVpsPerformanceMetrics: () => void;
 
     // Service Monitor Pub/Sub Actions (per Monitor for detail page)
     subscribeToMonitorResults: (monitorId: number, callback: MonitorResultCallback) => UnsubscribeFunction;
-    getInitialMonitorResults: (monitorId: number, limit?: number, startTime?: string, endTime?: string) => Promise<ServiceMonitorResult[]>;
+    getInitialMonitorResults: (monitorId: number, startTime: string, endTime: string, interval: string | null) => Promise<ServiceMonitorResult[]>;
     clearMonitorResults: () => void;
 
     // Internal actions
@@ -113,7 +113,7 @@ export const useServerListStore = create<ServerListState>()(
         };
     },
 
-    getInitialVpsMonitorResults: async (vpsId, limit = 500) => {
+    getInitialVpsMonitorResults: async (vpsId) => {
         if (vpsMonitorResultsCache[vpsId]) {
             return vpsMonitorResultsCache[vpsId];
         }
@@ -121,14 +121,16 @@ export const useServerListStore = create<ServerListState>()(
         if (isFetchingInitialVpsData[vpsId]) {
             // Avoid race conditions where multiple components request the same data simultaneously
             await new Promise(resolve => setTimeout(resolve, 100)); // simple wait
-            return get().getInitialVpsMonitorResults(vpsId, limit); // retry
+            return get().getInitialVpsMonitorResults(vpsId); // retry
         }
 
         try {
             isFetchingInitialVpsData[vpsId] = true;
-            // Use the new service function to fetch by VPS ID
-            const results = await getMonitorResultsByVpsId(vpsId, undefined, undefined, limit);
-            const sortedResults = results.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+            const endTime = new Date();
+            const startTime = new Date(endTime.getTime() - 10 * 60 * 1000); // 10 minutes ago
+
+            const results = await getMonitorResultsByVpsId(vpsId, startTime.toISOString(), endTime.toISOString(), null);
+            const sortedResults = results.sort((a: ServiceMonitorResult, b: ServiceMonitorResult) => new Date(a.time).getTime() - new Date(b.time).getTime());
             vpsMonitorResultsCache[vpsId] = sortedResults;
             return sortedResults;
         } catch (error) {
@@ -166,21 +168,23 @@ export const useServerListStore = create<ServerListState>()(
         };
     },
 
-    getInitialVpsPerformanceMetrics: async (vpsId, count = 60) => {
+    getInitialVpsPerformanceMetrics: async (vpsId) => {
         if (vpsPerformanceMetricsCache[vpsId]) {
             return vpsPerformanceMetricsCache[vpsId];
         }
 
         if (isFetchingInitialVpsMetrics[vpsId]) {
             await new Promise(resolve => setTimeout(resolve, 100));
-            return get().getInitialVpsPerformanceMetrics(vpsId, count);
+            return get().getInitialVpsPerformanceMetrics(vpsId);
         }
 
         try {
             isFetchingInitialVpsMetrics[vpsId] = true;
-            // Using getLatestNMetrics as a proxy for the initial time window
-            const metrics = await getLatestNMetrics(vpsId, count);
-            const sortedMetrics = metrics.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+            const endTime = new Date();
+            const startTime = new Date(endTime.getTime() - 10 * 60 * 1000); // 10 minutes ago
+            
+            const metrics = await getVpsMetrics(vpsId, startTime.toISOString(), endTime.toISOString(), null);
+            const sortedMetrics = metrics.sort((a: PerformanceMetricPoint, b: PerformanceMetricPoint) => new Date(a.time).getTime() - new Date(b.time).getTime());
             vpsPerformanceMetricsCache[vpsId] = sortedMetrics;
             return sortedMetrics;
         } catch (error) {
@@ -191,7 +195,7 @@ export const useServerListStore = create<ServerListState>()(
         }
     },
     
-    // --- Legacy Pub/Sub Implementation for ServiceMonitorDetailPage ---
+    // --- Pub/Sub Implementation for ServiceMonitorDetailPage ---
     subscribeToMonitorResults: (monitorId, callback) => {
         if (!monitorResultListeners[monitorId]) {
             monitorResultListeners[monitorId] = new Set();
@@ -206,22 +210,15 @@ export const useServerListStore = create<ServerListState>()(
         };
     },
 
-    getInitialMonitorResults: async (monitorId, limit, startTime, endTime) => {
-        // For realtime chart, we don't cache, as the time window is always moving.
-        // For historical charts, caching might be useful but is complex to manage with different time ranges.
-        // For simplicity, we are not caching for now. A more advanced implementation could use a key based on monitorId and time range.
-
+    getInitialMonitorResults: async (monitorId, startTime, endTime, interval) => {
         if (isFetchingInitialData[monitorId]) {
             await new Promise(resolve => setTimeout(resolve, 100));
-            return get().getInitialMonitorResults(monitorId, limit, startTime, endTime);
+            return get().getInitialMonitorResults(monitorId, startTime, endTime, interval);
         }
         try {
             isFetchingInitialData[monitorId] = true;
-            // Pass startTime and endTime, but crucially, pass `undefined` for points to get raw data for the realtime chart.
-            const points = startTime && endTime ? undefined : limit;
-            const results = await getMonitorResults(monitorId, startTime, endTime, points);
+            const results = await getMonitorResults(monitorId, startTime, endTime, interval);
             const sortedResults = results.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-            // We still update the cache, which can be used by other non-time-sensitive components if needed.
             monitorResultsCache[monitorId] = sortedResults;
             return sortedResults;
         } catch (error) {
@@ -308,6 +305,7 @@ export const useServerListStore = create<ServerListState>()(
             // Register event listeners for the public service (now handled by the same service)
             websocketService.on('open', get()._handleWebSocketOpen);
             websocketService.on('full_server_list', get()._handleWebSocketMessage);
+            websocketService.on('performance_metric_batch', get()._handlePerformanceMetricBatch);
             // No service_monitor_result for public view
             websocketService.on('close', get()._handleWebSocketClose);
             websocketService.on('error', get()._handleWebSocketError);
@@ -424,45 +422,60 @@ export const useServerListStore = create<ServerListState>()(
     },
 
     _handlePerformanceMetricBatch: (data: PerformanceMetricBatch) => {
-        const { vpsId, metrics } = data;
+        const { metrics } = data;
 
         if (!metrics || metrics.length === 0) {
             return; // Ignore empty batches
         }
 
-        // Get the latest metric from the batch
-        const latestMetricInBatch = metrics.reduce((latest, current) => {
-            return new Date(current.time) > new Date(latest.time) ? current : latest;
+        // Group metrics by vpsId
+        const metricsByVps = metrics.reduce((acc, metric) => {
+            if (!acc[metric.vpsId]) {
+                acc[metric.vpsId] = [];
+            }
+            acc[metric.vpsId].push(metric);
+            return acc;
+        }, {} as Record<number, PerformanceMetricPoint[]>);
+
+
+        // Update Zustand store with the latest metric for each vpsId in the batch
+        set(state => {
+            const newLatestMetrics = { ...state.latestMetrics };
+            for (const vpsId in metricsByVps) {
+                const vpsMetrics = metricsByVps[vpsId];
+                if (vpsMetrics.length > 0) {
+                    const latestMetricInBatch = vpsMetrics.reduce((latest, current) => {
+                        return new Date(current.time) > new Date(latest.time) ? current : latest;
+                    });
+                    newLatestMetrics[vpsId] = latestMetricInBatch;
+                }
+            }
+            return { latestMetrics: newLatestMetrics };
         });
 
-        // Update the Zustand store with the latest metric for the specific vpsId
-        set(state => ({
-            latestMetrics: {
-                ...state.latestMetrics,
-                [vpsId]: latestMetricInBatch,
-            }
-        }));
-
         // --- The existing Pub/Sub logic for real-time charts remains unchanged ---
-        
-        // Update cache
-        if (!vpsPerformanceMetricsCache[vpsId]) {
-            vpsPerformanceMetricsCache[vpsId] = [];
-        }
-        // Use concat for efficiency with arrays
-        vpsPerformanceMetricsCache[vpsId] = vpsPerformanceMetricsCache[vpsId].concat(metrics);
+        for (const vpsIdStr in metricsByVps) {
+            const vpsId = parseInt(vpsIdStr, 10);
+            const vpsMetrics = metricsByVps[vpsId];
 
-        // Keep cache size reasonable
-        const CACHE_MAX_SIZE = 1000; // Same as service monitor results
-        if (vpsPerformanceMetricsCache[vpsId].length > CACHE_MAX_SIZE) {
-            vpsPerformanceMetricsCache[vpsId] = vpsPerformanceMetricsCache[vpsId].slice(-CACHE_MAX_SIZE);
-        }
+            // Update cache
+            if (!vpsPerformanceMetricsCache[vpsId]) {
+                vpsPerformanceMetricsCache[vpsId] = [];
+            }
+            vpsPerformanceMetricsCache[vpsId] = vpsPerformanceMetricsCache[vpsId].concat(vpsMetrics);
 
-        // Notify listeners with the entire batch
-        if (vpsPerformanceMetricListeners[vpsId]) {
-            vpsPerformanceMetricListeners[vpsId].forEach(callback => {
-                callback(metrics); // Pass the array of new metric points
-            });
+            // Keep cache size reasonable
+            const CACHE_MAX_SIZE = 1000;
+            if (vpsPerformanceMetricsCache[vpsId].length > CACHE_MAX_SIZE) {
+                vpsPerformanceMetricsCache[vpsId] = vpsPerformanceMetricsCache[vpsId].slice(-CACHE_MAX_SIZE);
+            }
+
+            // Notify listeners with the batch for this specific VPS
+            if (vpsPerformanceMetricListeners[vpsId]) {
+                vpsPerformanceMetricListeners[vpsId].forEach(callback => {
+                    callback(vpsMetrics);
+                });
+            }
         }
     },
 

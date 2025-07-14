@@ -24,6 +24,22 @@ export const formatNetworkSpeed = (bps: number | undefined | null): string => {
   return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
 };
 
+// Helper to format uptime
+export const formatUptime = (totalSeconds: number | null | undefined): string => {
+  if (totalSeconds == null || totalSeconds < 0) return 'N/A';
+  if (totalSeconds === 0) return '0 seconds';
+  const days = Math.floor(totalSeconds / (3600 * 24));
+  const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = Math.floor(totalSeconds % 60);
+  let uptimeString = '';
+  if (days > 0) uptimeString += `${days}d `;
+  if (hours > 0) uptimeString += `${hours}h `;
+  if (minutes > 0) uptimeString += `${minutes}m `;
+  if (seconds > 0 || uptimeString === '') uptimeString += `${seconds}s`;
+  return uptimeString.trim();
+};
+
 // Helper function to calculate remaining days and progress for renewal
 export const calculateRenewalInfo = (
   nextRenewalDateStr?: string | null,

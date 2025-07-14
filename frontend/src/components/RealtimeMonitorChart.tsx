@@ -35,7 +35,7 @@ const RealtimeMonitorChart: React.FC<RealtimeMonitorChartProps> = ({ monitorId }
         const endTime = new Date();
         const startTime = new Date(endTime.getTime() - REALTIME_WINDOW_MS);
         // Fetch raw data points within the time window, so no `limit` parameter.
-        const initialResults = await getInitialMonitorResults(monitorId, undefined, startTime.toISOString(), endTime.toISOString());
+        const initialResults = await getInitialMonitorResults(monitorId, startTime.toISOString(), endTime.toISOString(), null);
         setResults(initialResults);
       } catch (error) {
         console.error("Failed to fetch initial monitor results:", error);

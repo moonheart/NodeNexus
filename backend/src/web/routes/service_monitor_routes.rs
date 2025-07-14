@@ -1,18 +1,22 @@
+use crate::db::entities::{service_monitor, vps};
+use crate::db::services::service_monitor_service;
+use crate::server::update_service;
+use crate::web::config_routes::push_config_to_vps;
+use crate::web::models::service_monitor_models::{
+    CreateMonitor, ServiceMonitorResultDetails, UpdateMonitor,
+};
+use crate::web::routes::vps_routes::{parse_interval_to_seconds, MonitorTimeseriesQuery};
+use crate::web::{AppError, AppState};
 use axum::{
-    Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
+    Json, Router,
 };
-use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::error;
-
-use crate::db::services::service_monitor_service;
-use crate::web::config_routes::push_config_to_vps;
-use crate::web::models::service_monitor_models::{CreateMonitor, UpdateMonitor};
-use crate::web::{AppError, AppState};
 
 pub fn create_service_monitor_router() -> Router<Arc<AppState>> {
     Router::new()
@@ -130,32 +134,67 @@ async fn delete_monitor(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Deserialize, Debug)]
-pub struct MonitorResultsQuery {
-    pub start_time: Option<DateTime<Utc>>,
-    pub end_time: Option<DateTime<Utc>>,
-    pub interval: Option<String>,
-    pub points: Option<u64>,
-}
-
 #[axum::debug_handler]
 async fn get_monitor_results(
     State(app_state): State<Arc<AppState>>,
     Path(id): Path<i32>,
-    Query(query): Query<MonitorResultsQuery>,
+    Query(query): Query<MonitorTimeseriesQuery>,
     // TODO: Add user extraction and authorization
-) -> Result<
-    Json<Vec<crate::web::models::service_monitor_models::ServiceMonitorResultDetails>>,
-    AppError,
-> {
-    let results = service_monitor_service::get_monitor_results_by_id(
+) -> Result<Json<Vec<ServiceMonitorResultDetails>>, AppError> {
+    // Fetch the monitor to get its name and verify existence
+    let monitor = service_monitor::Entity::find_by_id(id)
+        .one(&app_state.db_pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Monitor not found".to_string()))?;
+
+    let interval_seconds = parse_interval_to_seconds(query.interval);
+
+    let points = service_monitor_service::get_monitor_results_by_id(
         &app_state.db_pool,
         id,
         query.start_time,
         query.end_time,
-        query.interval,
-        query.points,
+        interval_seconds,
     )
     .await?;
+
+    if points.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
+
+    // --- Conversion from ServiceMonitorPoint to ServiceMonitorResultDetails ---
+    // 1. Get all unique agent IDs from the results
+    let agent_ids: Vec<i32> = points.iter().map(|p| p.agent_id).collect::<Vec<_>>();
+
+    // 2. Fetch all agent (VPS) models for these IDs
+    let agents = vps::Entity::find()
+        .filter(vps::Column::Id.is_in(agent_ids))
+        .all(&app_state.db_pool)
+        .await?;
+    let agent_name_map: HashMap<i32, String> =
+        agents.into_iter().map(|a| (a.id, a.name)).collect();
+
+    // 3. Map the points to the final details struct
+    let results = points
+        .into_iter()
+        .map(|point| {
+            let agent_name = agent_name_map
+                .get(&point.agent_id)
+                .cloned()
+                .unwrap_or_else(|| "Unknown Agent".to_string());
+
+            ServiceMonitorResultDetails {
+                time: point.time.to_rfc3339(),
+                monitor_id: point.monitor_id,
+                agent_id: point.agent_id,
+                agent_name,
+                monitor_name: monitor.name.clone(),
+                is_up: point.is_up.map_or(false, |v| v > 0.5),
+                latency_ms: point.latency_ms.map(|f| f as i32),
+                details: point.details,
+            }
+        })
+        .collect();
+
     Ok(Json(results))
 }

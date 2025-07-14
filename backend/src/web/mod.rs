@@ -200,7 +200,6 @@ pub fn create_axum_router(
             "/ws/agent",
             get(crate::server::ws_agent_handler::ws_agent_handler),
         )
-        .merge(metrics_routes::metrics_router())
         .nest(
             "/api/vps",
             vps_routes::vps_router().route_layer(axum_middleware::from_fn_with_state(

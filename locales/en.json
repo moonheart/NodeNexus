@@ -819,6 +819,14 @@
       "h24": "24H",
       "d7": "7D"
     },
+    "tabs": {
+      "history": "History",
+      "realtime": "Realtime",
+      "1h": "1H",
+      "6h": "6H",
+      "1d": "1D",
+      "7d": "7D"
+    },
     "statCards": {
       "cpuUsage": "CPU Usage",
       "memoryUsage": "Memory Usage",

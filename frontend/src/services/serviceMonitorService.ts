@@ -25,32 +25,69 @@ export const deleteMonitor = async (id: number): Promise<void> => {
   await apiClient.delete(`/monitors/${id}`);
 };
 
+/**
+ * Fetches time series results for a specific service monitor.
+ * @param id - The ID of the service monitor.
+ * @param startTime - The start of the time range (ISO string).
+ * @param endTime - The end of the time range (ISO string).
+ * @param interval - Optional. The aggregation interval (e.g., "30s", "5m", "1h"). If null, raw data is fetched.
+ * @returns A promise that resolves to an array of service monitor results.
+ */
 export const getMonitorResults = async (
   id: number,
-  startTime?: string,
-  endTime?: string,
-  points?: number
+  startTime: string,
+  endTime: string,
+  interval: string | null
 ): Promise<ServiceMonitorResult[]> => {
-  const params = new URLSearchParams();
-  if (startTime) params.append('start_time', startTime);
-  if (endTime) params.append('end_time', endTime);
-  // The 'points' parameter is intentionally NOT appended if it's undefined.
-  if (points) params.append('points', points.toString());
+  const params: {
+    startTime: string;
+    endTime: string;
+    interval?: string;
+  } = {
+    startTime,
+    endTime,
+  };
+
+  if (interval) {
+    params.interval = interval;
+  }
 
   const response = await apiClient.get(`/monitors/${id}/results`, { params });
   return response.data;
 };
+
+/**
+ * Fetches time series results for all monitors associated with a specific VPS.
+ * @param vpsId - The ID of the VPS.
+ * @param startTime - The start of the time range (ISO string).
+ * @param endTime - The end of the time range (ISO string).
+ * @param interval - Optional. The aggregation interval (e.g., "30s", "5m", "1h"). If null, raw data is fetched.
+ * @returns A promise that resolves to an array of service monitor results.
+ */
 export const getMonitorResultsByVpsId = async (
   vpsId: number | string,
-  startTime?: string,
-  endTime?: string,
-  points?: number
+  startTime: string,
+  endTime: string,
+  interval: string | null
 ): Promise<ServiceMonitorResult[]> => {
-  const params = new URLSearchParams();
-  if (startTime) params.append('start_time', startTime);
-  if (endTime) params.append('end_time', endTime);
-  if (points) params.append('points', points.toString());
+  const params: {
+    startTime: string;
+    endTime: string;
+    interval?: string;
+  } = {
+    startTime,
+    endTime,
+  };
+
+  if (interval) {
+    params.interval = interval;
+  }
 
   const response = await apiClient.get(`/vps/${vpsId}/monitor-results`, { params });
+  return response.data;
+};
+
+export const getMonitorsByVpsId = async (vpsId: number | string): Promise<ServiceMonitor[]> => {
+  const response = await apiClient.get(`/vps/${vpsId}/monitors`);
   return response.data;
 };

@@ -23,30 +23,35 @@ use crate::db::services::vps_traffic_service; // Corrected direct import
 
 // --- PerformanceMetric Service Functions ---
 
-/// Represents an aggregated performance metric, typically used for time-bucketed queries.
+/// Represents a unified performance metric point for API responses.
+/// It can hold either raw or aggregated data, but presents it with consistent field names.
 #[derive(FromQueryResult, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AggregatedPerformanceMetric {
-    pub time: Option<DateTime<Utc>>,
+pub struct PerformanceMetricPoint {
+    pub time: DateTime<Utc>,
     pub vps_id: i32,
-    pub avg_cpu_usage_percent: Option<f64>,
-    pub avg_memory_usage_bytes: Option<f64>,
-    pub max_memory_total_bytes: Option<i64>,
-    pub avg_network_rx_instant_bps: Option<f64>,
-    pub avg_network_tx_instant_bps: Option<f64>,
-    pub avg_disk_io_read_bps: Option<f64>,  // Added
-    pub avg_disk_io_write_bps: Option<f64>, // Added
+    pub cpu_usage_percent: Option<f64>,
+    pub memory_usage_bytes: Option<f64>, // f64 for potential AVG
+    pub memory_total_bytes: Option<i64>, // i64 for MAX or raw value
+    pub network_rx_instant_bps: Option<f64>, // f64 for potential AVG
+    pub network_tx_instant_bps: Option<f64>, // f64 for potential AVG
+    pub disk_io_read_bps: Option<f64>,       // f64 for potential AVG
+    pub disk_io_write_bps: Option<f64>,      // f64 for potential AVG
 }
 
 /// Retrieves performance metrics for a given VPS within a time range.
+/// If `interval_seconds` is provided, data is aggregated into time buckets.
+/// Otherwise, raw data points are returned.
+/// The returned `PerformanceMetricPoint` has a consistent structure for both cases.
 pub async fn get_performance_metrics_for_vps(
     db: &DatabaseConnection,
     vps_id: i32,
     start_time: DateTime<Utc>,
     end_time: DateTime<Utc>,
     interval_seconds: Option<u32>,
-) -> Result<Vec<AggregatedPerformanceMetric>, DbErr> {
+) -> Result<Vec<PerformanceMetricPoint>, DbErr> {
     if let Some(seconds) = interval_seconds {
+        // AGGREGATED QUERY
         let time_bucket_expr = Expr::cust(format!(
             "time_bucket(INTERVAL '{} seconds', \"time\")",
             seconds.max(1)
@@ -60,47 +65,43 @@ pub async fn get_performance_metrics_for_vps(
                 Expr::expr(Func::avg(Expr::col(
                     performance_metric::Column::CpuUsagePercent,
                 ))),
-                "avg_cpu_usage_percent",
+                "cpu_usage_percent", // Map AVG to the base field name
             )
             .column_as(
                 Expr::expr(Func::avg(Expr::col(
                     performance_metric::Column::MemoryUsageBytes,
-                ))),
-                "avg_memory_usage_bytes",
+                ))).cast_as(Alias::new("double precision")),
+                "memory_usage_bytes", // Map AVG to the base field name
             )
             .column_as(
                 Expr::expr(Func::max(Expr::col(
                     performance_metric::Column::MemoryTotalBytes,
                 ))),
-                "max_memory_total_bytes",
+                "memory_total_bytes", // Map MAX to the base field name
             )
             .column_as(
                 Expr::expr(Func::avg(Expr::col(
                     performance_metric::Column::NetworkRxInstantBps,
-                ))),
-                "avg_network_rx_instant_bps",
+                ))).cast_as(Alias::new("double precision")),
+                "network_rx_instant_bps", // Map AVG to the base field name
             )
             .column_as(
                 Expr::expr(Func::avg(Expr::col(
                     performance_metric::Column::NetworkTxInstantBps,
-                ))),
-                "avg_network_tx_instant_bps",
+                ))).cast_as(Alias::new("double precision")),
+                "network_tx_instant_bps", // Map AVG to the base field name
             )
             .column_as(
-                // Added for disk read BPS
                 Expr::expr(Func::avg(Expr::col(
-                    // Changed from AVG to MAX
                     performance_metric::Column::DiskIoReadBps,
-                ))),
-                "avg_disk_io_read_bps",
+                ))).cast_as(Alias::new("double precision")),
+                "disk_io_read_bps", // Map AVG to the base field name
             )
             .column_as(
-                // Added for disk write BPS
                 Expr::expr(Func::avg(Expr::col(
-                    // Changed from AVG to MAX
                     performance_metric::Column::DiskIoWriteBps,
-                ))),
-                "avg_disk_io_write_bps",
+                ))).cast_as(Alias::new("double precision")),
+                "disk_io_write_bps", // Map AVG to the base field name
             )
             .filter(performance_metric::Column::VpsId.eq(vps_id))
             .filter(performance_metric::Column::Time.gte(start_time))
@@ -108,49 +109,51 @@ pub async fn get_performance_metrics_for_vps(
             .group_by(time_bucket_expr)
             .group_by(performance_metric::Column::VpsId)
             .order_by(Expr::col(Alias::new("time")), Order::Asc)
-            .into_model::<AggregatedPerformanceMetric>()
+            .into_model::<PerformanceMetricPoint>()
             .all(db)
             .await
     } else {
+        // RAW DATA QUERY
         performance_metric::Entity::find()
             .select_only()
-            .column_as(performance_metric::Column::Time, "time")
+            .column(performance_metric::Column::Time)
             .column(performance_metric::Column::VpsId)
             .column_as(
                 performance_metric::Column::CpuUsagePercent,
-                "avg_cpu_usage_percent",
+                "cpu_usage_percent",
             )
             .column_as(
-                Expr::col(performance_metric::Column::MemoryUsageBytes),
-                "avg_memory_usage_bytes",
+                Expr::col(performance_metric::Column::MemoryUsageBytes)
+                    .cast_as(Alias::new("float")),
+                "memory_usage_bytes",
             )
             .column_as(
                 performance_metric::Column::MemoryTotalBytes,
-                "max_memory_total_bytes",
+                "memory_total_bytes",
             )
             .column_as(
-                Expr::col(performance_metric::Column::NetworkRxInstantBps),
-                "avg_network_rx_instant_bps",
+                Expr::col(performance_metric::Column::NetworkRxInstantBps)
+                    .cast_as(Alias::new("float")),
+                "network_rx_instant_bps",
             )
             .column_as(
-                Expr::col(performance_metric::Column::NetworkTxInstantBps),
-                "avg_network_tx_instant_bps",
+                Expr::col(performance_metric::Column::NetworkTxInstantBps)
+                    .cast_as(Alias::new("float")),
+                "network_tx_instant_bps",
             )
             .column_as(
-                // Added for disk read BPS
-                Expr::col(performance_metric::Column::DiskIoReadBps),
-                "avg_disk_io_read_bps",
+                Expr::col(performance_metric::Column::DiskIoReadBps).cast_as(Alias::new("float")),
+                "disk_io_read_bps",
             )
             .column_as(
-                // Added for disk write BPS
-                Expr::col(performance_metric::Column::DiskIoWriteBps),
-                "avg_disk_io_write_bps",
+                Expr::col(performance_metric::Column::DiskIoWriteBps).cast_as(Alias::new("float")),
+                "disk_io_write_bps",
             )
             .filter(performance_metric::Column::VpsId.eq(vps_id))
             .filter(performance_metric::Column::Time.gte(start_time))
             .filter(performance_metric::Column::Time.lte(end_time))
             .order_by(performance_metric::Column::Time, Order::Asc)
-            .into_model::<AggregatedPerformanceMetric>()
+            .into_model::<PerformanceMetricPoint>()
             .all(db)
             .await
     }
@@ -166,23 +169,6 @@ pub async fn get_latest_performance_metric_for_vps(
         .order_by_desc(performance_metric::Column::Time)
         .one(db)
         .await
-}
-
-/// Retrieves the latest N performance metrics for a given VPS.
-/// The results are sorted by time in ascending order.
-pub async fn get_latest_n_performance_metrics_for_vps(
-    db: &DatabaseConnection,
-    vps_id: i32,
-    count: u32,
-) -> Result<Vec<performance_metric::Model>, DbErr> {
-    let mut metrics = performance_metric::Entity::find()
-        .filter(performance_metric::Column::VpsId.eq(vps_id))
-        .order_by_desc(performance_metric::Column::Time)
-        .limit(count as u64)
-        .all(db)
-        .await?;
-    metrics.reverse(); // To sort by time ASC
-    Ok(metrics)
 }
 
 /// Saves a batch of performance snapshots for a given VPS.

@@ -106,7 +106,6 @@ export interface PerformanceMetricPoint {
  * pushed via WebSocket.
  */
 export interface PerformanceMetricBatch {
-  vpsId: number; // camelCase to match frontend conventions
   metrics: PerformanceMetricPoint[];
 }
 

@@ -29,7 +29,7 @@ const ServiceMonitorChart: React.FC<{ vpsId: number }> = React.memo(({ vpsId }) 
     const setup = async () => {
       try {
         setLoading(true);
-        const initialData = await getInitialVpsMonitorResults(vpsId, 500);
+        const initialData = await getInitialVpsMonitorResults(vpsId);
         if (!isMounted) return;
 
         setResults(initialData);
@@ -182,7 +182,7 @@ const PerformanceChart: React.FC<{ vpsId: number; metricType: 'cpu' | 'ram' }> =
       try {
         setLoading(true);
         // Fetch initial data (last 10 minutes, approximated by 60 points if interval is 10s)
-        const initialData = await getInitialVpsPerformanceMetrics(vpsId, 60);
+        const initialData = await getInitialVpsPerformanceMetrics(vpsId);
         if (!isMounted) return;
         setMetrics(initialData);
 

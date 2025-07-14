@@ -1,93 +1,75 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea, type LegendProps } from 'recharts';
-import { getVpsMetricsTimeseries, getLatestNMetrics } from '../services/metricsService';
 import { getMonitorResultsByVpsId } from '../services/serviceMonitorService';
 import { dismissVpsRenewalReminder } from '../services/vpsService';
-import type { PerformanceMetricPoint, ServiceMonitorResult, VpsListItemResponse } from '../types';
+import { getVpsMetrics } from '../services/metricsService';
+import type { ServiceMonitorResult, VpsListItemResponse, PerformanceMetricPoint } from '../types';
 import { useServerListStore } from '../store/serverListStore';
 import { useAuthStore } from '../store/authStore';
 import EditVpsModal from '../components/EditVpsModal';
 import { useShallow } from 'zustand/react/shallow';
-import type { ValueType } from 'recharts/types/component/DefaultTooltipContent';
 import StatCard from '../components/StatCard';
 import { Server, XCircle, AlertTriangle, ArrowLeft, Cpu, MemoryStick, HardDrive, ArrowUp, ArrowDown, Pencil, BellRing, Info, BarChartHorizontal } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { getVpsStatusAppearance } from '@/utils/vpsUtils';
+import { getVpsStatusAppearance, formatBytesForDisplay, formatNetworkSpeed, formatUptime } from '@/utils/vpsUtils';
 import { VpsTags } from '@/components/VpsTags';
 import { useTranslation } from 'react-i18next';
+import { getTimeRangeDetails, type TimeRangeValue } from '@/components/TimeRangeSelector';
+import HistoricalPerformanceChart from '@/components/HistoricalPerformanceChart';
+import RealtimeMetricChart from '@/components/RealtimeMetricChart';
+import RealtimeServiceMonitors from '@/components/RealtimeServiceMonitors';
+import { ReferenceArea, Legend, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, type LegendProps } from 'recharts';
+import type { ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
-// Helper to format date for XAxis
-const formatDateTick = (tickItem: string) => {
-  const date = new Date(tickItem);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-};
+const VpsDetailLayout: React.FC<{
+  vpsDetail: VpsListItemResponse;
+  isAuthenticated: boolean;
+  handleOpenEditModal: () => void;
+  children: React.ReactNode;
+}> = ({ vpsDetail, isAuthenticated, handleOpenEditModal, children }) => {
+  const { t } = useTranslation();
+  const metrics = useServerListStore(state => state.latestMetrics[vpsDetail.id]);
+  const { icon: StatusIcon, variant: statusVariant } = getVpsStatusAppearance(vpsDetail.status);
 
-// Helper to format the label in tooltips to local time
-const formatTooltipLabel = (label: string) => {
-  const date = new Date(label);
-  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-};
+  return (
+    <div className="p-4 md:p-6 lg:p-8 space-y-6">
+      <Card>
+        <CardHeader className="flex flex-col sm:flex-row justify-between items-start gap-4">
+          <div>
+            <div className="flex items-center mb-2">
+              <Server className="w-8 h-8 mr-3 text-primary flex-shrink-0" />
+              <h1 className="text-3xl font-bold">{vpsDetail.name}</h1>
+            </div>
+            {vpsDetail.ipAddress && <p className="text-muted-foreground mt-1 ml-11">IP: {vpsDetail.ipAddress}</p>}
+            <VpsTags tags={vpsDetail.tags} className="mt-2 ml-11" />
+          </div>
+          <div className="mt-4 sm:mt-0 sm:text-right space-y-2 w-full sm:w-auto">
+            <Badge variant={statusVariant} className="text-sm py-1.5 px-4">
+              <StatusIcon className="w-4 h-4 mr-2" />
+              {vpsDetail.status.toUpperCase()}
+            </Badge>
+            <div className="flex items-center space-x-2 justify-end">
+              {isAuthenticated && (
+                <Button variant="outline" size="sm" onClick={handleOpenEditModal}>
+                  <Pencil className="w-4 h-4 mr-1.5" /> {t('common.actions.edit')}
+                </Button>
+              )}
+              <Button variant="outline" size="sm" asChild>
+                <Link to={isAuthenticated ? "/servers" : "/"}><ArrowLeft className="w-4 h-4 mr-1.5" /> {t('vpsDetailPage.back')}</Link>
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+      </Card>
 
-// Helper to format percentage for tooltips
-const formatPercentForTooltip = (value: ValueType) => {
-  if (typeof value === 'number') return `${value.toFixed(2)}%`;
-  return `${value}`;
-};
+      <VpsStatCards vpsDetail={vpsDetail} metrics={metrics} />
 
-// Helper to calculate memory usage percentage
-const calculateMemoryUsagePercent = (dataPoint: Partial<PerformanceMetricPoint>): number | null => {
-  if (dataPoint.memoryUsageBytes != null && dataPoint.memoryTotalBytes != null && dataPoint.memoryTotalBytes > 0) {
-    return (dataPoint.memoryUsageBytes / dataPoint.memoryTotalBytes) * 100;
-  }
-  if (dataPoint.avgMemoryUsageBytes != null && dataPoint.maxMemoryTotalBytes != null && dataPoint.maxMemoryTotalBytes > 0) {
-    return (dataPoint.avgMemoryUsageBytes / dataPoint.maxMemoryTotalBytes) * 100;
-  }
-  return null;
-};
-
-// Helper to format Network Speed (Bytes per second)
-const formatNetworkSpeed = (bps: number | null | undefined): string => {
-  if (bps == null || bps < 0) return 'N/A';
-  if (bps === 0) return '0 B/s';
-  const k = 1024;
-  const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s'];
-  if (bps < 1) return bps.toFixed(2) + ' B/s';
-  const i = Math.floor(Math.log(bps) / Math.log(k));
-  const index = Math.min(i, sizes.length - 1);
-  return parseFloat((bps / Math.pow(k, index)).toFixed(2)) + ' ' + sizes[index];
-};
-
-// Helper to format bytes
-const formatBytes = (bytes: number | null | undefined, decimals = 2): string => {
-  if (bytes == null || bytes < 0) return 'N/A';
-  if (bytes === 0) return '0 Bytes';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-  if (bytes < 1) return bytes.toFixed(dm) + ' Bytes';
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  const index = Math.min(i, sizes.length - 1);
-  return parseFloat((bytes / Math.pow(k, index)).toFixed(dm)) + ' ' + sizes[index];
-};
-
-// Helper to format uptime
-const formatUptime = (totalSeconds: number | null | undefined): string => {
-  if (totalSeconds == null || totalSeconds < 0) return 'N/A';
-  if (totalSeconds === 0) return '0 seconds';
-  const days = Math.floor(totalSeconds / (3600 * 24));
-  const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = Math.floor(totalSeconds % 60);
-  let uptimeString = '';
-  if (days > 0) uptimeString += `${days}d `;
-  if (hours > 0) uptimeString += `${hours}h `;
-  if (minutes > 0) uptimeString += `${minutes}m `;
-  if (seconds > 0 || uptimeString === '') uptimeString += `${seconds}s`;
-  return uptimeString.trim();
+      {children}
+    </div>
+  );
 };
 
 const VpsDetailPage: React.FC = () => {
@@ -95,13 +77,12 @@ const VpsDetailPage: React.FC = () => {
   const { vpsId } = useParams<{ vpsId: string }>();
   const { isAuthenticated } = useAuthStore();
 
-  const { servers, connectionStatus, isLoading, allTags, fetchAllTags, latestMetrics } = useServerListStore(useShallow(state => ({
+  const { servers, connectionStatus, isLoading, allTags, fetchAllTags } = useServerListStore(useShallow(state => ({
     servers: state.servers,
     connectionStatus: state.connectionStatus,
     isLoading: state.isLoading,
     allTags: state.allTags,
     fetchAllTags: state.fetchAllTags,
-    latestMetrics: state.latestMetrics,
   })));
 
   const vpsDetail = useMemo(() => {
@@ -110,23 +91,12 @@ const VpsDetailPage: React.FC = () => {
     return servers.find(server => server.id === numericVpsId) || null;
   }, [vpsId, servers]);
 
-  const latestMetricForVps = useMemo(() => {
-    if (!vpsId) return null;
-    const numericVpsId = parseInt(vpsId, 10);
-    return latestMetrics[numericVpsId] || null;
-  }, [vpsId, latestMetrics]);
+  const [activePerformanceTab, setActivePerformanceTab] = useState<string>('realtime');
+  const [activeMonitorTab, setActiveMonitorTab] = useState<string>('realtime');
 
-  const [cpuData, setCpuData] = useState<PerformanceMetricPoint[]>([]);
-  const [memoryData, setMemoryData] = useState<PerformanceMetricPoint[]>([]);
-  const [networkData, setNetworkData] = useState<PerformanceMetricPoint[]>([]);
-  const [diskIoData, setDiskIoData] = useState<PerformanceMetricPoint[]>([]);
-  const [loadingChartMetrics, setLoadingChartMetrics] = useState(true);
-  const [chartError, setChartError] = useState<string | null>(null);
-  const [selectedTimeRange, setSelectedTimeRange] = useState<TimeRangeOption>('realtime');
-
-  const handleSetSelectedTimeRange = useCallback((value: TimeRangeOption) => {
-    if (value) setSelectedTimeRange(value);
-  }, []);
+  const [historicalMetrics, setHistoricalMetrics] = useState<PerformanceMetricPoint[]>([]);
+  const [historicalMetricsLoading, setHistoricalMetricsLoading] = useState(false);
+  const [historicalMetricsError, setHistoricalMetricsError] = useState<string | null>(null);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingModalData, setEditingModalData] = useState<{
@@ -141,6 +111,28 @@ const VpsDetailPage: React.FC = () => {
   const [monitorResults, setMonitorResults] = useState<ServiceMonitorResult[]>([]);
   const [loadingMonitors, setLoadingMonitors] = useState(true);
   const [monitorError, setMonitorError] = useState<string | null>(null);
+
+  const handlePerformanceTabChange = useCallback(async (range: string) => {
+    setActivePerformanceTab(range);
+    if (range === 'realtime' || !vpsDetail) {
+      setHistoricalMetrics([]);
+      return;
+    }
+
+    setHistoricalMetricsLoading(true);
+    setHistoricalMetricsError(null);
+    try {
+      const timeRangeDetails = getTimeRangeDetails(range as TimeRangeValue);
+      const data = await getVpsMetrics(vpsDetail.id, timeRangeDetails.startTime, timeRangeDetails.endTime, timeRangeDetails.interval);
+      setHistoricalMetrics(data);
+    } catch (err) {
+      console.error(`Failed to fetch historical performance metrics for VPS ${vpsDetail.id}:`, err);
+      setHistoricalMetricsError(t('vps.errors.fetchMetricsFailed'));
+      setHistoricalMetrics([]); // Clear data on error
+    } finally {
+      setHistoricalMetricsLoading(false);
+    }
+  }, [vpsDetail, t]);
 
   const formatTrafficBillingRule = (rule: string | null | undefined): string => {
     if (!rule) return t('vpsDetailPage.notSet');
@@ -182,15 +174,6 @@ const VpsDetailPage: React.FC = () => {
     return value ? t('vpsDetailPage.yes') : t('vpsDetailPage.no');
   };
 
-  const TIME_RANGE_OPTIONS = useMemo(() => [
-    { label: t('vpsDetailPage.timeRanges.realtime'), value: 'realtime' as const },
-    { label: t('vpsDetailPage.timeRanges.h1'), value: '1h' as const },
-    { label: t('vpsDetailPage.timeRanges.h6'), value: '6h' as const },
-    { label: t('vpsDetailPage.timeRanges.h24'), value: '24h' as const },
-    { label: t('vpsDetailPage.timeRanges.d7'), value: '7d' as const },
-  ], [t]);
-  type TimeRangeOption = typeof TIME_RANGE_OPTIONS[number]['value'];
-
   const handleVpsUpdated = useCallback(() => {
     console.log('VPS updated, store should refresh via WebSocket.');
     setIsEditModalOpen(false);
@@ -202,7 +185,6 @@ const VpsDetailPage: React.FC = () => {
 
   const handleOpenEditModal = useCallback(() => {
     if (!vpsDetail) return;
-    // Fire and forget to refresh tags in the background for the next time
     fetchAllTags();
     const allGroups = new Set(servers.map(v => v.group).filter((g): g is string => !!g));
     const groupOptions = [...allGroups].map(g => ({ value: g, label: g }));
@@ -246,98 +228,19 @@ const VpsDetailPage: React.FC = () => {
     }
   };
 
-  const isLoadingPage = isLoading && !vpsDetail;
-  const pageError = (connectionStatus === 'error' || connectionStatus === 'permanently_failed')
-    ? t('vpsDetailPage.errors.webSocket')
-    : (connectionStatus === 'connected' && !vpsDetail && !isLoading ? t('vpsDetailPage.errors.notFound') : null);
-
-  const timeRangeToMillis: Record<Exclude<TimeRangeOption, 'realtime'>, number> = { '1h': 36e5, '6h': 216e5, '24h': 864e5, '7d': 6048e5 };
-
   useEffect(() => {
-    if (!vpsId || !isAuthenticated) {
-      setLoadingChartMetrics(false);
-      return;
-    }
-    let isMounted = true;
-    const fetchChartMetricsData = async () => {
-      setLoadingChartMetrics(true);
-      setChartError(null);
-      try {
-        let metrics: PerformanceMetricPoint[];
-        if (selectedTimeRange === 'realtime') {
-          metrics = await getLatestNMetrics(vpsId, 300);
-        } else {
-          const endTime = new Date();
-          const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange]);
-          const intervalSeconds = Math.round(timeRangeToMillis[selectedTimeRange] / 1000 / 300);
-          const interval = `${intervalSeconds}s`;
-          metrics = await getVpsMetricsTimeseries(vpsId, startTime.toISOString(), endTime.toISOString(), interval);
-        }
-
-        if (!isMounted) return;
-
-        const cpuPoints: PerformanceMetricPoint[] = [];
-        const memoryPoints: PerformanceMetricPoint[] = [];
-        const networkPoints: PerformanceMetricPoint[] = [];
-        const diskIoPoints: PerformanceMetricPoint[] = [];
-
-        metrics.forEach(point => {
-          const cpuValue = point.avgCpuUsagePercent ?? point.cpuUsagePercent;
-          if (cpuValue != null) cpuPoints.push({ ...point, cpuUsagePercent: cpuValue });
-          
-          const memoryUsagePercentValue = calculateMemoryUsagePercent(point);
-          if (memoryUsagePercentValue != null) memoryPoints.push({ ...point, memoryUsagePercent: memoryUsagePercentValue });
-          
-          const rxBps = point.avgNetworkRxInstantBps ?? point.networkRxInstantBps;
-          const txBps = point.avgNetworkTxInstantBps ?? point.networkTxInstantBps;
-          if (rxBps != null || txBps != null) {
-            networkPoints.push({ ...point, avgNetworkRxInstantBps: rxBps, avgNetworkTxInstantBps: txBps });
-          }
-
-          const readBps = point.avgDiskIoReadBps ?? point.diskIoReadBps;
-          const writeBps = point.avgDiskIoWriteBps ?? point.diskIoWriteBps;
-          if (readBps != null || writeBps != null) {
-            diskIoPoints.push({ ...point, avgDiskIoReadBps: readBps, avgDiskIoWriteBps: writeBps });
-          }
-        });
-        setCpuData(cpuPoints);
-        setMemoryData(memoryPoints);
-        setNetworkData(networkPoints);
-        setDiskIoData(diskIoPoints);
-      } catch (err) {
-        console.error('Failed to fetch chart metrics:', err);
-        if (isMounted) setChartError(t('vpsDetailPage.errors.loadChartData'));
-      } finally {
-        if (isMounted) setLoadingChartMetrics(false);
-      }
-    };
-    fetchChartMetricsData();
-    return () => { isMounted = false; };
-  }, [vpsId, selectedTimeRange, isAuthenticated, t]);
-
-  useEffect(() => {
-    if (!vpsId || !isAuthenticated) {
+    if (!vpsId || !isAuthenticated || activeMonitorTab === 'realtime') {
+      setMonitorResults([]);
       setLoadingMonitors(false);
       return;
-    };
+    }
 
     const fetchMonitorData = async () => {
       setLoadingMonitors(true);
       setMonitorError(null);
       try {
-        let results: ServiceMonitorResult[];
-        if (selectedTimeRange === 'realtime') {
-          console.log(`[VpsDetailPage] Fetching REALTIME monitor data for vpsId: ${vpsId} with limit: 300`);
-          // For realtime, fetch the last 300 data points instead of a fixed time window
-          results = await getMonitorResultsByVpsId(vpsId, undefined, undefined, 300);
-          console.log(`[VpsDetailPage] REALTIME monitor data received for vpsId: ${vpsId}`, { count: results.length, results });
-        } else {
-          const endTime = new Date();
-          const startTime = new Date(endTime.getTime() - timeRangeToMillis[selectedTimeRange]);
-          console.log(`[VpsDetailPage] Fetching HISTORICAL monitor data for vpsId: ${vpsId}`, { timeRange: selectedTimeRange, startTime: startTime.toISOString(), endTime: endTime.toISOString() });
-          results = await getMonitorResultsByVpsId(vpsId, startTime.toISOString(), endTime.toISOString());
-          console.log(`[VpsDetailPage] HISTORICAL monitor data received for vpsId: ${vpsId}`, { count: results.length, results });
-        }
+        const timeRangeDetails = getTimeRangeDetails(activeMonitorTab as TimeRangeValue);
+        const results = await getMonitorResultsByVpsId(vpsId, timeRangeDetails.startTime, timeRangeDetails.endTime, timeRangeDetails.interval);
         setMonitorResults(results);
       } catch (err) {
         console.error('Failed to fetch service monitor results:', err);
@@ -348,43 +251,12 @@ const VpsDetailPage: React.FC = () => {
     };
 
     fetchMonitorData();
-  }, [vpsId, selectedTimeRange, isAuthenticated, t, timeRangeToMillis]);
+  }, [vpsId, isAuthenticated, t, activeMonitorTab]);
 
-
-  useEffect(() => {
-    if (selectedTimeRange !== 'realtime' || !latestMetricForVps || !vpsId || !isAuthenticated) {
-      return;
-    }
-
-    const newMetrics = latestMetricForVps;
-    const newTime = newMetrics.time;
-    const numericVpsId = parseInt(vpsId, 10);
-
-    const appendAndTrim = <T extends { time: string }>(prevData: T[], newDataPoint: T): T[] => {
-      if (prevData.some(p => p.time === newDataPoint.time)) {
-        return prevData;
-      }
-      const combined = [...prevData, newDataPoint].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-      return combined.length > 300 ? combined.slice(combined.length - 300) : combined;
-    };
-
-    if (newMetrics.cpuUsagePercent != null) {
-      setCpuData(prev => appendAndTrim(prev, { time: newTime, vpsId: numericVpsId, cpuUsagePercent: newMetrics.cpuUsagePercent } as PerformanceMetricPoint));
-    }
-    
-    const memoryUsagePercentValue = calculateMemoryUsagePercent(newMetrics);
-    if (memoryUsagePercentValue != null) {
-      setMemoryData(prev => appendAndTrim(prev, { time: newTime, vpsId: numericVpsId, memoryUsagePercent: memoryUsagePercentValue, memoryUsageBytes: newMetrics.memoryUsageBytes, memoryTotalBytes: newMetrics.memoryTotalBytes } as PerformanceMetricPoint));
-    }
-
-    if (newMetrics.networkRxInstantBps != null || newMetrics.networkTxInstantBps != null) {
-      setNetworkData(prev => appendAndTrim(prev, { time: newTime, vpsId: numericVpsId, avgNetworkRxInstantBps: newMetrics.networkRxInstantBps, avgNetworkTxInstantBps: newMetrics.networkTxInstantBps } as PerformanceMetricPoint));
-    }
-
-    if (newMetrics.diskIoReadBps != null || newMetrics.diskIoWriteBps != null) {
-      setDiskIoData(prev => appendAndTrim(prev, { time: newTime, vpsId: numericVpsId, avgDiskIoReadBps: newMetrics.diskIoReadBps, avgDiskIoWriteBps: newMetrics.diskIoWriteBps } as PerformanceMetricPoint));
-    }
-  }, [latestMetricForVps, vpsId, selectedTimeRange, isAuthenticated]);
+  const isLoadingPage = isLoading && !vpsDetail;
+  const pageError = (connectionStatus === 'error' || connectionStatus === 'permanently_failed')
+    ? t('vpsDetailPage.errors.webSocket')
+    : (connectionStatus === 'connected' && !vpsDetail && !isLoading ? t('vpsDetailPage.errors.notFound') : null);
 
   if (isLoadingPage) {
     return <div className="flex justify-center items-center h-64"><p>{t('vpsDetailPage.loadingDetails')}</p></div>;
@@ -406,9 +278,6 @@ const VpsDetailPage: React.FC = () => {
     return <div className="text-center text-muted-foreground">{t('vpsDetailPage.noData')}</div>;
   }
 
-  const { icon: StatusIcon, variant: statusVariant } = getVpsStatusAppearance(vpsDetail.status);
-  const metrics = latestMetricForVps;
-  const { metadata } = vpsDetail;
   const { trafficLimitBytes: trafficLimit, trafficCurrentCycleRxBytes, trafficCurrentCycleTxBytes, trafficBillingRule: billingRule } = vpsDetail;
   const currentRx = trafficCurrentCycleRxBytes ?? 0;
   const currentTx = trafficCurrentCycleTxBytes ?? 0;
@@ -423,7 +292,7 @@ const VpsDetailPage: React.FC = () => {
   const trafficUsagePercent = trafficLimit != null && trafficLimit > 0 ? (totalUsedTraffic / trafficLimit) * 100 : null;
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 space-y-6">
+    <VpsDetailLayout vpsDetail={vpsDetail} isAuthenticated={isAuthenticated} handleOpenEditModal={handleOpenEditModal}>
       {isAuthenticated && editingModalData && (
         <EditVpsModal
           isOpen={isEditModalOpen}
@@ -435,49 +304,18 @@ const VpsDetailPage: React.FC = () => {
         />
       )}
 
-      <Card>
-        <CardHeader className="flex flex-col sm:flex-row justify-between items-start gap-4">
-          <div>
-            <div className="flex items-center mb-2">
-              <Server className="w-8 h-8 mr-3 text-primary flex-shrink-0" />
-              <h1 className="text-3xl font-bold">{vpsDetail.name}</h1>
-            </div>
-            {vpsDetail.ipAddress && <p className="text-muted-foreground mt-1 ml-11">IP: {vpsDetail.ipAddress}</p>}
-            <VpsTags tags={vpsDetail.tags} className="mt-2 ml-11" />
-          </div>
-          <div className="mt-4 sm:mt-0 sm:text-right space-y-2 w-full sm:w-auto">
-            <Badge variant={statusVariant} className="text-sm py-1.5 px-4">
-              <StatusIcon className="w-4 h-4 mr-2" />
-              {vpsDetail.status.toUpperCase()}
-            </Badge>
-            <div className="flex items-center space-x-2 justify-end">
-              {isAuthenticated && (
-                <Button variant="outline" size="sm" onClick={handleOpenEditModal}>
-                  <Pencil className="w-4 h-4 mr-1.5" /> {t('common.actions.edit')}
-                </Button>
-              )}
-              <Button variant="outline" size="sm" asChild>
-                <Link to={isAuthenticated ? "/servers" : "/"}><ArrowLeft className="w-4 h-4 mr-1.5" /> {t('vpsDetailPage.back')}</Link>
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
-
-      <VpsStatCards vpsDetail={vpsDetail} />
-
       {isAuthenticated && vpsDetail.trafficBillingRule && (
         <Card>
           <CardHeader><CardTitle>{t('vpsDetailPage.trafficInfo.title')}</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6 text-sm">
-            <InfoBlock title={t('vpsDetailPage.trafficInfo.limit')} value={trafficLimit != null ? formatBytes(trafficLimit) : t('vpsDetailPage.notSet')} />
+            <InfoBlock title={t('vpsDetailPage.trafficInfo.limit')} value={trafficLimit != null ? formatBytesForDisplay(trafficLimit) : t('vpsDetailPage.notSet')} />
             <InfoBlock title={t('vpsDetailPage.trafficInfo.billingRule')} value={formatTrafficBillingRule(billingRule)} />
             <InfoBlock title={t('vpsDetailPage.trafficInfo.nextResetDate')} value={formatTrafficDate(vpsDetail.nextTrafficResetAt)} />
-            <InfoBlock title={t('vpsDetailPage.trafficInfo.usedThisCycleTotal')} value={formatBytes(totalUsedTraffic)} />
-            {trafficLimit != null && <InfoBlock title={t('vpsDetailPage.trafficInfo.remainingThisCycle')} value={trafficRemaining != null ? formatBytes(trafficRemaining) : 'N/A'} />}
+            <InfoBlock title={t('vpsDetailPage.trafficInfo.usedThisCycleTotal')} value={formatBytesForDisplay(totalUsedTraffic)} />
+            {trafficLimit != null && <InfoBlock title={t('vpsDetailPage.trafficInfo.remainingThisCycle')} value={trafficRemaining != null ? formatBytesForDisplay(trafficRemaining) : 'N/A'} />}
             {trafficUsagePercent != null && <InfoBlock title={t('vpsDetailPage.trafficInfo.usagePercentage')} value={`${trafficUsagePercent.toFixed(2)}%`} />}
-            <InfoBlock title={t('vpsDetailPage.trafficInfo.rxThisCycle')} value={formatBytes(currentRx)} />
-            <InfoBlock title={t('vpsDetailPage.trafficInfo.txThisCycle')} value={formatBytes(currentTx)} />
+            <InfoBlock title={t('vpsDetailPage.trafficInfo.rxThisCycle')} value={formatBytesForDisplay(currentRx)} />
+            <InfoBlock title={t('vpsDetailPage.trafficInfo.txThisCycle')} value={formatBytesForDisplay(currentTx)} />
             <InfoBlock title={t('vpsDetailPage.trafficInfo.lastResetDate')} value={formatTrafficDate(vpsDetail.trafficLastResetAt)} />
           </CardContent>
         </Card>
@@ -485,25 +323,82 @@ const VpsDetailPage: React.FC = () => {
 
       <Card>
         <CardHeader>
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-            <CardTitle>{t('vpsDetailPage.performanceMetrics.title')}</CardTitle>
-            <ToggleGroup type="single" value={selectedTimeRange} onValueChange={handleSetSelectedTimeRange} aria-label="Time range">
-              {TIME_RANGE_OPTIONS.map(period => (
-                <ToggleGroupItem key={period.value} value={period.value}>{period.label}</ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </div>
+          <CardTitle>{t('vpsDetailPage.performanceMetrics.title')}</CardTitle>
         </CardHeader>
         <CardContent>
-          {chartError && <p className="text-destructive text-center">{chartError}</p>}
-          {loadingChartMetrics ? <div className="h-72 flex justify-center items-center"><p>{t('vpsDetailPage.performanceMetrics.loadingCharts')}</p></div> : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-              <ChartComponent title={t('vpsDetailPage.performanceMetrics.cpuUsageChartTitle')} data={cpuData} dataKey="cpuUsagePercent" stroke="#8884d8" yDomain={[0, 100]} />
-              <ChartComponent title={t('vpsDetailPage.performanceMetrics.memoryUsageChartTitle')} data={memoryData} dataKey="memoryUsagePercent" stroke="#82ca9d" yDomain={[0, 100]} />
-              <NetworkChartComponent data={networkData} />
-              <DiskIoChartComponent data={diskIoData} />
+          <Tabs value={activePerformanceTab} onValueChange={handlePerformanceTabChange}>
+            <div className="flex justify-end">
+              <TabsList>
+                <TabsTrigger value="realtime">{t('vpsDetailPage.tabs.realtime')}</TabsTrigger>
+                <TabsTrigger value="1h">{t('vpsDetailPage.tabs.1h')}</TabsTrigger>
+                <TabsTrigger value="6h">{t('vpsDetailPage.tabs.6h')}</TabsTrigger>
+                <TabsTrigger value="1d">{t('vpsDetailPage.tabs.1d')}</TabsTrigger>
+                <TabsTrigger value="7d">{t('vpsDetailPage.tabs.7d')}</TabsTrigger>
+              </TabsList>
             </div>
-          )}
+            <TabsContent value="realtime" className="mt-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
+                <RealtimeMetricChart vpsId={vpsDetail.id} metricType="cpu" />
+                <RealtimeMetricChart vpsId={vpsDetail.id} metricType="ram" />
+                <RealtimeMetricChart vpsId={vpsDetail.id} metricType="network" />
+                <RealtimeMetricChart vpsId={vpsDetail.id} metricType="disk" />
+              </div>
+            </TabsContent>
+            <TabsContent value={activePerformanceTab} className="mt-4">
+              {activePerformanceTab !== 'realtime' && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
+                  <HistoricalPerformanceChart
+                    title={t('vpsDetailPage.performanceMetrics.cpuUsageChartTitle')}
+                    metrics={historicalMetrics}
+                    loading={historicalMetricsLoading}
+                    error={historicalMetricsError}
+                    lines={[{ dataKey: 'cpuUsagePercent', name: t('vps.cpu'), stroke: 'hsl(var(--chart-1))' }]}
+                    yAxisDomain={[0, 100]}
+                    yAxisFormatter={(tick) => `${tick}%`}
+                    tooltipValueFormatter={(value, name) => [`${(value as number).toFixed(1)}%`, name]}
+                  />
+                  <HistoricalPerformanceChart
+                    title={t('vpsDetailPage.performanceMetrics.memoryUsageChartTitle')}
+                    metrics={historicalMetrics}
+                    loading={historicalMetricsLoading}
+                    error={historicalMetricsError}
+                    lines={[{ dataKey: 'memoryUsagePercent', name: t('vps.ram'), stroke: 'hsl(var(--chart-2))' }]}
+                    yAxisDomain={[0, 100]}
+                    yAxisFormatter={(tick) => `${tick}%`}
+                    tooltipValueFormatter={(value, name) => [`${(value as number).toFixed(1)}%`, name]}
+                  />
+                  <HistoricalPerformanceChart
+                    title={t('vpsDetailPage.networkChart.title')}
+                    metrics={historicalMetrics}
+                    loading={historicalMetricsLoading}
+                    error={historicalMetricsError}
+                    lines={[
+                      { dataKey: 'networkRxInstantBps', name: t('vpsDetailPage.networkChart.download'), stroke: 'hsl(var(--chart-1))' },
+                      { dataKey: 'networkTxInstantBps', name: t('vpsDetailPage.networkChart.upload'), stroke: 'hsl(var(--chart-2))' },
+                    ]}
+                    yAxisFormatter={(value) => formatNetworkSpeed(value)}
+                    tooltipValueFormatter={(value, name) => [formatNetworkSpeed(value as number), name]}
+                    chartType="line"
+                    showLegend={true}
+                  />
+                  <HistoricalPerformanceChart
+                    title={t('vpsDetailPage.diskIoChart.title')}
+                    metrics={historicalMetrics}
+                    loading={historicalMetricsLoading}
+                    error={historicalMetricsError}
+                    lines={[
+                      { dataKey: 'diskIoReadBps', name: t('vpsDetailPage.diskIoChart.read'), stroke: 'hsl(var(--chart-1))' },
+                      { dataKey: 'diskIoWriteBps', name: t('vpsDetailPage.diskIoChart.write'), stroke: 'hsl(var(--chart-2))' },
+                    ]}
+                    yAxisFormatter={(value) => formatNetworkSpeed(value)}
+                    tooltipValueFormatter={(value, name) => [formatNetworkSpeed(value as number), name]}
+                    chartType="line"
+                    showLegend={true}
+                  />
+              </div>
+            )}
+          </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 
@@ -516,10 +411,30 @@ const VpsDetailPage: React.FC = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {monitorError && <p className="text-destructive text-center">{monitorError}</p>}
-            {loadingMonitors ? <div className="h-72 flex justify-center items-center"><p>{t('vpsDetailPage.serviceMonitoring.loadingCharts')}</p></div> : (
-              <ServiceMonitorChartComponent results={monitorResults} />
-            )}
+            <Tabs value={activeMonitorTab} onValueChange={setActiveMonitorTab}>
+              <div className="flex justify-end">
+                <TabsList>
+                  <TabsTrigger value="realtime">{t('vpsDetailPage.tabs.realtime')}</TabsTrigger>
+                  <TabsTrigger value="1h">{t('vpsDetailPage.tabs.1h')}</TabsTrigger>
+                  <TabsTrigger value="6h">{t('vpsDetailPage.tabs.6h')}</TabsTrigger>
+                  <TabsTrigger value="1d">{t('vpsDetailPage.tabs.1d')}</TabsTrigger>
+                  <TabsTrigger value="7d">{t('vpsDetailPage.tabs.7d')}</TabsTrigger>
+                </TabsList>
+              </div>
+              <TabsContent value="realtime" className="mt-4">
+                <RealtimeServiceMonitors vpsId={vpsDetail.id} />
+              </TabsContent>
+              {['1h', '6h', '1d', '7d'].map(range => (
+                <TabsContent key={range} value={range} className="mt-4">
+                  {monitorError && <p className="text-destructive text-center">{monitorError}</p>}
+                  {loadingMonitors ? (
+                    <div className="h-72 flex justify-center items-center"><p>{t('vpsDetailPage.serviceMonitoring.loadingCharts')}</p></div>
+                  ) : (
+                    <ServiceMonitorChartComponent results={monitorResults} />
+                  )}
+                </TabsContent>
+              ))}
+            </Tabs>
           </CardContent>
         </Card>
       )}
@@ -527,19 +442,19 @@ const VpsDetailPage: React.FC = () => {
       <Card>
         <CardHeader><CardTitle>{t('vpsDetailPage.systemInfo.title')}</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6 text-sm">
-          <InfoBlock title={t('vpsDetailPage.systemInfo.hostname')} value={`${metadata?.hostname || 'N/A'}`} />
-          <InfoBlock title={t('vpsDetailPage.systemInfo.os')} value={`${metadata?.os_name || 'N/A'} (${metadata?.long_os_version || metadata?.os_version_detail || 'N/A'})`} />
-          <InfoBlock title={t('vpsDetailPage.systemInfo.distroId')} value={`${metadata?.distribution_id || 'N/A'}`} />
-          <InfoBlock title={t('vpsDetailPage.systemInfo.kernelVersion')} value={`${metadata?.kernel_version || 'N/A'}`} />
-          <InfoBlock title={t('vpsDetailPage.systemInfo.arch')} value={`${metadata?.arch || 'N/A'}`} />
-          <InfoBlock title={t('vpsDetailPage.systemInfo.cpuBrand')} value={`${metadata?.cpu_static_info?.brand || 'N/A'}`} />
-          <InfoBlock title={t('vpsDetailPage.systemInfo.cpuName')} value={`${metadata?.cpu_static_info?.name || 'N/A'}`} />
-          <InfoBlock title={t('vpsDetailPage.systemInfo.cpuFrequency')} value={metadata?.cpu_static_info?.frequency ? `${metadata.cpu_static_info.frequency} MHz` : 'N/A'} />
-          <InfoBlock title={t('vpsDetailPage.systemInfo.cpuVendorId')} value={`${metadata?.cpu_static_info?.vendorId || 'N/A'}`} />
-          <InfoBlock title={t('vpsDetailPage.systemInfo.physicalCores')} value={`${metadata?.physical_core_count ?? 'N/A'}`} />
-          <InfoBlock title={t('vpsDetailPage.systemInfo.totalMemory')} value={formatBytes(metadata?.total_memory_bytes ?? metrics?.memoryTotalBytes)} />
-          <InfoBlock title={t('vpsDetailPage.systemInfo.totalSwap')} value={formatBytes(metadata?.total_swap_bytes)} />
-          <InfoBlock title={t('vpsDetailPage.systemInfo.totalDisk')} value={formatBytes(metrics?.diskTotalBytes ?? metadata?.total_disk_bytes)} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.hostname')} value={`${vpsDetail.metadata?.hostname || 'N/A'}`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.os')} value={`${vpsDetail.metadata?.os_name || 'N/A'} (${vpsDetail.metadata?.long_os_version || vpsDetail.metadata?.os_version_detail || 'N/A'})`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.distroId')} value={`${vpsDetail.metadata?.distribution_id || 'N/A'}`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.kernelVersion')} value={`${vpsDetail.metadata?.kernel_version || 'N/A'}`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.arch')} value={`${vpsDetail.metadata?.arch || 'N/A'}`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.cpuBrand')} value={`${vpsDetail.metadata?.cpu_static_info?.brand || 'N/A'}`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.cpuName')} value={`${vpsDetail.metadata?.cpu_static_info?.name || 'N/A'}`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.cpuFrequency')} value={vpsDetail.metadata?.cpu_static_info?.frequency ? `${vpsDetail.metadata.cpu_static_info.frequency} MHz` : 'N/A'} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.cpuVendorId')} value={`${vpsDetail.metadata?.cpu_static_info?.vendorId || 'N/A'}`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.physicalCores')} value={`${vpsDetail.metadata?.physical_core_count ?? 'N/A'}`} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.totalMemory')} value={formatBytesForDisplay(vpsDetail.metadata?.total_memory_bytes)} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.totalSwap')} value={formatBytesForDisplay(vpsDetail.metadata?.total_swap_bytes)} />
+          <InfoBlock title={t('vpsDetailPage.systemInfo.totalDisk')} value={formatBytesForDisplay(vpsDetail.metadata?.total_disk_bytes)} />
         </CardContent>
       </Card>
 
@@ -580,106 +495,25 @@ const VpsDetailPage: React.FC = () => {
           </CardContent>
         </Card>
       )}
-    </div>
+    </VpsDetailLayout>
   );
 };
 
-const VpsStatCards: React.FC<{ vpsDetail: VpsListItemResponse }> = React.memo(({ vpsDetail }) => {
+const VpsStatCards: React.FC<{ vpsDetail: VpsListItemResponse, metrics: ReturnType<typeof useServerListStore.getState>['latestMetrics'][number] | null }> = React.memo(({ vpsDetail, metrics }) => {
   const { t } = useTranslation();
-  const { vpsId } = useParams<{ vpsId: string }>();
-  const { latestMetrics } = useServerListStore(useShallow(state => ({ latestMetrics: state.latestMetrics })));
-  
-  const metrics = useMemo(() => {
-    if (!vpsId) return null;
-    const numericVpsId = parseInt(vpsId, 10);
-    return latestMetrics[numericVpsId] || null;
-  }, [vpsId, latestMetrics]);
-
-  const { metadata } = vpsDetail;
   const memUsed = metrics?.memoryUsageBytes ?? 0;
-  const memTotal = metrics?.memoryTotalBytes ?? metadata?.total_memory_bytes ?? 0;
+  const memTotal = metrics?.memoryTotalBytes ?? vpsDetail.metadata?.total_memory_bytes ?? 0;
   const diskUsed = metrics?.diskUsedBytes ?? 0;
-  const diskTotal = metrics?.diskTotalBytes ?? metadata?.total_disk_bytes ?? 0;
+  const diskTotal = metrics?.diskTotalBytes ?? vpsDetail.metadata?.total_disk_bytes ?? 0;
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
-      <StatCard title={t('vpsDetailPage.statCards.cpuUsage')} value={metrics?.cpuUsagePercent?.toFixed(1) ?? 'N/A'} unit="%" icon={<Cpu />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? t('vpsDetailPage.offline') : `${metadata?.cpu_static_info?.brand || ''}`} />
-      <StatCard title={t('vpsDetailPage.statCards.memoryUsage')} value={memTotal > 0 ? ((memUsed / memTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<MemoryStick />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? t('vpsDetailPage.offline') : `${formatBytes(memUsed)} / ${formatBytes(memTotal)}`} />
-      <StatCard title={t('vpsDetailPage.statCards.diskUsage')} value={diskTotal > 0 ? ((diskUsed / diskTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<HardDrive />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? t('vpsDetailPage.offline') : `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`} />
+      <StatCard title={t('vpsDetailPage.statCards.cpuUsage')} value={metrics?.cpuUsagePercent?.toFixed(1) ?? 'N/A'} unit="%" icon={<Cpu />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? t('vpsDetailPage.offline') : `${vpsDetail.metadata?.cpu_static_info?.brand || ''}`} />
+      <StatCard title={t('vpsDetailPage.statCards.memoryUsage')} value={memTotal > 0 ? ((memUsed / memTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<MemoryStick />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? t('vpsDetailPage.offline') : `${formatBytesForDisplay(memUsed)} / ${formatBytesForDisplay(memTotal)}`} />
+      <StatCard title={t('vpsDetailPage.statCards.diskUsage')} value={diskTotal > 0 ? ((diskUsed / diskTotal) * 100).toFixed(1) : 'N/A'} unit="%" icon={<HardDrive />} valueClassName="text-primary" description={vpsDetail.status === 'offline' ? t('vpsDetailPage.offline') : `${formatBytesForDisplay(diskUsed)} / ${formatBytesForDisplay(diskTotal)}`} />
       <StatCard title={t('vpsDetailPage.statCards.upload')} value={formatNetworkSpeed(metrics?.networkTxInstantBps)} icon={<ArrowUp />} valueClassName="text-primary" description={t('vpsDetailPage.statCards.currentOutbound')} />
       <StatCard title={t('vpsDetailPage.statCards.download')} value={formatNetworkSpeed(metrics?.networkRxInstantBps)} icon={<ArrowDown />} valueClassName="text-primary" description={t('vpsDetailPage.statCards.currentInbound')} />
       <StatCard title={t('vpsDetailPage.statCards.uptime')} value={formatUptime(metrics?.uptimeSeconds)} icon={<AlertTriangle />} valueClassName="text-primary" description={t('vpsDetailPage.statCards.currentSession')} />
-    </div>
-  );
-});
-
-const ChartComponent: React.FC<{ title: string, data: PerformanceMetricPoint[], dataKey: keyof PerformanceMetricPoint, stroke: string, yDomain: [number, number] }> = React.memo(({ title, data, dataKey, stroke, yDomain }) => {
-  const { t } = useTranslation();
-  return (
-    <div className="h-72 flex flex-col">
-      <h3 className="text-lg font-semibold text-center mb-2 flex-shrink-0">{title}</h3>
-      {data.length > 0 ? (
-        <div className="flex-grow">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
-              <YAxis domain={yDomain} tick={{ fontSize: 11 }} tickFormatter={(tick) => `${tick}%`} />
-              <Tooltip formatter={formatPercentForTooltip} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'hsl(var(--background) / 0.8)', backdropFilter: 'blur(2px)', borderRadius: 'var(--radius)', fontSize: '0.8rem' }} />
-              <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
-              <Line type="monotone" dataKey={dataKey} stroke={stroke} dot={false} name={title.split(' ')[0]} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      ) : <p className="text-center text-muted-foreground pt-16">{t('vpsDetailPage.noDataAvailable')}</p>}
-    </div>
-  );
-});
-
-const NetworkChartComponent: React.FC<{ data: PerformanceMetricPoint[] }> = React.memo(({ data }) => {
-  const { t } = useTranslation();
-  return (
-    <div className="h-72 flex flex-col">
-      <h3 className="text-lg font-semibold text-center mb-2 flex-shrink-0">{t('vpsDetailPage.networkChart.title')}</h3>
-      {data.length > 0 ? (
-        <div className="flex-grow">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
-              <YAxis tickFormatter={formatNetworkSpeed} width={80} tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(value: ValueType) => formatNetworkSpeed(value as number)} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'hsl(var(--background) / 0.8)', backdropFilter: 'blur(2px)', borderRadius: 'var(--radius)', fontSize: '0.8rem' }} />
-              <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
-              <Line type="monotone" dataKey="avgNetworkRxInstantBps" stroke="hsl(var(--primary))" dot={false} name={t('vpsDetailPage.networkChart.download')} isAnimationActive={false} />
-              <Line type="monotone" dataKey="avgNetworkTxInstantBps" stroke="hsl(var(--secondary-foreground))" dot={false} name={t('vpsDetailPage.networkChart.upload')} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      ) : <p className="text-center text-muted-foreground pt-16">{t('vpsDetailPage.noDataAvailable')}</p>}
-    </div>
-  );
-});
-
-const DiskIoChartComponent: React.FC<{ data: PerformanceMetricPoint[] }> = React.memo(({ data }) => {
-  const { t } = useTranslation();
-  return (
-    <div className="h-72 flex flex-col">
-      <h3 className="text-lg font-semibold text-center mb-2 flex-shrink-0">{t('vpsDetailPage.diskIoChart.title')}</h3>
-      {data.length > 0 ? (
-        <div className="flex-grow">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
-              <YAxis tickFormatter={formatNetworkSpeed} width={80} tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(value: ValueType) => formatNetworkSpeed(value as number)} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'hsl(var(--background) / 0.8)', backdropFilter: 'blur(2px)', borderRadius: 'var(--radius)', fontSize: '0.8rem' }} />
-              <Legend wrapperStyle={{ fontSize: '0.8rem' }} />
-              <Line type="monotone" dataKey="avgDiskIoReadBps" stroke="#ff7300" dot={false} name={t('vpsDetailPage.diskIoChart.read')} isAnimationActive={false} />
-              <Line type="monotone" dataKey="avgDiskIoWriteBps" stroke="#387908" dot={false} name={t('vpsDetailPage.diskIoChart.write')} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      ) : <p className="text-center text-muted-foreground pt-16">{t('vpsDetailPage.noDataAvailable')}</p>}
     </div>
   );
 });
@@ -771,9 +605,9 @@ const ServiceMonitorChartComponent: React.FC<{ results: ServiceMonitorResult[] }
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={chartData} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="time" tickFormatter={formatDateTick} tick={{ fontSize: 11 }} />
+          <XAxis dataKey="time" tickFormatter={(tick) => new Date(tick).toLocaleString()} tick={{ fontSize: 11 }} />
           <YAxis tickFormatter={(tick) => `${tick} ms`} width={80} tick={{ fontSize: 11 }} />
-          <Tooltip formatter={formatLatencyForTooltip} labelFormatter={formatTooltipLabel} contentStyle={{ backgroundColor: 'hsl(var(--background) / 0.8)', backdropFilter: 'blur(2px)', borderRadius: 'var(--radius)', fontSize: '0.8rem' }} />
+          <Tooltip formatter={formatLatencyForTooltip} labelFormatter={(label) => new Date(label).toLocaleString()} contentStyle={{ backgroundColor: 'hsl(var(--background) / 0.8)', backdropFilter: 'blur(2px)', borderRadius: 'var(--radius)', fontSize: '0.8rem' }} />
           <Legend wrapperStyle={{ fontSize: '0.8rem' }} onClick={handleLegendClick} formatter={renderLegendText} />
           {downtimeAreas.map((area, index) => (
             <ReferenceArea key={index} x1={area.x1} x2={area.x2} stroke="transparent" fill="hsl(var(--destructive))" fillOpacity={0.15} ifOverflow="visible" />

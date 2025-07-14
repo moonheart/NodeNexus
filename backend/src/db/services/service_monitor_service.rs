@@ -4,23 +4,40 @@
 //! assigning them to agents/tags, and recording check results.
 
 use crate::db::entities::{
-    prelude::*, service_monitor, service_monitor_agent, service_monitor_tag, vps,
+    prelude::*, service_monitor, service_monitor_agent, service_monitor_result,
+    service_monitor_tag, vps,
 };
 use crate::web::models::service_monitor_models::{
-    CreateMonitor, ServiceMonitorDetails, ServiceMonitorResultDetails, UpdateMonitor,
+    CreateMonitor, ServiceMonitorDetails, UpdateMonitor,
 };
 use futures::try_join;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, FromQueryResult,
-    QueryFilter, ConnectionTrait, QueryOrder, Set, Statement, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
+    FromQueryResult, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
 };
+use tracing::error;
 use std::collections::{HashMap, HashSet};
 
 use crate::agent_service::{ServiceMonitorResult, ServiceMonitorTask};
-use crate::db::entities::{service_monitor_result, vps_tag};
-use chrono::{DateTime, Duration, TimeZone, Utc};
-use sea_orm::sea_query::{Expr, Func, Query};
-use sea_orm::QuerySelect;
+use crate::db::entities::vps_tag;
+use chrono::{DateTime, Utc};
+use chrono::TimeZone;
+use sea_orm::sea_query::{Alias, Expr, Func};
+use serde::{Deserialize, Serialize};
+
+#[derive(FromQueryResult, Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceMonitorPoint {
+    pub time: DateTime<Utc>,
+    pub monitor_id: i32,
+    pub agent_id: i32,
+    // is_up is a float because it can represent an average (availability)
+    pub is_up: Option<f64>,
+    // latency_ms is a float because it can be an average
+    pub latency_ms: Option<f64>,
+    // The details field is not aggregated, so it's an Option
+    pub details: Option<serde_json::Value>,
+}
 
 pub async fn create_monitor(
     db: &DatabaseConnection,
@@ -125,24 +142,23 @@ pub async fn get_monitors_with_details_by_user_id(
         tag_map.entry(tag.monitor_id).or_default().push(tag.tag_id);
     }
 
-    // 4. Fetch the latest result for each monitor using DISTINCT ON for efficiency
-    let latest_results_future = service_monitor_result::Entity::find()
-        .from_raw_sql(Statement::from_sql_and_values(
+    // 4. Fetch the latest result for each monitor using a window function for efficiency
+    let latest_results: Vec<service_monitor_result::Model> = service_monitor_result::Entity::find()
+        .from_raw_sql(sea_orm::Statement::from_sql_and_values(
             db.get_database_backend(),
             r#"
             SELECT * FROM (
-                SELECT DISTINCT ON (monitor_id) *
+                SELECT *, ROW_NUMBER() OVER(PARTITION BY monitor_id ORDER BY "time" DESC) as rn
                 FROM service_monitor_results
                 WHERE monitor_id = ANY($1)
-                ORDER BY monitor_id, "time" DESC
-            ) as latest_results
-            ORDER BY "time" DESC
+            ) t
+            WHERE rn = 1
             "#,
             [monitor_ids.clone().into()],
         ))
-        .all(db);
+        .all(db)
+        .await?;
 
-    let latest_results = latest_results_future.await?;
     let latest_result_map: HashMap<i32, service_monitor_result::Model> = latest_results
         .into_iter()
         .map(|result| (result.monitor_id, result))
@@ -638,7 +654,7 @@ pub async fn record_monitor_result(
     result: &ServiceMonitorResult,
 ) -> Result<(), DbErr> {
     let new_result = service_monitor_result::ActiveModel {
-        time: Set(Utc.timestamp_millis_opt(result.timestamp_unix_ms).unwrap()),
+        time: Set(chrono::Utc.timestamp_millis_opt(result.timestamp_unix_ms).unwrap()),
         monitor_id: Set(result.monitor_id),
         agent_id: Set(agent_id),
         is_up: Set(result.successful),
@@ -651,234 +667,150 @@ pub async fn record_monitor_result(
     Ok(())
 }
 
-#[derive(Debug, FromQueryResult)]
-struct AggregatedMonitorResult {
-    time: DateTime<Utc>,
-    monitor_id: i32,
-    agent_id: i32,
-    latency_ms: Option<i32>,
-    is_up: Option<f64>, // Representing availability percentage
-    details: Option<serde_json::Value>,
-}
-
 pub async fn get_monitor_results_by_id(
     db: &DatabaseConnection,
     monitor_id: i32,
-    start_time: Option<DateTime<Utc>>,
-    end_time: Option<DateTime<Utc>>,
-    interval: Option<String>,
-    points: Option<u64>,
-) -> Result<Vec<ServiceMonitorResultDetails>, DbErr> {
-    let monitor = ServiceMonitor::find_by_id(monitor_id)
-        .one(db)
-        .await?
-        .ok_or_else(|| DbErr::RecordNotFound("Monitor not found".to_string()))?;
+    start_time: DateTime<Utc>,
+    end_time: DateTime<Utc>,
+    interval_seconds: Option<i64>,
+) -> Result<Vec<ServiceMonitorPoint>, DbErr> {
+    let mut query = service_monitor_result::Entity::find()
+        .filter(service_monitor_result::Column::MonitorId.eq(monitor_id))
+        .filter(service_monitor_result::Column::Time.gte(start_time))
+        .filter(service_monitor_result::Column::Time.lte(end_time));
 
-    let should_aggregate = interval.is_some() || points.is_some();
-
-    if !should_aggregate {
-        // --- Existing logic for raw data ---
-        let mut query = service_monitor_result::Entity::find()
-            .filter(service_monitor_result::Column::MonitorId.eq(monitor_id));
-        if let Some(start) = start_time {
-            query = query.filter(service_monitor_result::Column::Time.gte(start));
-        }
-        if let Some(end) = end_time {
-            query = query.filter(service_monitor_result::Column::Time.lte(end));
-        }
-        
-        // The original implementation had a limit parameter, which is now removed from the function signature.
-        // We will fetch all results within the time range if no aggregation is requested.
-        let results = query
+    if let Some(interval) = interval_seconds {
+        // Aggregated query
+        let interval_string = format!("{} seconds", interval);
+        query
+            .select_only()
+            .column_as(
+                Expr::cust(format!("time_bucket('{} seconds', time)", interval)),
+                "time",
+            )
+            .column(service_monitor_result::Column::MonitorId)
+            .column(service_monitor_result::Column::AgentId)
+            .column_as(
+                Expr::expr(Func::avg(Expr::col(
+                    service_monitor_result::Column::LatencyMs,
+                ))).cast_as(Alias::new("double precision")),
+                "latency_ms",
+            )
+            .column_as(
+                Expr::cust(
+                    "CAST(SUM(CASE WHEN is_up THEN 1 ELSE 0 END) AS REAL) / COUNT(*)",
+                ),
+                "is_up",
+            )
+            // Details are not aggregated, so we don't select them here.
+            .column_as(Expr::val(serde_json::Value::Null), "details")
+            .group_by(Expr::cust("1")) // group by time_bucket
+            .group_by(service_monitor_result::Column::MonitorId)
+            .group_by(service_monitor_result::Column::AgentId)
+            .order_by(Expr::cust("1"), sea_orm::Order::Desc)
+            .into_model::<ServiceMonitorPoint>()
+            .all(db)
+            .await
+    } else {
+        // Raw data query
+        query
+            .select_only()
+            .column_as(service_monitor_result::Column::Time, "time")
+            .column(service_monitor_result::Column::MonitorId)
+            .column(service_monitor_result::Column::AgentId)
+            .column_as(
+                Expr::col(service_monitor_result::Column::LatencyMs).cast_as(sea_orm::sea_query::Alias::new("float")),
+                "latency_ms",
+            )
+            .column_as(
+                Expr::cust("CAST(CASE WHEN is_up THEN 1.0 ELSE 0.0 END AS DOUBLE PRECISION)"),
+                "is_up",
+            )
+            .column(service_monitor_result::Column::Details)
             .order_by_desc(service_monitor_result::Column::Time)
+            .into_model::<ServiceMonitorPoint>()
             .all(db)
-            .await?;
-
-        if results.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let agent_ids: Vec<i32> = results
-            .iter()
-            .map(|r| r.agent_id)
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
-        let agents = Vps::find()
-            .filter(vps::Column::Id.is_in(agent_ids))
-            .all(db)
-            .await?;
-        let agent_name_map: HashMap<i32, String> = agents.into_iter().map(|a| (a.id, a.name)).collect();
-
-        let result_details = results
-            .into_iter()
-            .map(|result| {
-                let agent_name = agent_name_map
-                    .get(&result.agent_id)
-                    .cloned()
-                    .unwrap_or_else(|| "Unknown Agent".to_string());
-                ServiceMonitorResultDetails {
-                    time: result.time.to_rfc3339(),
-                    monitor_id: result.monitor_id,
-                    monitor_name: monitor.name.clone(),
-                    agent_id: result.agent_id,
-                    agent_name,
-                    is_up: result.is_up,
-                    latency_ms: result.latency_ms,
-                    details: result.details,
-                }
-            })
-            .collect();
-
-        return Ok(result_details);
+            .await
     }
-
-    // --- New logic for aggregated data ---
-    let start = start_time.unwrap_or_else(|| Utc::now() - Duration::hours(1));
-    let end = end_time.unwrap_or_else(Utc::now);
-
-    let interval_string = interval.unwrap_or_else(|| {
-        let duration_secs = (end - start).num_seconds();
-        let num_points = points.unwrap_or(300).max(1);
-        let calculated_interval_secs = (duration_secs as u64 / num_points).max(1);
-        format!("{} seconds", calculated_interval_secs)
-    });
-
-    let db_backend = db.get_database_backend();
-    let query = Statement::from_sql_and_values(
-        db_backend,
-        r#"
-        SELECT
-            time_bucket($1::interval, "time") as time,
-            monitor_id,
-            agent_id,
-            AVG(latency_ms)::int as latency_ms,
-            CAST(SUM(CASE WHEN is_up THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as is_up,
-            (array_agg(details ORDER BY "time" DESC) FILTER (WHERE details IS NOT NULL))[1] as details
-        FROM service_monitor_results
-        WHERE monitor_id = $2 AND "time" >= $3 AND "time" <= $4
-        GROUP BY 1, 2, 3
-        ORDER BY 1 DESC
-        "#,
-        [
-            interval_string.into(),
-            monitor_id.into(),
-            start.into(),
-            end.into(),
-        ],
-    );
-
-    let aggregated_results = AggregatedMonitorResult::find_by_statement(query).all(db).await?;
-
-    if aggregated_results.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let agent_ids: Vec<i32> = aggregated_results.iter().map(|r| r.agent_id).collect::<HashSet<_>>().into_iter().collect();
-    let agents = Vps::find().filter(vps::Column::Id.is_in(agent_ids)).all(db).await?;
-    let agent_name_map: HashMap<i32, String> = agents.into_iter().map(|a| (a.id, a.name)).collect();
-
-    let result_details = aggregated_results.into_iter().map(|result| {
-        let agent_name = agent_name_map.get(&result.agent_id).cloned().unwrap_or_else(|| "Unknown Agent".to_string());
-        ServiceMonitorResultDetails {
-            time: result.time.to_rfc3339(),
-            monitor_id: result.monitor_id,
-            monitor_name: monitor.name.clone(),
-            agent_id: result.agent_id,
-            agent_name,
-            is_up: result.is_up.map_or(false, |v| v > 0.5), // Convert availability back to a boolean for the frontend
-            latency_ms: result.latency_ms,
-            details: result.details,
-        }
-    }).collect();
-
-    Ok(result_details)
 }
 
 pub async fn get_monitor_results_by_vps_id(
     db: &DatabaseConnection,
     vps_id: i32,
-    _user_id: i32,
-    start_time: Option<DateTime<Utc>>,
-    end_time: Option<DateTime<Utc>>,
-    points: Option<u64>,
-) -> Result<Vec<ServiceMonitorResultDetails>, DbErr> {
-    // 1. Get all monitors associated with the VPS and owned by the user
-    let user_monitors = get_runnable_monitors_for_vps(db, vps_id).await?;
-
-    if user_monitors.is_empty() {
+    start_time: DateTime<Utc>,
+    end_time: DateTime<Utc>,
+    interval_seconds: Option<i64>,
+) -> Result<Vec<ServiceMonitorPoint>, DbErr> {
+    // 1. Get all runnable monitor IDs for the given VPS
+    let runnable_monitors = get_runnable_monitors_for_vps(db, vps_id).await?;
+    if runnable_monitors.is_empty() {
         return Ok(Vec::new());
     }
+    let monitor_ids: Vec<i32> = runnable_monitors.into_iter().map(|m| m.id).collect();
 
-    let monitor_name_map: HashMap<i32, String> =
-        user_monitors.iter().map(|m| (m.id, m.name.clone())).collect();
+    // 2. Build the main query
+    let mut query = service_monitor_result::Entity::find()
+        .filter(service_monitor_result::Column::MonitorId.is_in(monitor_ids))
+        .filter(service_monitor_result::Column::AgentId.eq(vps_id)) // Results must be from this agent
+        .filter(service_monitor_result::Column::Time.gte(start_time))
+        .filter(service_monitor_result::Column::Time.lte(end_time));
 
-    // 2. Fetch results for each monitor individually
-    let mut all_results = Vec::new();
-    for monitor in &user_monitors {
-        let mut query = service_monitor_result::Entity::find()
-            .filter(service_monitor_result::Column::MonitorId.eq(monitor.id))
-            .filter(service_monitor_result::Column::AgentId.eq(vps_id));
-
-        if let Some(start) = start_time {
-            query = query.filter(service_monitor_result::Column::Time.gte(start));
-        }
-        if let Some(end) = end_time {
-            query = query.filter(service_monitor_result::Column::Time.lte(end));
-        }
-        if let Some(limit_val) = points {
-            query = query.limit(limit_val);
-        }
-
-        let results_for_monitor = query
-            .order_by_desc(service_monitor_result::Column::Time)
+    // 3. Apply aggregation or select raw data
+    if let Some(interval) = interval_seconds {
+        // Aggregated query
+        let interval_string = format!("{} seconds", interval);
+        let results = query
+            .select_only()
+            .column_as(
+                Expr::cust(format!("time_bucket('{} seconds', time)", interval)),
+                "time",
+            )
+            .column(service_monitor_result::Column::MonitorId)
+            .column(service_monitor_result::Column::AgentId)
+            .column_as(
+                Expr::expr(Func::avg(Expr::col(
+                    service_monitor_result::Column::LatencyMs,
+                ))).cast_as(Alias::new("double precision")),
+                "latency_ms",
+            )
+            .column_as(
+                Expr::cust(
+                    "CAST(SUM(CASE WHEN is_up THEN 1 ELSE 0 END) AS REAL) / COUNT(*)",
+                ),
+                "is_up",
+            )
+            .column_as(Expr::val(serde_json::Value::Null), "details")
+            .group_by(Expr::cust("1")) // group by time_bucket
+            .group_by(service_monitor_result::Column::MonitorId)
+            .group_by(service_monitor_result::Column::AgentId)
+            .order_by(Expr::cust("1"), sea_orm::Order::Desc)
+            .into_model::<ServiceMonitorPoint>()
             .all(db)
-            .await?;
+            .await;
 
-        all_results.extend(results_for_monitor);
+        if let Err(e) = &results {
+            error!("Database error in get_monitor_results_by_vps_id (raw): {:?}", e);
+        }
+        results
+    } else {
+        // Raw data query
+        query
+            .select_only()
+            .column_as(service_monitor_result::Column::Time, "time")
+            .column(service_monitor_result::Column::MonitorId)
+            .column(service_monitor_result::Column::AgentId)
+            .column_as(
+                Expr::col(service_monitor_result::Column::LatencyMs).cast_as(sea_orm::sea_query::Alias::new("float")),
+                "latency_ms",
+            )
+            .column_as(
+                Expr::cust("CAST(CASE WHEN is_up THEN 1.0 ELSE 0.0 END AS DOUBLE PRECISION)"),
+                "is_up",
+            )
+            .column(service_monitor_result::Column::Details)
+            .order_by_desc(service_monitor_result::Column::Time)
+            .into_model::<ServiceMonitorPoint>()
+            .all(db)
+            .await
     }
-
-    if all_results.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // 3. Get agent names (which are VPS names)
-    let agent_ids: Vec<i32> = all_results
-        .iter()
-        .map(|r| r.agent_id)
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-    let agents = Vps::find()
-        .filter(vps::Column::Id.is_in(agent_ids))
-        .all(db)
-        .await?;
-    let agent_name_map: HashMap<i32, String> = agents.into_iter().map(|a| (a.id, a.name)).collect();
-
-    // 4. Construct the detailed response
-    let result_details: Vec<ServiceMonitorResultDetails> = all_results
-        .into_iter()
-        .map(|result| {
-            let agent_name = agent_name_map
-                .get(&result.agent_id)
-                .cloned()
-                .unwrap_or_else(|| "Unknown Agent".to_string());
-            let monitor_name = monitor_name_map
-                .get(&result.monitor_id)
-                .cloned()
-                .unwrap_or_else(|| "Unknown Monitor".to_string());
-            ServiceMonitorResultDetails {
-                time: result.time.to_rfc3339(),
-                monitor_id: result.monitor_id,
-                agent_id: result.agent_id,
-                agent_name,
-                monitor_name,
-                is_up: result.is_up,
-                latency_ms: result.latency_ms,
-                details: result.details,
-            }
-        })
-        .collect();
-
-    Ok(result_details)
 }
