@@ -8,8 +8,8 @@ import HistoricalMonitorChart from '@/components/HistoricalMonitorChart';
 import { TimeRangeSelector, getTimeRangeDetails, type TimeRangeValue } from '@/components/TimeRangeSelector';
 
 const ServiceMonitorDetailPage: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
-  const monitorId = parseInt(id || '0', 10);
+  const { monitorId: monitorIdStr } = useParams<{ monitorId: string }>();
+  const monitorId = parseInt(monitorIdStr || '0', 10);
 
   const [timeRange, setTimeRange] = useState<TimeRangeValue>('1h');
 
