@@ -10,9 +10,20 @@ const REALTIME_WINDOW_SECONDS = 5 * 60; // 5 minutes
 interface RealtimeMetricChartProps {
   vpsId: number;
   metricType: 'cpu' | 'ram' | 'network' | 'disk';
+  showTitle?: boolean;
+  showYAxis?: boolean;
+  showXAxis?: boolean;
+  className?: string;
 }
 
-const RealtimeMetricChart: React.FC<RealtimeMetricChartProps> = ({ vpsId, metricType }) => {
+const RealtimeMetricChart: React.FC<RealtimeMetricChartProps> = ({
+  vpsId,
+  metricType,
+  showTitle = true,
+  showYAxis = true,
+  showXAxis = true,
+  className,
+}) => {
   const { t } = useTranslation();
 
   const { data, status } = useServerListStore(
@@ -41,7 +52,7 @@ const RealtimeMetricChart: React.FC<RealtimeMetricChartProps> = ({ vpsId, metric
     switch (metricType) {
       case 'cpu':
         return {
-          title: t('vpsDetailPage.performanceMetrics.cpuUsageChartTitle'),
+          title: t('components.realtimeMetricChart.cpuUsageChartTitle'),
           lines: [{ dataKey: 'cpuUsagePercent', name: 'CPU', stroke: primaryColor }],
           yAxisDomain: [0, 100] as [number, number],
           yAxisFormatter: (value: number) => `${value}%`,
@@ -49,7 +60,7 @@ const RealtimeMetricChart: React.FC<RealtimeMetricChartProps> = ({ vpsId, metric
         };
       case 'ram':
         return {
-          title: t('vpsDetailPage.performanceMetrics.memoryUsageChartTitle'),
+          title: t('components.realtimeMetricChart.memoryUsageChartTitle'),
           lines: [{ dataKey: 'memoryUsageBytes', name: 'RAM', stroke: primaryColor }],
           yAxisDomain: [0, ramTotal] as [number, number],
           yAxisFormatter: (value: number) => formatBytesForDisplay(value),
@@ -61,10 +72,10 @@ const RealtimeMetricChart: React.FC<RealtimeMetricChartProps> = ({ vpsId, metric
         };
       case 'network':
         return {
-          title: t('vpsDetailPage.networkChart.title'),
+          title: t('components.realtimeMetricChart.networkChartTitle'),
           lines: [
-            { dataKey: 'networkRxInstantBps', name: t('vpsDetailPage.networkChart.download'), stroke: primaryColor },
-            { dataKey: 'networkTxInstantBps', name: t('vpsDetailPage.networkChart.upload'), stroke: secondaryColor },
+            { dataKey: 'networkRxInstantBps', name: t('components.realtimeMetricChart.download'), stroke: primaryColor },
+            { dataKey: 'networkTxInstantBps', name: t('components.realtimeMetricChart.upload'), stroke: secondaryColor },
           ],
           showLegend: true,
           yAxisFormatter: (value: number) => formatNetworkSpeed(value),
@@ -72,10 +83,10 @@ const RealtimeMetricChart: React.FC<RealtimeMetricChartProps> = ({ vpsId, metric
         };
       case 'disk':
         return {
-          title: t('vpsDetailPage.diskIoChart.title'),
+          title: t('components.realtimeMetricChart.diskIoChartTitle'),
           lines: [
-            { dataKey: 'diskIoReadBps', name: t('vpsDetailPage.diskIoChart.read'), stroke: '#ff7300' },
-            { dataKey: 'diskIoWriteBps', name: t('vpsDetailPage.diskIoChart.write'), stroke: '#387908' },
+            { dataKey: 'diskIoReadBps', name: t('components.realtimeMetricChart.read'), stroke: '#ff7300' },
+            { dataKey: 'diskIoWriteBps', name: t('components.realtimeMetricChart.write'), stroke: '#387908' },
           ],
           showLegend: true,
           yAxisFormatter: (value: number) => formatNetworkSpeed(value),
@@ -94,30 +105,32 @@ const RealtimeMetricChart: React.FC<RealtimeMetricChartProps> = ({ vpsId, metric
 
   if (status === 'loading') {
     return (
-      <div className="flex h-72 w-full flex-col items-center justify-center">
-        <h3 className="text-lg font-semibold text-center mb-2 flex-shrink-0">{chartConfig.title}</h3>
+      <div className={`flex flex-col items-center justify-center ${className}`}>
+        {showTitle && <h3 className="text-lg font-semibold text-center mb-2 flex-shrink-0">{chartConfig.title}</h3>}
         <div className="relative flex-grow flex items-center justify-center w-full">
-          <p>{t('vpsDetailPage.performanceMetrics.loadingInitialData')}</p>
+          <p>{t('components.realtimeMetricChart.loadingInitialData')}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-72 w-full flex-col">
-      <h3 className="text-lg font-semibold text-center mb-2 flex-shrink-0">{chartConfig.title}</h3>
+    <div className={`flex flex-col ${className}`}>
+      {showTitle && <h3 className="text-lg font-semibold text-center mb-2 flex-shrink-0">{chartConfig.title}</h3>}
       <div className="relative flex-grow">
         <ServerMetricsChart
           data={processedData}
           lines={chartConfig.lines}
           showLegend={chartConfig.showLegend}
+          showYAxis={showYAxis}
+          showXAxis={showXAxis}
           yAxisDomain={chartConfig.yAxisDomain}
           yAxisFormatter={chartConfig.yAxisFormatter}
           xAxisDomain={timeDomain}
           xAxisFormatter={(tick) => new Date(tick).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
           tooltipLabelFormatter={(label) => new Date(label).toLocaleTimeString()}
           tooltipValueFormatter={chartConfig.tooltipValueFormatter}
-          noDataMessage={t('vpsDetailPage.performanceMetrics.noRealtimeData')}
+          noDataMessage={t('components.realtimeMetricChart.noRealtimeData')}
         />
       </div>
     </div>

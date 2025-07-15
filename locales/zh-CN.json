@@ -106,6 +106,20 @@
       "description": "请填写以下详细信息。"
     }
   },
+  "components": {
+    "realtimeMetricChart": {
+      "cpuUsageChartTitle": "CPU 使用率 (%)",
+      "memoryUsageChartTitle": "内存使用率",
+      "networkChartTitle": "网络速度",
+      "diskIoChartTitle": "磁盘 I/O 速度",
+      "download": "下载",
+      "upload": "上传",
+      "read": "读取",
+      "write": "写入",
+      "loadingInitialData": "正在加载初始数据...",
+      "noRealtimeData": "暂无实时数据。"
+    }
+  },
   "accountSettings": {
     "title": "账户信息",
     "description": "管理您的公开个人资料信息。",

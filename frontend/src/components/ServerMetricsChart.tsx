@@ -38,6 +38,8 @@ interface ServerMetricsChartProps {
   tooltipLabelFormatter?: (label: number) => React.ReactNode;
   tooltipValueFormatter?: (value: number, name: string) => React.ReactNode | [React.ReactNode, React.ReactNode];
   showLegend?: boolean;
+  showYAxis?: boolean;
+  showXAxis?: boolean;
   loading?: boolean;
   error?: string | null;
   noDataMessage?: string;
@@ -54,6 +56,8 @@ const ServerMetricsChart: React.FC<ServerMetricsChartProps> = ({
   tooltipLabelFormatter,
   tooltipValueFormatter,
   showLegend = false,
+  showYAxis = true,
+  showXAxis = true,
   loading = false,
   error = null,
   noDataMessage,
@@ -83,25 +87,29 @@ const ServerMetricsChart: React.FC<ServerMetricsChartProps> = ({
     <ResponsiveContainer width="100%" height="100%">
       <ChartComponent data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" />
-        <XAxis
-          dataKey="time"
-          type="number"
-          domain={xAxisDomain || ['dataMin', 'dataMax']}
-          tickFormatter={xAxisFormatter}
-          tickLine={false}
-          axisLine={false}
-          tickMargin={8}
-          tick={{ fontSize: 12 }}
-        />
-        <YAxis
-          domain={yAxisDomain}
-          tickFormatter={yAxisFormatter}
-          width={yAxisFormatter ? 60 : 40}
-          tickLine={false}
-          axisLine={false}
-          tickMargin={8}
-          tick={{ fontSize: 12 }}
-        />
+        {showXAxis && (
+          <XAxis
+            dataKey="time"
+            type="number"
+            domain={xAxisDomain || ['dataMin', 'dataMax']}
+            tickFormatter={xAxisFormatter}
+            tickLine={false}
+            axisLine={false}
+            tickMargin={8}
+            tick={{ fontSize: 12 }}
+          />
+        )}
+        {showYAxis && (
+          <YAxis
+            domain={yAxisDomain}
+            tickFormatter={yAxisFormatter}
+            width={yAxisFormatter ? 60 : 40}
+            tickLine={false}
+            axisLine={false}
+            tickMargin={8}
+            tick={{ fontSize: 12 }}
+          />
+        )}
         <Tooltip
           contentStyle={{
             backgroundColor: 'hsl(var(--background) / 0.8)',

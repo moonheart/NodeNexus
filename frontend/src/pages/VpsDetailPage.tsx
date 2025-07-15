@@ -316,10 +316,10 @@ const VpsDetailPage: React.FC = () => {
             </div>
             <TabsContent value="realtime" className="mt-4">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-                <RealtimeMetricChart vpsId={vpsDetail.id} metricType="cpu" />
-                <RealtimeMetricChart vpsId={vpsDetail.id} metricType="ram" />
-                <RealtimeMetricChart vpsId={vpsDetail.id} metricType="network" />
-                <RealtimeMetricChart vpsId={vpsDetail.id} metricType="disk" />
+                <RealtimeMetricChart vpsId={vpsDetail.id} metricType="cpu" className="h-72 w-full" />
+                <RealtimeMetricChart vpsId={vpsDetail.id} metricType="ram" className="h-72 w-full" />
+                <RealtimeMetricChart vpsId={vpsDetail.id} metricType="network" className="h-72 w-full" />
+                <RealtimeMetricChart vpsId={vpsDetail.id} metricType="disk" className="h-72 w-full" />
               </div>
             </TabsContent>
             {['1h', '6h', '1d', '7d'].map(range => (

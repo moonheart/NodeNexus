@@ -1,10 +1,11 @@
 import React, { useMemo, useEffect, useState } from 'react';
-import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend as RechartsLegend } from 'recharts';
+import { LineChart, Line, XAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend as RechartsLegend } from 'recharts';
 import { useTranslation } from 'react-i18next';
-import type { PerformanceMetricPoint, ServiceMonitorResult } from '../types';
+import type { ServiceMonitorResult } from '../types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useServerListStore, type UnsubscribeFunction } from '../store/serverListStore';
 import { type ChartConfig } from "@/components/ui/chart";
+import RealtimeMetricChart from './RealtimeMetricChart';
 
 interface VpsMetricsChartProps {
   vpsId: number;
@@ -13,7 +14,6 @@ interface VpsMetricsChartProps {
 }
 
 const AGENT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
-const REALTIME_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 
 // --- Service Monitor Chart Component (Existing, no changes needed for this task) ---
 const ServiceMonitorChart: React.FC<{ vpsId: number }> = React.memo(({ vpsId }) => {
@@ -167,132 +167,7 @@ const ServiceMonitorChart: React.FC<{ vpsId: number }> = React.memo(({ vpsId }) 
 });
 ServiceMonitorChart.displayName = 'ServiceMonitorChart';
 
-// --- REFACTORED CPU/RAM Chart Component ---
-const PerformanceChart: React.FC<{ vpsId: number; metricType: 'cpu' | 'ram' }> = ({ vpsId, metricType }) => {
-  const { t } = useTranslation();
-  const [metrics, setMetrics] = useState<PerformanceMetricPoint[]>([]);
-  const [loading, setLoading] = useState(true);
-  const { getInitialVpsPerformanceMetrics, subscribeToVpsPerformanceMetrics } = useServerListStore();
-
-  useEffect(() => {
-    let isMounted = true;
-    let unsubscribe: UnsubscribeFunction | null = null;
-
-    const setup = async () => {
-      try {
-        setLoading(true);
-        // Fetch initial data (last 10 minutes, approximated by 60 points if interval is 10s)
-        const initialData = await getInitialVpsPerformanceMetrics(vpsId);
-        if (!isMounted) return;
-        setMetrics(initialData);
-
-        // Subscribe to live updates
-        unsubscribe = subscribeToVpsPerformanceMetrics(vpsId, (newMetrics) => {
-          if (!isMounted) return;
-          setMetrics(prevMetrics => {
-            // Now we are adding an array of new metrics
-            const updated = [...prevMetrics, ...newMetrics];
-            const cutoff = Date.now() - REALTIME_WINDOW_MS;
-            // Filter out old data points to keep the window sliding
-            return updated.filter(m => new Date(m.time).getTime() >= cutoff);
-          });
-        });
-
-      } catch (error) {
-        if (isMounted) console.error(`Failed to fetch or subscribe to performance metrics for VPS ${vpsId}:`, error);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-
-    setup();
-
-    return () => {
-      isMounted = false;
-      if (unsubscribe) {
-        unsubscribe();
-      }
-    };
-  }, [vpsId, metricType, getInitialVpsPerformanceMetrics, subscribeToVpsPerformanceMetrics]);
-
-  const { chartData, timeDomain } = useMemo(() => {
-    const calculateMemoryUsagePercent = (dataPoint: PerformanceMetricPoint): number | null => {
-      if (dataPoint.memoryUsageBytes != null && dataPoint.memoryTotalBytes != null && dataPoint.memoryTotalBytes > 0) {
-        return (dataPoint.memoryUsageBytes / dataPoint.memoryTotalBytes) * 100;
-      }
-      return null;
-    };
-
-    const data = metrics.map(point => ({
-      time: new Date(point.time).getTime(), // Use timestamp for XAxis
-      usage: metricType === 'cpu' ? point.cpuUsagePercent : calculateMemoryUsagePercent(point),
-    })).filter(p => p.usage !== null);
-
-    const now = Date.now();
-    const domain: [number, number] = [now - REALTIME_WINDOW_MS, now];
-
-    return { chartData: data, timeDomain: domain };
-  }, [metrics, metricType]);
-
-  if (loading && chartData.length === 0) {
-    return <div className="h-24 w-full flex items-center justify-center text-muted-foreground text-sm">{t('common.status.loading')}...</div>;
-  }
-
-  if (chartData.length === 0) {
-    return <div className="h-24 w-full flex items-center justify-center text-muted-foreground text-sm">{t('vps.noData')}</div>;
-  }
-
-  const gradientId = `color${metricType}`;
-  const strokeColor = metricType === 'cpu' ? 'hsl(var(--chart-1))' : 'hsl(var(--chart-2))';
-  const formatDateTick = (tickItem: number) => new Date(tickItem).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-
-  return (
-    <div className="h-24 w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-          <defs>
-            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={strokeColor} stopOpacity={0.3} />
-              <stop offset="100%" stopColor={strokeColor} stopOpacity={0.1} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-          <XAxis
-            dataKey="time"
-            type="number"
-            domain={timeDomain}
-            tickFormatter={formatDateTick}
-            tickLine={false}
-            axisLine={false}
-            tickMargin={8}
-            tick={{ fontSize: 11 }}
-          />
-          <YAxis
-            domain={[0, 100]}
-            tickFormatter={(tick) => `${tick}%`}
-            width={30}
-            tickLine={false}
-            axisLine={false}
-            tickMargin={8}
-            tick={{ fontSize: 11 }}
-          />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: 'hsl(var(--background) / 0.8)',
-              backdropFilter: 'blur(8px)',
-              borderRadius: 'var(--radius)',
-              fontSize: '0.75rem',
-              padding: '4px 8px',
-            }}
-            labelFormatter={(label) => new Date(label).toLocaleTimeString()}
-            formatter={(value: number) => [`${value.toFixed(1)}%`, t(`vps.${metricType}`)]}
-          />
-          <Area type="monotone" dataKey="usage" stroke={strokeColor} fillOpacity={1} fill={`url(#${gradientId})`} strokeWidth={2} dot={false} isAnimationActive={false} />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
-  );
-};
+// --- PerformanceChart component removed ---
 
 // --- Main Component with Tabs ---
 export const VpsMetricsChart: React.FC<VpsMetricsChartProps> = ({ vpsId, activeTab, onTabChange }) => {
@@ -309,10 +184,10 @@ export const VpsMetricsChart: React.FC<VpsMetricsChartProps> = ({ vpsId, activeT
         <ServiceMonitorChart vpsId={vpsId} />
       </TabsContent>
       <TabsContent value="cpu">
-        <PerformanceChart vpsId={vpsId} metricType="cpu" />
+        <RealtimeMetricChart vpsId={vpsId} metricType="cpu" showTitle={false} showYAxis={false} showXAxis={false} className="h-24 w-full" />
       </TabsContent>
       <TabsContent value="ram">
-        <PerformanceChart vpsId={vpsId} metricType="ram" />
+        <RealtimeMetricChart vpsId={vpsId} metricType="ram" showTitle={false} showYAxis={false} showXAxis={false} className="h-24 w-full" />
       </TabsContent>
     </Tabs>
   );

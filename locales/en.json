@@ -776,6 +776,18 @@
       "fetchDataError": "Failed to fetch agents and tags."
     }
   },
+  "components": {
+    "realtimeMetricChart": {
+      "cpuUsageChartTitle": "CPU Usage (%)",
+      "ramUsageChartTitle": "RAM Usage (%)",
+      "networkUsageChartTitle": "Network Speed",
+      "diskUsageChartTitle": "Disk I/O Speed",
+      "upload": "Upload",
+      "download": "Download",
+      "read": "Read",
+      "write": "Write"
+    }
+  },
   "vpsDetailPage": {
     "notSet": "Not Set",
     "invalidDate": "Invalid Date",
