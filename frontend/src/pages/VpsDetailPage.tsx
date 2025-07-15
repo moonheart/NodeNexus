@@ -2,8 +2,7 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getMonitorResultsByVpsId } from '../services/serviceMonitorService';
 import { dismissVpsRenewalReminder } from '../services/vpsService';
-import { getVpsMetrics } from '../services/metricsService';
-import type { ServiceMonitorResult, VpsListItemResponse, PerformanceMetricPoint } from '../types';
+import type { ServiceMonitorResult, VpsListItemResponse } from '../types';
 import { useServerListStore } from '../store/serverListStore';
 import { useAuthStore } from '../store/authStore';
 import EditVpsModal from '../components/EditVpsModal';
@@ -18,7 +17,7 @@ import { getVpsStatusAppearance, formatBytesForDisplay, formatNetworkSpeed, form
 import { VpsTags } from '@/components/VpsTags';
 import { useTranslation } from 'react-i18next';
 import { getTimeRangeDetails, type TimeRangeValue } from '@/components/TimeRangeSelector';
-import HistoricalPerformanceChart from '@/components/HistoricalPerformanceChart';
+import HistoricalMetricChart from '@/components/HistoricalMetricChart';
 import RealtimeMetricChart from '@/components/RealtimeMetricChart';
 import RealtimeServiceMonitors from '@/components/RealtimeServiceMonitors';
 import { ReferenceArea, Legend, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, type LegendProps } from 'recharts';
@@ -94,9 +93,6 @@ const VpsDetailPage: React.FC = () => {
   const [activePerformanceTab, setActivePerformanceTab] = useState<string>('realtime');
   const [activeMonitorTab, setActiveMonitorTab] = useState<string>('realtime');
 
-  const [historicalMetrics, setHistoricalMetrics] = useState<PerformanceMetricPoint[]>([]);
-  const [historicalMetricsLoading, setHistoricalMetricsLoading] = useState(false);
-  const [historicalMetricsError, setHistoricalMetricsError] = useState<string | null>(null);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingModalData, setEditingModalData] = useState<{
@@ -112,27 +108,9 @@ const VpsDetailPage: React.FC = () => {
   const [loadingMonitors, setLoadingMonitors] = useState(true);
   const [monitorError, setMonitorError] = useState<string | null>(null);
 
-  const handlePerformanceTabChange = useCallback(async (range: string) => {
+  const handlePerformanceTabChange = (range: string) => {
     setActivePerformanceTab(range);
-    if (range === 'realtime' || !vpsDetail) {
-      setHistoricalMetrics([]);
-      return;
-    }
-
-    setHistoricalMetricsLoading(true);
-    setHistoricalMetricsError(null);
-    try {
-      const timeRangeDetails = getTimeRangeDetails(range as TimeRangeValue);
-      const data = await getVpsMetrics(vpsDetail.id, timeRangeDetails.startTime, timeRangeDetails.endTime, timeRangeDetails.interval);
-      setHistoricalMetrics(data);
-    } catch (err) {
-      console.error(`Failed to fetch historical performance metrics for VPS ${vpsDetail.id}:`, err);
-      setHistoricalMetricsError(t('vps.errors.fetchMetricsFailed'));
-      setHistoricalMetrics([]); // Clear data on error
-    } finally {
-      setHistoricalMetricsLoading(false);
-    }
-  }, [vpsDetail, t]);
+  };
 
   const formatTrafficBillingRule = (rule: string | null | undefined): string => {
     if (!rule) return t('vpsDetailPage.notSet');
@@ -344,60 +322,16 @@ const VpsDetailPage: React.FC = () => {
                 <RealtimeMetricChart vpsId={vpsDetail.id} metricType="disk" />
               </div>
             </TabsContent>
-            <TabsContent value={activePerformanceTab} className="mt-4">
-              {activePerformanceTab !== 'realtime' && (
+            {['1h', '6h', '1d', '7d'].map(range => (
+              <TabsContent key={range} value={range} className="mt-4">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-                  <HistoricalPerformanceChart
-                    title={t('vpsDetailPage.performanceMetrics.cpuUsageChartTitle')}
-                    metrics={historicalMetrics}
-                    loading={historicalMetricsLoading}
-                    error={historicalMetricsError}
-                    lines={[{ dataKey: 'cpuUsagePercent', name: t('vps.cpu'), stroke: 'hsl(var(--chart-1))' }]}
-                    yAxisDomain={[0, 100]}
-                    yAxisFormatter={(tick) => `${tick}%`}
-                    tooltipValueFormatter={(value, name) => [`${(value as number).toFixed(1)}%`, name]}
-                  />
-                  <HistoricalPerformanceChart
-                    title={t('vpsDetailPage.performanceMetrics.memoryUsageChartTitle')}
-                    metrics={historicalMetrics}
-                    loading={historicalMetricsLoading}
-                    error={historicalMetricsError}
-                    lines={[{ dataKey: 'memoryUsagePercent', name: t('vps.ram'), stroke: 'hsl(var(--chart-2))' }]}
-                    yAxisDomain={[0, 100]}
-                    yAxisFormatter={(tick) => `${tick}%`}
-                    tooltipValueFormatter={(value, name) => [`${(value as number).toFixed(1)}%`, name]}
-                  />
-                  <HistoricalPerformanceChart
-                    title={t('vpsDetailPage.networkChart.title')}
-                    metrics={historicalMetrics}
-                    loading={historicalMetricsLoading}
-                    error={historicalMetricsError}
-                    lines={[
-                      { dataKey: 'networkRxInstantBps', name: t('vpsDetailPage.networkChart.download'), stroke: 'hsl(var(--chart-1))' },
-                      { dataKey: 'networkTxInstantBps', name: t('vpsDetailPage.networkChart.upload'), stroke: 'hsl(var(--chart-2))' },
-                    ]}
-                    yAxisFormatter={(value) => formatNetworkSpeed(value)}
-                    tooltipValueFormatter={(value, name) => [formatNetworkSpeed(value as number), name]}
-                    chartType="line"
-                    showLegend={true}
-                  />
-                  <HistoricalPerformanceChart
-                    title={t('vpsDetailPage.diskIoChart.title')}
-                    metrics={historicalMetrics}
-                    loading={historicalMetricsLoading}
-                    error={historicalMetricsError}
-                    lines={[
-                      { dataKey: 'diskIoReadBps', name: t('vpsDetailPage.diskIoChart.read'), stroke: 'hsl(var(--chart-1))' },
-                      { dataKey: 'diskIoWriteBps', name: t('vpsDetailPage.diskIoChart.write'), stroke: 'hsl(var(--chart-2))' },
-                    ]}
-                    yAxisFormatter={(value) => formatNetworkSpeed(value)}
-                    tooltipValueFormatter={(value, name) => [formatNetworkSpeed(value as number), name]}
-                    chartType="line"
-                    showLegend={true}
-                  />
-              </div>
-            )}
-          </TabsContent>
+                  <HistoricalMetricChart vpsId={vpsDetail.id} metricType="cpu" timeRange={range as TimeRangeValue} />
+                  <HistoricalMetricChart vpsId={vpsDetail.id} metricType="ram" timeRange={range as TimeRangeValue} />
+                  <HistoricalMetricChart vpsId={vpsDetail.id} metricType="network" timeRange={range as TimeRangeValue} />
+                  <HistoricalMetricChart vpsId={vpsDetail.id} metricType="disk" timeRange={range as TimeRangeValue} />
+                </div>
+              </TabsContent>
+            ))}
           </Tabs>
         </CardContent>
       </Card>

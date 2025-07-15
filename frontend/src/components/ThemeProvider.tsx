@@ -36,12 +36,11 @@ const applyCustomTheme = (css: string) => {
   if (!styleTag) {
     styleTag = document.createElement('style');
     styleTag.id = DYNAMIC_STYLE_ID;
+    document.head.appendChild(styleTag);
   }
   
   styleTag.innerHTML = css;
-  // Append to ensure it's last and has precedence over other stylesheets.
-  document.head.appendChild(styleTag);
-
+  
   // 3. Save to localStorage for the next initial load.
   try {
     localStorage.setItem(ACTIVE_THEME_CSS_STORAGE_KEY, css);

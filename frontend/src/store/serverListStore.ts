@@ -9,9 +9,6 @@ import { getMonitorResults, getMonitorResultsByVpsId } from '../services/service
 import { getVpsMetrics } from '../services/metricsService';
 
 // --- Pub/Sub Systems ---
-// These live outside Zustand state to avoid causing re-renders on every data update.
-// Components subscribe to updates for a specific entity (VPS, monitor) and manage their own state.
-
 export type UnsubscribeFunction = () => void;
 
 // --- Service Monitor Pub/Sub (Per VPS) ---
@@ -22,14 +19,6 @@ const isFetchingInitialVpsData: Record<number, boolean> = {};
 
 // --- Legacy Pub/Sub for ServiceMonitorDetailPage ---
 type MonitorResultCallback = (results: ServiceMonitorResult[]) => void;
-
-// --- Performance Metrics Pub/Sub (Per VPS) ---
-type VpsPerformanceMetricCallback = (metrics: PerformanceMetricPoint[]) => void;
-const vpsPerformanceMetricsCache: Record<number, PerformanceMetricPoint[]> = {};
-const vpsPerformanceMetricListeners: Record<number, Set<VpsPerformanceMetricCallback>> = {};
-const isFetchingInitialVpsMetrics: Record<number, boolean> = {};
-
-// --- Legacy Pub/Sub for ServiceMonitorDetailPage ---
 const monitorResultsCache: Record<number, ServiceMonitorResult[]> = {};
 const monitorResultListeners: Record<number, Set<MonitorResultCallback>> = {};
 const isFetchingInitialData: Record<number, boolean> = {};
@@ -43,18 +32,27 @@ export type ConnectionStatus =
     | 'reconnecting'
     | 'permanently_failed';
 
-export interface ServerListState { // Added export
+type DataStatus = 'idle' | 'loading' | 'success' | 'error';
+
+interface VpsMetricsState {
+  data: PerformanceMetricPoint[];
+  status: DataStatus;
+  error?: string | null;
+}
+
+export interface ServerListState {
     servers: VpsListItemResponse[];
     latestMetrics: Record<number, PerformanceMetricPoint>;
+    initialVpsMetrics: Record<number, VpsMetricsState>; // New centralized state
     connectionStatus: ConnectionStatus;
-    isLoading: boolean; // For initial load or when explicitly loading/reconnecting
-    error: string | null; // For WebSocket related errors
+    isLoading: boolean;
+    error: string | null;
     viewMode: ViewMode;
-    allTags: Tag[]; // To store all available tags globally
-    isInitialized: boolean; // Flag to prevent double initialization
-    fetchAllTags: () => Promise<void>; // Action to fetch all tags
+    allTags: Tag[];
+    isInitialized: boolean;
+    fetchAllTags: () => Promise<void>;
     setViewMode: (mode: ViewMode) => void;
-    init: () => void; // New action to start listening to auth changes
+    init: () => void;
     disconnectWebSocket: () => void;
 
     // Service Monitor Pub/Sub Actions (per VPS for homepage)
@@ -62,9 +60,8 @@ export interface ServerListState { // Added export
     getInitialVpsMonitorResults: (vpsId: number) => Promise<ServiceMonitorResult[]>;
     clearVpsMonitorResults: () => void;
 
-    // Performance Metrics Pub/Sub Actions (per VPS)
-    subscribeToVpsPerformanceMetrics: (vpsId: number, callback: VpsPerformanceMetricCallback) => UnsubscribeFunction;
-    getInitialVpsPerformanceMetrics: (vpsId: number) => Promise<PerformanceMetricPoint[]>;
+    // New Performance Metrics Actions
+    ensureInitialVpsPerformanceMetrics: (vpsId: number) => Promise<void>;
     clearVpsPerformanceMetrics: () => void;
 
     // Service Monitor Pub/Sub Actions (per Monitor for detail page)
@@ -88,10 +85,11 @@ export const useServerListStore = create<ServerListState>()(
     (set, get) => ({
       servers: [],
       latestMetrics: {},
+      initialVpsMetrics: {},
       connectionStatus: 'disconnected',
-      isLoading: true, // Assume loading initially until first connection or message
+      isLoading: true,
       error: null,
-      viewMode: 'card', // Default view mode
+      viewMode: 'card',
       allTags: [],
       isInitialized: false,
 
@@ -102,13 +100,10 @@ export const useServerListStore = create<ServerListState>()(
         }
         vpsMonitorResultListeners[vpsId].add(callback);
 
-        // Return an unsubscribe function
         return () => {
             vpsMonitorResultListeners[vpsId]?.delete(callback);
             if (vpsMonitorResultListeners[vpsId]?.size === 0) {
                 delete vpsMonitorResultListeners[vpsId];
-                // Optional: also clear cache for this vpsId if no longer needed
-                // delete vpsMonitorResultsCache[vpsId];
             }
         };
     },
@@ -119,23 +114,22 @@ export const useServerListStore = create<ServerListState>()(
         }
 
         if (isFetchingInitialVpsData[vpsId]) {
-            // Avoid race conditions where multiple components request the same data simultaneously
-            await new Promise(resolve => setTimeout(resolve, 100)); // simple wait
-            return get().getInitialVpsMonitorResults(vpsId); // retry
+            await new Promise(resolve => setTimeout(resolve, 100));
+            return get().getInitialVpsMonitorResults(vpsId);
         }
 
         try {
             isFetchingInitialVpsData[vpsId] = true;
             const endTime = new Date();
-            const startTime = new Date(endTime.getTime() - 10 * 60 * 1000); // 10 minutes ago
+            const startTime = new Date(endTime.getTime() - 10 * 60 * 1000);
 
             const results = await getMonitorResultsByVpsId(vpsId, startTime.toISOString(), endTime.toISOString(), null);
-            const sortedResults = results.sort((a: ServiceMonitorResult, b: ServiceMonitorResult) => new Date(a.time).getTime() - new Date(b.time).getTime());
+            const sortedResults = results.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
             vpsMonitorResultsCache[vpsId] = sortedResults;
             return sortedResults;
         } catch (error) {
             console.error(`Failed to get initial monitor results for VPS ${vpsId}:`, error);
-            return []; // Return empty array on error
+            return [];
         } finally {
             isFetchingInitialVpsData[vpsId] = false;
         }
@@ -147,52 +141,48 @@ export const useServerListStore = create<ServerListState>()(
         console.log('Cleared all VPS service monitor caches and listeners.');
     },
 
-    clearVpsPerformanceMetrics: () => {
-        Object.keys(vpsPerformanceMetricsCache).forEach(key => delete vpsPerformanceMetricsCache[Number(key)]);
-        Object.keys(vpsPerformanceMetricListeners).forEach(key => delete vpsPerformanceMetricListeners[Number(key)]);
-        console.log('Cleared all VPS performance metrics caches and listeners.');
-    },
+    // --- New Performance Metrics Implementation ---
+    ensureInitialVpsPerformanceMetrics: async (vpsId) => {
+        const currentState = get().initialVpsMetrics[vpsId];
 
-    // --- Performance Metrics Pub/Sub Implementation (Per VPS) ---
-    subscribeToVpsPerformanceMetrics: (vpsId, callback) => {
-        if (!vpsPerformanceMetricListeners[vpsId]) {
-            vpsPerformanceMetricListeners[vpsId] = new Set();
-        }
-        vpsPerformanceMetricListeners[vpsId].add(callback);
-
-        return () => {
-            vpsPerformanceMetricListeners[vpsId]?.delete(callback);
-            if (vpsPerformanceMetricListeners[vpsId]?.size === 0) {
-                delete vpsPerformanceMetricListeners[vpsId];
-            }
-        };
-    },
-
-    getInitialVpsPerformanceMetrics: async (vpsId) => {
-        if (vpsPerformanceMetricsCache[vpsId]) {
-            return vpsPerformanceMetricsCache[vpsId];
+        if (currentState?.status === 'loading' || currentState?.status === 'success') {
+            return; // Already loading or loaded
         }
 
-        if (isFetchingInitialVpsMetrics[vpsId]) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-            return get().getInitialVpsPerformanceMetrics(vpsId);
-        }
+        set(state => ({
+            initialVpsMetrics: {
+                ...state.initialVpsMetrics,
+                [vpsId]: { data: [], status: 'loading' },
+            },
+        }));
 
         try {
-            isFetchingInitialVpsMetrics[vpsId] = true;
             const endTime = new Date();
-            const startTime = new Date(endTime.getTime() - 10 * 60 * 1000); // 10 minutes ago
+            const startTime = new Date(endTime.getTime() - 5 * 60 * 1000); // 5 minutes ago
             
             const metrics = await getVpsMetrics(vpsId, startTime.toISOString(), endTime.toISOString(), null);
-            const sortedMetrics = metrics.sort((a: PerformanceMetricPoint, b: PerformanceMetricPoint) => new Date(a.time).getTime() - new Date(b.time).getTime());
-            vpsPerformanceMetricsCache[vpsId] = sortedMetrics;
-            return sortedMetrics;
+            const sortedMetrics = metrics.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+            
+            set(state => ({
+                initialVpsMetrics: {
+                    ...state.initialVpsMetrics,
+                    [vpsId]: { data: sortedMetrics, status: 'success' },
+                },
+            }));
         } catch (error) {
             console.error(`Failed to get initial performance metrics for VPS ${vpsId}:`, error);
-            return [];
-        } finally {
-            isFetchingInitialVpsMetrics[vpsId] = false;
+            set(state => ({
+                initialVpsMetrics: {
+                    ...state.initialVpsMetrics,
+                    [vpsId]: { data: [], status: 'error', error: 'Failed to load data' },
+                },
+            }));
         }
+    },
+
+    clearVpsPerformanceMetrics: () => {
+        set({ initialVpsMetrics: {} });
+        console.log('Cleared all VPS performance metrics state.');
     },
     
     // --- Pub/Sub Implementation for ServiceMonitorDetailPage ---
@@ -242,85 +232,60 @@ export const useServerListStore = create<ServerListState>()(
             set({ allTags: tags });
         } catch (error) {
             console.error('Failed to fetch all tags:', error);
-            // Optionally handle the error in the UI
         }
     },
 
     setViewMode: (mode) => set({ viewMode: mode }),
 
     init: () => {
-        // Make the init function idempotent to prevent issues with React's Strict Mode.
         if (get().isInitialized) {
-            console.log("ServerListStore: Already initialized.");
             return;
         }
         set({ isInitialized: true });
 
-        console.log("ServerListStore: Initializing and subscribing to auth changes.");
-
-        // Subscribe to the auth store
         useAuthStore.subscribe(
             (state, prevState) => {
                 if (state.isAuthenticated !== prevState.isAuthenticated) {
-                    console.log(`ServerListStore: Detected auth state change from ${prevState.isAuthenticated} to ${state.isAuthenticated}.`);
                     get()._initializeWebSocket(state.isAuthenticated);
                 }
             }
         );
 
-        // Initial connection based on the current state
         const initialIsAuthenticated = useAuthStore.getState().isAuthenticated;
         get()._initializeWebSocket(initialIsAuthenticated);
     },
 
     _initializeWebSocket: (isAuthenticated) => {
         const { connectionStatus } = get();
-        // We still check status to avoid redundant connections if state somehow doesn't change.
         if (connectionStatus === 'connected' && useAuthStore.getState().isAuthenticated === isAuthenticated) {
-            console.log('Connection already established with correct auth state.');
             return;
         }
 
         set({ connectionStatus: 'connecting', isLoading: true, error: null });
-
-        // Centralized disconnect before reconnecting
         get().disconnectWebSocket();
 
-        if (isAuthenticated) {
-            const token = useAuthStore.getState().token;
-            if (!token) {
-                set({ connectionStatus: 'error', error: 'Authentication token not found.', isLoading: false });
-                return;
-            }
-            // Register event listeners for the private service
-            websocketService.on('open', get()._handleWebSocketOpen);
-            websocketService.on('full_server_list', get()._handleWebSocketMessage);
-            websocketService.on('service_monitor_result', get()._handleServiceMonitorResult);
-            websocketService.on('performance_metric_batch', get()._handlePerformanceMetricBatch);
-            websocketService.on('close', get()._handleWebSocketClose);
-            websocketService.on('error', get()._handleWebSocketError);
-            websocketService.on('permanent_failure', get()._handleWebSocketPermanentFailure);
-            websocketService.connect(token);
-        } else {
-            // Register event listeners for the public service (now handled by the same service)
-            websocketService.on('open', get()._handleWebSocketOpen);
-            websocketService.on('full_server_list', get()._handleWebSocketMessage);
-            websocketService.on('performance_metric_batch', get()._handlePerformanceMetricBatch);
-            // No service_monitor_result for public view
-            websocketService.on('close', get()._handleWebSocketClose);
-            websocketService.on('error', get()._handleWebSocketError);
-            websocketService.on('permanent_failure', get()._handleWebSocketPermanentFailure);
-            websocketService.connect(); // Connect without a token for the public endpoint
+        const token = useAuthStore.getState().token;
+        if (isAuthenticated && !token) {
+            set({ connectionStatus: 'error', error: 'Authentication token not found.', isLoading: false });
+            return;
         }
+
+        websocketService.on('open', get()._handleWebSocketOpen);
+        websocketService.on('full_server_list', get()._handleWebSocketMessage);
+        websocketService.on('service_monitor_result', get()._handleServiceMonitorResult);
+        websocketService.on('performance_metric_batch', get()._handlePerformanceMetricBatch);
+        websocketService.on('close', get()._handleWebSocketClose);
+        websocketService.on('error', get()._handleWebSocketError);
+        websocketService.on('permanent_failure', get()._handleWebSocketPermanentFailure);
+        
+        websocketService.connect(isAuthenticated ? token! : undefined);
     },
 
     disconnectWebSocket: () => {
       console.log('ServerListStore: Disconnecting WebSocket and removing listeners.');
       
-      // Disconnect the single service
       websocketService.disconnect();
 
-      // Unregister all event listeners to prevent memory leaks
       websocketService.off('open', get()._handleWebSocketOpen);
       websocketService.off('full_server_list', get()._handleWebSocketMessage);
       websocketService.off('service_monitor_result', get()._handleServiceMonitorResult);
@@ -329,7 +294,6 @@ export const useServerListStore = create<ServerListState>()(
       websocketService.off('error', get()._handleWebSocketError);
       websocketService.off('permanent_failure', get()._handleWebSocketPermanentFailure);
       
-      // Clean up monitor data on disconnect
       get().clearVpsMonitorResults();
       get().clearMonitorResults();
       get().clearVpsPerformanceMetrics();
@@ -339,165 +303,105 @@ export const useServerListStore = create<ServerListState>()(
 
     _handleWebSocketOpen: () => {
         console.log('ServerListStore: WebSocket connection opened.');
-        set({ connectionStatus: 'connected', error: null }); // Keep isLoading: true until the first message arrives
+        set({ connectionStatus: 'connected', error: null });
     },
 
     _handleWebSocketMessage: (data) => {
         const newServers = data.servers;
         const oldServers = get().servers;
 
-        // Create a map of new servers for efficient lookup
-        const newServersMap = new Map(newServers.map(s => [s.id, s]));
-
-        // Create a new array, reusing old server objects if they haven't changed.
-        const mergedServers = newServers.map(newServer => {
-            const oldServer = oldServers.find(s => s.id === newServer.id);
-            // If an old server exists and is deep-equal to the new one, reuse the old object reference
-            if (oldServer && equal(oldServer, newServer)) {
-                return oldServer;
-            }
-            // Otherwise, use the new server object
-            return newServer;
-        });
-
-        // Also, handle servers that might have been removed.
-        const finalServers = mergedServers.filter(s => newServersMap.has(s.id));
-        
-        // Check if the final array is different from the old one before setting state
-        if (!equal(oldServers, finalServers)) {
-            set({ servers: finalServers, isLoading: false, connectionStatus: 'connected', error: null });
-        } else {
-            // If nothing changed, we can avoid a state update entirely.
-            // But we still need to update loading/connection status on the first message.
-            if (get().isLoading || get().connectionStatus !== 'connected') {
-                 set({ isLoading: false, connectionStatus: 'connected', error: null });
-            }
+        if (!equal(oldServers, newServers)) {
+            set({ servers: newServers, isLoading: false, connectionStatus: 'connected', error: null });
+        } else if (get().isLoading || get().connectionStatus !== 'connected') {
+             set({ isLoading: false, connectionStatus: 'connected', error: null });
         }
     },
 
     _handleServiceMonitorResult: (data) => {
-        // Use agentId as the key for routing, as per user feedback.
         const vpsId = data.agentId;
-
-        if (vpsId === undefined) {
-            console.warn('Received service monitor result without an agentId. Ignoring.', data);
-            return;
-        }
+        if (vpsId === undefined) return;
         
-        // Update cache for the specific VPS (keyed by agentId)
-        if (!vpsMonitorResultsCache[vpsId]) {
-            vpsMonitorResultsCache[vpsId] = [];
-        }
+        if (!vpsMonitorResultsCache[vpsId]) vpsMonitorResultsCache[vpsId] = [];
         vpsMonitorResultsCache[vpsId].push(data);
 
-        // Keep cache size reasonable
         const CACHE_MAX_SIZE = 1000;
         if (vpsMonitorResultsCache[vpsId].length > CACHE_MAX_SIZE) {
             vpsMonitorResultsCache[vpsId] = vpsMonitorResultsCache[vpsId].slice(-CACHE_MAX_SIZE);
         }
 
-        // Notify listeners subscribed to this specific vpsId (agentId)
         if (vpsMonitorResultListeners[vpsId]) {
-            vpsMonitorResultListeners[vpsId].forEach(callback => {
-                callback([data]); // Pass new result as an array
-            });
+            vpsMonitorResultListeners[vpsId].forEach(callback => callback([data]));
         }
 
-        // Also notify legacy listeners for the detail page (keyed by monitorId)
         const { monitorId } = data;
         if (monitorResultListeners[monitorId]) {
-            if (!monitorResultsCache[monitorId]) {
-                monitorResultsCache[monitorId] = [];
-            }
+            if (!monitorResultsCache[monitorId]) monitorResultsCache[monitorId] = [];
             monitorResultsCache[monitorId].push(data);
             if (monitorResultsCache[monitorId].length > CACHE_MAX_SIZE) {
                 monitorResultsCache[monitorId] = monitorResultsCache[monitorId].slice(-CACHE_MAX_SIZE);
             }
-            monitorResultListeners[monitorId].forEach(callback => {
-                // Legacy system now also gets only the new result, just like the new system.
-                // The component is now responsible for accumulating the results.
-                callback([data]);
-            });
+            monitorResultListeners[monitorId].forEach(callback => callback([data]));
         }
     },
 
     _handlePerformanceMetricBatch: (data: PerformanceMetricBatch) => {
         const { metrics } = data;
+        if (!metrics || metrics.length === 0) return;
 
-        if (!metrics || metrics.length === 0) {
-            return; // Ignore empty batches
-        }
-
-        // Group metrics by vpsId
         const metricsByVps = metrics.reduce((acc, metric) => {
-            if (!acc[metric.vpsId]) {
-                acc[metric.vpsId] = [];
-            }
+            if (!acc[metric.vpsId]) acc[metric.vpsId] = [];
             acc[metric.vpsId].push(metric);
             return acc;
         }, {} as Record<number, PerformanceMetricPoint[]>);
 
-
-        // Update Zustand store with the latest metric for each vpsId in the batch
+        // Update latestMetrics for immediate UI feedback (e.g., stat cards)
         set(state => {
             const newLatestMetrics = { ...state.latestMetrics };
             for (const vpsId in metricsByVps) {
                 const vpsMetrics = metricsByVps[vpsId];
                 if (vpsMetrics.length > 0) {
-                    const latestMetricInBatch = vpsMetrics.reduce((latest, current) => {
-                        return new Date(current.time) > new Date(latest.time) ? current : latest;
-                    });
+                    const latestMetricInBatch = vpsMetrics.reduce((latest, current) => 
+                        new Date(current.time) > new Date(latest.time) ? current : latest
+                    );
                     newLatestMetrics[vpsId] = latestMetricInBatch;
                 }
             }
             return { latestMetrics: newLatestMetrics };
         });
 
-        // --- The existing Pub/Sub logic for real-time charts remains unchanged ---
-        for (const vpsIdStr in metricsByVps) {
-            const vpsId = parseInt(vpsIdStr, 10);
-            const vpsMetrics = metricsByVps[vpsId];
-
-            // Update cache
-            if (!vpsPerformanceMetricsCache[vpsId]) {
-                vpsPerformanceMetricsCache[vpsId] = [];
+        // Append new metrics to the historical/real-time data array
+        set(state => {
+            const newInitialMetrics = { ...state.initialVpsMetrics };
+            for (const vpsIdStr in metricsByVps) {
+                const vpsId = parseInt(vpsIdStr, 10);
+                if (newInitialMetrics[vpsId]?.status === 'success') {
+                    const newPoints = metricsByVps[vpsId];
+                    const existingPoints = newInitialMetrics[vpsId].data;
+                    newInitialMetrics[vpsId] = {
+                        ...newInitialMetrics[vpsId],
+                        data: [...existingPoints, ...newPoints],
+                    };
+                }
             }
-            vpsPerformanceMetricsCache[vpsId] = vpsPerformanceMetricsCache[vpsId].concat(vpsMetrics);
-
-            // Keep cache size reasonable
-            const CACHE_MAX_SIZE = 1000;
-            if (vpsPerformanceMetricsCache[vpsId].length > CACHE_MAX_SIZE) {
-                vpsPerformanceMetricsCache[vpsId] = vpsPerformanceMetricsCache[vpsId].slice(-CACHE_MAX_SIZE);
-            }
-
-            // Notify listeners with the batch for this specific VPS
-            if (vpsPerformanceMetricListeners[vpsId]) {
-                vpsPerformanceMetricListeners[vpsId].forEach(callback => {
-                    callback(vpsMetrics);
-                });
-            }
-        }
+            return { initialVpsMetrics: newInitialMetrics };
+        });
     },
 
     _handleWebSocketClose: ({ isIntentional, event }) => {
         console.log(`ServerListStore: WebSocket connection closed. Intentional: ${isIntentional}, Code: ${event.code}`);
         if (isIntentional) {
             set({ connectionStatus: 'disconnected', isLoading: false });
-        } else {
-            if (get().connectionStatus !== 'permanently_failed') {
-                 set({ connectionStatus: 'reconnecting', isLoading: true, error: `Connection closed (code: ${event.code}). Attempting to reconnect.` });
-            }
+        } else if (get().connectionStatus !== 'permanently_failed') {
+             set({ connectionStatus: 'reconnecting', isLoading: true, error: `Connection closed (code: ${event.code}). Attempting to reconnect.` });
         }
     },
 
     _handleWebSocketError: (event: Event) => {
         console.error('ServerListStore: WebSocket error.', event);
-        // Avoid setting isLoading to false if we are in 'reconnecting' state
-        // and an error occurs during a reconnect attempt. The service will handle further retries.
         if (get().connectionStatus !== 'reconnecting' && get().connectionStatus !== 'permanently_failed') {
             set({ connectionStatus: 'error', error: 'WebSocket connection error.', isLoading: false });
         } else if (get().connectionStatus === 'reconnecting') {
-             set({ error: 'Error during reconnection attempt.' }); // Keep status as 'reconnecting'
+             set({ error: 'Error during reconnection attempt.' });
         }
     },
 
@@ -511,12 +415,9 @@ export const useServerListStore = create<ServerListState>()(
     },
     }),
     {
-      name: 'server-list-storage', // unique name
+      name: 'server-list-storage',
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ viewMode: state.viewMode }), // Only persist the viewMode
+      partialize: (state) => ({ viewMode: state.viewMode }),
     }
   )
 );
-
-// Optional: Expose a way to get the service instance if needed for direct calls, though usually not recommended.
-// export const getWebsocketServiceInstance = () => useServerListStore.getState().websocketService;
