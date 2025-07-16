@@ -134,7 +134,7 @@ const ServerMetricsChart: React.FC<ServerMetricsChartProps> = ({
             fillOpacity={chartType === 'area' ? 0.3 : 1}
             strokeWidth={1}
             dot={line.dot ?? false}
-            isAnimationActive={line.isAnimationActive ?? false}
+            isAnimationActive={false}
             connectNulls={true}
           />
         ))}

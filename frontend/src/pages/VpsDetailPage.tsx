@@ -1,8 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getMonitorResultsByVpsId } from '../services/serviceMonitorService';
 import { dismissVpsRenewalReminder } from '../services/vpsService';
-import type { ServiceMonitorResult, VpsListItemResponse } from '../types';
+import type { VpsListItemResponse } from '../types';
 import { useServerListStore } from '../store/serverListStore';
 import { useAuthStore } from '../store/authStore';
 import EditVpsModal from '../components/EditVpsModal';
@@ -10,18 +9,16 @@ import { useShallow } from 'zustand/react/shallow';
 import StatCard from '../components/StatCard';
 import { Server, XCircle, AlertTriangle, ArrowLeft, Cpu, MemoryStick, HardDrive, ArrowUp, ArrowDown, Pencil, BellRing, Info, BarChartHorizontal } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { getVpsStatusAppearance, formatBytesForDisplay, formatNetworkSpeed, formatUptime } from '@/utils/vpsUtils';
 import { VpsTags } from '@/components/VpsTags';
 import { useTranslation } from 'react-i18next';
-import { getTimeRangeDetails, type TimeRangeValue } from '@/components/TimeRangeSelector';
-import HistoricalMetricChart from '@/components/metric/HistoricalMetricChart';
-import RealtimeMetricChart from '@/components/metric/RealtimeMetricChart';
-import RealtimeServiceMonitors from '@/components/RealtimeServiceMonitors';
-import { ReferenceArea, Legend, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, type LegendProps } from 'recharts';
-import type { ValueType } from 'recharts/types/component/DefaultTooltipContent';
+import type { TimeRangeValue } from '@/components/TimeRangeSelector';
+import UnifiedMetricChart from '@/components/metric/UnifiedMetricChart';
+import { useVpsPerformanceMetrics } from '@/hooks/useVpsPerformanceMetrics';
+import type { ChartViewMode } from '@/hooks/useMetrics';
 
 const VpsDetailLayout: React.FC<{
   vpsDetail: VpsListItemResponse;
@@ -71,6 +68,41 @@ const VpsDetailLayout: React.FC<{
   );
 };
 
+const PerformanceCharts: React.FC<{ vpsId: number; activeTab: string }> = ({ vpsId, activeTab }) => {
+  const viewMode: ChartViewMode = activeTab === 'realtime' ? 'realtime' : 'historical';
+  const { data, loading } = useVpsPerformanceMetrics({
+    vpsId,
+    viewMode,
+    timeRange: activeTab as TimeRangeValue,
+  });
+
+  const chartMetrics: { metricType: 'cpu' | 'ram' | 'network' | 'disk' }[] = [
+    { metricType: 'cpu' },
+    { metricType: 'ram' },
+    { metricType: 'network' },
+    { metricType: 'disk' },
+  ];
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
+      {chartMetrics.map(({ metricType }) => (
+        <UnifiedMetricChart
+          key={metricType}
+          sourceType="vps"
+          sourceId={vpsId}
+          metricType={metricType}
+          viewMode={viewMode}
+          timeRange={activeTab as TimeRangeValue}
+          data={data}
+          loading={loading}
+          className="h-72 w-full"
+        />
+      ))}
+    </div>
+  );
+};
+
+
 const VpsDetailPage: React.FC = () => {
   const { t } = useTranslation();
   const { vpsId } = useParams<{ vpsId: string }>();
@@ -93,7 +125,6 @@ const VpsDetailPage: React.FC = () => {
   const [activePerformanceTab, setActivePerformanceTab] = useState<string>('realtime');
   const [activeMonitorTab, setActiveMonitorTab] = useState<string>('realtime');
 
-
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingModalData, setEditingModalData] = useState<{
     vps: VpsListItemResponse;
@@ -103,14 +134,6 @@ const VpsDetailPage: React.FC = () => {
   const [isDismissingReminder, setIsDismissingReminder] = useState(false);
   const [dismissReminderError, setDismissReminderError] = useState<string | null>(null);
   const [dismissReminderSuccess, setDismissReminderSuccess] = useState<string | null>(null);
-
-  const [monitorResults, setMonitorResults] = useState<ServiceMonitorResult[]>([]);
-  const [loadingMonitors, setLoadingMonitors] = useState(true);
-  const [monitorError, setMonitorError] = useState<string | null>(null);
-
-  const handlePerformanceTabChange = (range: string) => {
-    setActivePerformanceTab(range);
-  };
 
   const formatTrafficBillingRule = (rule: string | null | undefined): string => {
     if (!rule) return t('vpsDetailPage.notSet');
@@ -206,31 +229,6 @@ const VpsDetailPage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    if (!vpsId || !isAuthenticated || activeMonitorTab === 'realtime') {
-      setMonitorResults([]);
-      setLoadingMonitors(false);
-      return;
-    }
-
-    const fetchMonitorData = async () => {
-      setLoadingMonitors(true);
-      setMonitorError(null);
-      try {
-        const timeRangeDetails = getTimeRangeDetails(activeMonitorTab as TimeRangeValue);
-        const results = await getMonitorResultsByVpsId(vpsId, timeRangeDetails.startTime, timeRangeDetails.endTime, timeRangeDetails.interval);
-        setMonitorResults(results);
-      } catch (err) {
-        console.error('Failed to fetch service monitor results:', err);
-        setMonitorError(t('vpsDetailPage.errors.loadMonitorData'));
-      } finally {
-        setLoadingMonitors(false);
-      }
-    };
-
-    fetchMonitorData();
-  }, [vpsId, isAuthenticated, t, activeMonitorTab]);
-
   const isLoadingPage = isLoading && !vpsDetail;
   const pageError = (connectionStatus === 'error' || connectionStatus === 'permanently_failed')
     ? t('vpsDetailPage.errors.webSocket')
@@ -304,7 +302,7 @@ const VpsDetailPage: React.FC = () => {
           <CardTitle>{t('vpsDetailPage.performanceMetrics.title')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <Tabs value={activePerformanceTab} onValueChange={handlePerformanceTabChange}>
+          <Tabs value={activePerformanceTab} onValueChange={setActivePerformanceTab}>
             <div className="flex justify-end">
               <TabsList>
                 <TabsTrigger value="realtime">{t('vpsDetailPage.tabs.realtime')}</TabsTrigger>
@@ -314,24 +312,7 @@ const VpsDetailPage: React.FC = () => {
                 <TabsTrigger value="7d">{t('vpsDetailPage.tabs.7d')}</TabsTrigger>
               </TabsList>
             </div>
-            <TabsContent value="realtime" className="mt-4">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-                <RealtimeMetricChart vpsId={vpsDetail.id} metricType="cpu" className="h-72 w-full" />
-                <RealtimeMetricChart vpsId={vpsDetail.id} metricType="ram" className="h-72 w-full" />
-                <RealtimeMetricChart vpsId={vpsDetail.id} metricType="network" className="h-72 w-full" />
-                <RealtimeMetricChart vpsId={vpsDetail.id} metricType="disk" className="h-72 w-full" />
-              </div>
-            </TabsContent>
-            {['1h', '6h', '1d', '7d'].map(range => (
-              <TabsContent key={range} value={range} className="mt-4">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-                  <HistoricalMetricChart vpsId={vpsDetail.id} metricType="cpu" timeRange={range as TimeRangeValue} />
-                  <HistoricalMetricChart vpsId={vpsDetail.id} metricType="ram" timeRange={range as TimeRangeValue} />
-                  <HistoricalMetricChart vpsId={vpsDetail.id} metricType="network" timeRange={range as TimeRangeValue} />
-                  <HistoricalMetricChart vpsId={vpsDetail.id} metricType="disk" timeRange={range as TimeRangeValue} />
-                </div>
-              </TabsContent>
-            ))}
+            <PerformanceCharts vpsId={vpsDetail.id} activeTab={activePerformanceTab} />
           </Tabs>
         </CardContent>
       </Card>
@@ -355,19 +336,16 @@ const VpsDetailPage: React.FC = () => {
                   <TabsTrigger value="7d">{t('vpsDetailPage.tabs.7d')}</TabsTrigger>
                 </TabsList>
               </div>
-              <TabsContent value="realtime" className="mt-4">
-                <RealtimeServiceMonitors vpsId={vpsDetail.id} />
-              </TabsContent>
-              {['1h', '6h', '1d', '7d'].map(range => (
-                <TabsContent key={range} value={range} className="mt-4">
-                  {monitorError && <p className="text-destructive text-center">{monitorError}</p>}
-                  {loadingMonitors ? (
-                    <div className="h-72 flex justify-center items-center"><p>{t('vpsDetailPage.serviceMonitoring.loadingCharts')}</p></div>
-                  ) : (
-                    <ServiceMonitorChartComponent results={monitorResults} />
-                  )}
-                </TabsContent>
-              ))}
+              <div className="mt-4 h-80">
+                <UnifiedMetricChart
+                  sourceType="vps"
+                  sourceId={vpsDetail.id}
+                  metricType="service-latency"
+                  viewMode={activeMonitorTab === 'realtime' ? 'realtime' : 'historical'}
+                  timeRange={activeMonitorTab as TimeRangeValue}
+                  className="h-full w-full"
+                />
+              </div>
             </Tabs>
           </CardContent>
         </Card>
@@ -448,109 +426,6 @@ const VpsStatCards: React.FC<{ vpsDetail: VpsListItemResponse, metrics: ReturnTy
       <StatCard title={t('vpsDetailPage.statCards.upload')} value={formatNetworkSpeed(metrics?.networkTxInstantBps)} icon={<ArrowUp />} valueClassName="text-primary" description={t('vpsDetailPage.statCards.currentOutbound')} />
       <StatCard title={t('vpsDetailPage.statCards.download')} value={formatNetworkSpeed(metrics?.networkRxInstantBps)} icon={<ArrowDown />} valueClassName="text-primary" description={t('vpsDetailPage.statCards.currentInbound')} />
       <StatCard title={t('vpsDetailPage.statCards.uptime')} value={formatUptime(metrics?.uptimeSeconds)} icon={<AlertTriangle />} valueClassName="text-primary" description={t('vpsDetailPage.statCards.currentSession')} />
-    </div>
-  );
-});
-
-const formatLatencyForTooltip = (value: ValueType) => {
-  if (typeof value === 'number') return `${value.toFixed(0)} ms`;
-  return `${value}`;
-};
-
-const AGENT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
-
-const ServiceMonitorChartComponent: React.FC<{ results: ServiceMonitorResult[] }> = React.memo(({ results }) => {
-  const { t } = useTranslation();
-  const [hiddenLines, setHiddenLines] = useState<Record<string, boolean>>({});
-
-  const { chartData, monitorLines, downtimeAreas } = useMemo(() => {
-    if (!results || results.length === 0) {
-      return { chartData: [], monitorLines: [], downtimeAreas: [] };
-    }
-    const sortedResults = [...results].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-    const groupedByMonitorId = sortedResults.reduce((acc, result) => {
-      const monitorId = result.monitorId;
-      if (!acc[monitorId]) acc[monitorId] = [];
-      acc[monitorId].push(result);
-      return acc;
-    }, {} as Record<number, ServiceMonitorResult[]>);
-
-    const monitorLines: { dataKey: string; name: string; stroke: string }[] = [];
-    let colorIndex = 0;
-    for (const monitorId in groupedByMonitorId) {
-      if (Object.prototype.hasOwnProperty.call(groupedByMonitorId, monitorId)) {
-        const firstResult = groupedByMonitorId[monitorId][0];
-        const monitorName = firstResult.monitorName || t('vpsDetailPage.serviceMonitoring.monitorName', { id: monitorId });
-        const color = AGENT_COLORS[colorIndex % AGENT_COLORS.length];
-        monitorLines.push({ dataKey: `monitor_${monitorId}`, name: monitorName, stroke: color });
-        colorIndex++;
-      }
-    }
-
-    const timePoints = [...new Set(sortedResults.map(r => new Date(r.time).toISOString()))].sort();
-    const chartData = timePoints.map(time => {
-      const point: { time: string; [key: string]: number | null | string } = { time };
-      for (const monitorId in groupedByMonitorId) {
-        const dataKey = `monitor_${monitorId}`;
-        const resultForTime = groupedByMonitorId[monitorId].find(r => new Date(r.time).toISOString() === time);
-        point[dataKey] = resultForTime && resultForTime.isUp ? resultForTime.latencyMs : null;
-      }
-      return point;
-    });
-
-    const areas: { x1: string, x2: string }[] = [];
-    let downtimeStart: string | null = null;
-    for (let i = 0; i < timePoints.length; i++) {
-      const time = timePoints[i];
-      const isAnyDown = Object.values(groupedByMonitorId).some(monitorResults => monitorResults.some(r => new Date(r.time).toISOString() === time && !r.isUp));
-      if (isAnyDown && !downtimeStart) {
-        downtimeStart = time;
-      } else if (!isAnyDown && downtimeStart) {
-        const prevTime = i > 0 ? timePoints[i-1] : downtimeStart;
-        areas.push({ x1: downtimeStart, x2: prevTime });
-        downtimeStart = null;
-      }
-    }
-    if (downtimeStart) {
-      areas.push({ x1: downtimeStart, x2: timePoints[timePoints.length - 1] });
-    }
-    return { chartData, monitorLines, downtimeAreas: areas };
-  }, [results, t]);
-
-  const handleLegendClick: LegendProps['onClick'] = (data) => {
-    const dataKey = data.dataKey as string;
-    if (typeof dataKey === 'string') {
-      setHiddenLines(prev => ({ ...prev, [dataKey]: !prev[dataKey] }));
-    }
-  };
-
-  const renderLegendText: LegendProps['formatter'] = (value, entry) => {
-    const { color, dataKey } = entry;
-    const isHidden = typeof dataKey === 'string' && hiddenLines[dataKey];
-    return <span style={{ color: isHidden ? '#A0A0A0' : color || '#000', cursor: 'pointer' }}>{value}</span>;
-  };
-
-  if (results.length === 0) {
-    return <p className="text-center text-muted-foreground pt-16">{t('vpsDetailPage.serviceMonitoring.noData')}</p>;
-  }
-
-  return (
-    <div className="h-80">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={chartData} margin={{ top: 5, right: 20, left: 5, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="time" tickFormatter={(tick) => new Date(tick).toLocaleString()} tick={{ fontSize: 11 }} />
-          <YAxis tickFormatter={(tick) => `${tick} ms`} width={80} tick={{ fontSize: 11 }} />
-          <Tooltip formatter={formatLatencyForTooltip} labelFormatter={(label) => new Date(label).toLocaleString()} contentStyle={{ backgroundColor: 'hsl(var(--background) / 0.8)', backdropFilter: 'blur(2px)', borderRadius: 'var(--radius)', fontSize: '0.8rem' }} />
-          <Legend wrapperStyle={{ fontSize: '0.8rem' }} onClick={handleLegendClick} formatter={renderLegendText} />
-          {downtimeAreas.map((area, index) => (
-            <ReferenceArea key={index} x1={area.x1} x2={area.x2} stroke="transparent" fill="hsl(var(--destructive))" fillOpacity={0.15} ifOverflow="visible" />
-          ))}
-          {monitorLines.map((line) => (
-            <Line key={line.dataKey} type="monotone" dataKey={line.dataKey} name={line.name} stroke={hiddenLines[line.dataKey] ? 'transparent' : line.stroke} dot={false} connectNulls={true} strokeWidth={2} isAnimationActive={false} />
-          ))}
-        </LineChart>
-      </ResponsiveContainer>
     </div>
   );
 });

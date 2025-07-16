@@ -1,6 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { getMonitorResults } from '../services/serviceMonitorService';
-import type { ServiceMonitorResult } from '../types';
+import React, { useState, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceArea } from 'recharts';
 import {
   ChartContainer,
@@ -9,8 +7,8 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { Skeleton } from './ui/skeleton';
-
-type ChartPoint = { time: number; [key: string]: number | null };
+import { useMetrics, type ChartViewMode } from '@/hooks/useMetrics';
+import type { TimeRangeValue } from './TimeRangeSelector';
 
 const formatDateTick = (tickItem: number) => new Date(tickItem).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 const formatTooltipLabel = (label: number) => new Date(label).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
@@ -19,46 +17,35 @@ const AGENT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#0
 
 interface HistoricalMonitorChartProps {
   monitorId: number;
-  startTime: string;
-  endTime: string;
-  interval: string | null;
+  timeRange: TimeRangeValue;
+  viewMode: ChartViewMode; // Kept for useMetrics, but animation is disabled
 }
 
-const HistoricalMonitorChart: React.FC<HistoricalMonitorChartProps> = ({ monitorId, startTime, endTime, interval }) => {
-  const [results, setResults] = useState<ServiceMonitorResult[]>([]);
-  const [isChartLoading, setIsChartLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+const HistoricalMonitorChart: React.FC<HistoricalMonitorChartProps> = ({ monitorId, timeRange, viewMode }) => {
   const [hiddenLines, setHiddenLines] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    const fetchResults = async () => {
-      setIsChartLoading(true);
-      setError(null);
-      try {
-        const historicalResults = await getMonitorResults(monitorId, startTime, endTime, interval);
-        setResults(historicalResults.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()));
-      } catch (err) {
-        setError('无法获取监控结果。');
-        console.error(err);
-      } finally {
-        setIsChartLoading(false);
-      }
-    };
-
-    fetchResults();
-  }, [monitorId, startTime, endTime, interval]);
+  
+  const { data, loading: isChartLoading, error } = useMetrics({
+    sourceType: 'monitor',
+    sourceId: monitorId,
+    metricType: 'service-latency',
+    viewMode,
+    timeRange,
+  });
 
   const agentConfig = useMemo(() => {
-    if (!results || results.length === 0) {
+    if (!data || data.length === 0) {
       return { agentLines: [], chartConfig: {} as ChartConfig };
     }
-    const groupedByAgent = results.reduce((acc, result) => {
-      if (!acc[result.agentName]) acc[result.agentName] = [];
-      acc[result.agentName].push(result);
-      return acc;
-    }, {} as Record<string, ServiceMonitorResult[]>);
+    const dataKeys = new Set<string>();
+    data.forEach(point => {
+      Object.keys(point).forEach(key => {
+        if (key !== 'time') {
+          dataKeys.add(key);
+        }
+      });
+    });
 
-    const sortedAgentNames = Object.keys(groupedByAgent).sort();
+    const sortedAgentNames = Array.from(dataKeys).sort();
     const agentLines = sortedAgentNames.map((agentName, index) => ({
       dataKey: agentName,
       name: agentName,
@@ -71,25 +58,10 @@ const HistoricalMonitorChart: React.FC<HistoricalMonitorChartProps> = ({ monitor
     }, {} as ChartConfig);
 
     return { agentLines, chartConfig };
-  }, [results]);
+  }, [data]);
 
-  const chartData = useMemo(() => {
-    if (!results || results.length === 0) {
-      return { chartData: [], downtimeAreas: [] as { x1: number, x2: number }[] };
-    }
-
-    const groupedByTime = results.reduce((acc, result) => {
-        const time = new Date(result.time).getTime();
-        if (!acc[time]) {
-            acc[time] = { time };
-        }
-        acc[time][result.agentName] = result.isUp ? result.latencyMs : null;
-        return acc;
-    }, {} as Record<number, ChartPoint>);
-
-    const chartData = Object.values(groupedByTime).sort((a, b) => a.time - b.time);
-    return { chartData, downtimeAreas: [] };
-  }, [results]);
+  // TODO: Implement downtimeAreas calculation in useMetrics hook
+  const downtimeAreas: { x1: number, x2: number }[] = [];
 
   const handleLegendClick = (data: { dataKey: string }) => {
     const { dataKey } = data;
@@ -106,9 +78,9 @@ const HistoricalMonitorChart: React.FC<HistoricalMonitorChartProps> = ({ monitor
 
   return (
     <div className={`flex-grow min-h-0 ${isChartLoading ? 'opacity-50' : ''}`}>
-      {chartData.chartData.length > 0 ? (
+      {data.length > 0 ? (
         <ChartContainer config={agentConfig.chartConfig} className="h-full w-full">
-          <LineChart data={chartData.chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+          <LineChart data={data} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
             <CartesianGrid vertical={false} />
             <XAxis
               dataKey="time"
@@ -196,7 +168,7 @@ const HistoricalMonitorChart: React.FC<HistoricalMonitorChartProps> = ({ monitor
                 </div>
               )}
             />
-            {chartData.downtimeAreas.map((area, index) => (
+            {downtimeAreas.map((area, index) => (
               <ReferenceArea key={index} x1={area.x1} x2={area.x2} stroke="transparent" fill="hsl(var(--destructive))" fillOpacity={0.15} ifOverflow="extendDomain" />
             ))}
             {agentConfig.agentLines.map(line => (
@@ -211,7 +183,7 @@ const HistoricalMonitorChart: React.FC<HistoricalMonitorChartProps> = ({ monitor
                 activeDot={{ r: 6 }}
                 connectNulls={true}
                 hide={hiddenLines[line.dataKey]}
-                isAnimationActive={!isChartLoading}
+                isAnimationActive={false}
               />
             ))}
           </LineChart>
