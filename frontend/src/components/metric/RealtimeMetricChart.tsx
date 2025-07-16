@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { useServerListStore } from '../store/serverListStore';
+import { useServerListStore } from '../../store/serverListStore';
 import { useShallow } from 'zustand/react/shallow';
 import { formatBytesForDisplay, formatNetworkSpeed } from '@/utils/vpsUtils';
 import { useTranslation } from 'react-i18next';

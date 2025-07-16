@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { PerformanceMetricPoint } from '../types';
+import type { PerformanceMetricPoint } from '../../types';
 import ServerMetricsChart from './ServerMetricsChart';
 import { getVpsMetrics } from '@/services/metricsService';
 import { getTimeRangeDetails, type TimeRangeValue } from '@/components/TimeRangeSelector';

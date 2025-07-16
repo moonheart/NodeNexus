@@ -48,7 +48,7 @@ interface ServerMetricsChartProps {
 const ServerMetricsChart: React.FC<ServerMetricsChartProps> = ({
   data,
   lines,
-  chartType = 'line',
+  chartType = 'area',
   yAxisFormatter,
   yAxisDomain,
   xAxisFormatter,
@@ -87,7 +87,7 @@ const ServerMetricsChart: React.FC<ServerMetricsChartProps> = ({
     <ResponsiveContainer width="100%" height="100%">
       <ChartComponent data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" />
-        {showXAxis && (
+        
           <XAxis
             dataKey="time"
             type="number"
@@ -95,10 +95,10 @@ const ServerMetricsChart: React.FC<ServerMetricsChartProps> = ({
             tickFormatter={xAxisFormatter}
             tickLine={false}
             axisLine={false}
+            hide={!showXAxis} 
             tickMargin={8}
             tick={{ fontSize: 12 }}
           />
-        )}
         {showYAxis && (
           <YAxis
             domain={yAxisDomain}
@@ -132,7 +132,7 @@ const ServerMetricsChart: React.FC<ServerMetricsChartProps> = ({
             stroke={line.stroke}
             fill={line.stroke}
             fillOpacity={chartType === 'area' ? 0.3 : 1}
-            strokeWidth={2}
+            strokeWidth={1}
             dot={line.dot ?? false}
             isAnimationActive={line.isAnimationActive ?? false}
             connectNulls={true}

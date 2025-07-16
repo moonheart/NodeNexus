@@ -5,7 +5,7 @@ import type { ServiceMonitorResult } from '../types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useServerListStore, type UnsubscribeFunction } from '../store/serverListStore';
 import { type ChartConfig } from "@/components/ui/chart";
-import RealtimeMetricChart from './RealtimeMetricChart';
+import RealtimeMetricChart from './metric/RealtimeMetricChart';
 
 interface VpsMetricsChartProps {
   vpsId: number;

@@ -17,8 +17,8 @@ import { getVpsStatusAppearance, formatBytesForDisplay, formatNetworkSpeed, form
 import { VpsTags } from '@/components/VpsTags';
 import { useTranslation } from 'react-i18next';
 import { getTimeRangeDetails, type TimeRangeValue } from '@/components/TimeRangeSelector';
-import HistoricalMetricChart from '@/components/HistoricalMetricChart';
-import RealtimeMetricChart from '@/components/RealtimeMetricChart';
+import HistoricalMetricChart from '@/components/metric/HistoricalMetricChart';
+import RealtimeMetricChart from '@/components/metric/RealtimeMetricChart';
 import RealtimeServiceMonitors from '@/components/RealtimeServiceMonitors';
 import { ReferenceArea, Legend, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, type LegendProps } from 'recharts';
 import type { ValueType } from 'recharts/types/component/DefaultTooltipContent';
