@@ -4,6 +4,7 @@ use axum::{
     http::StatusCode,
     routing::{get, post, put},
 };
+use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 // Removed: use sea_orm::DbErr; // Added DbErr
 use crate::agent_service::{
@@ -125,13 +126,13 @@ async fn preview_vps_config(
     State(app_state): State<Arc<AppState>>,
     Path(vps_id): Path<i32>,
 ) -> Result<Json<WebAgentConfig>, AppError> {
-    let effective_config = get_effective_vps_config(app_state, vps_id).await?;
+    let effective_config = get_effective_vps_config(&app_state.db_pool, vps_id).await?;
     Ok(Json(effective_config.into()))
 }
 
 /// Gets the effective config for a VPS and pushes it to the agent if connected.
 pub async fn push_config_to_vps(app_state: Arc<AppState>, vps_id: i32) -> Result<(), AppError> {
-    let effective_config = get_effective_vps_config(app_state.clone(), vps_id).await?;
+    let effective_config = get_effective_vps_config(&app_state.db_pool, vps_id).await?;
 
     // Find agent and send message
     let agent_state = {
@@ -199,12 +200,12 @@ pub async fn push_config_to_vps(app_state: Arc<AppState>, vps_id: i32) -> Result
 
 /// Calculates the effective configuration for a given VPS.
 pub async fn get_effective_vps_config(
-    app_state: Arc<AppState>,
+    db_pool: &DatabaseConnection,
     vps_id: i32,
 ) -> Result<AgentConfig, AppError> {
     // 1. Get global config
     let global_config_setting_model: setting::Model =
-        db_services::get_setting(&app_state.db_pool, "global_agent_config")
+        db_services::get_setting(db_pool, "global_agent_config")
             .await
             .map_err(|db_err| AppError::DatabaseError(db_err.to_string()))?
             .ok_or_else(|| AppError::NotFound("Global agent config not found.".to_string()))?;
@@ -214,7 +215,7 @@ pub async fn get_effective_vps_config(
             .map_err(|e| AppError::ServerError(format!("Failed to parse global config: {e}")))?;
 
     // 2. Get VPS and merge override if it exists
-    let vps_model: vps::Model = db_services::get_vps_by_id(&app_state.db_pool, vps_id)
+    let vps_model: vps::Model = db_services::get_vps_by_id(db_pool, vps_id)
         .await
         .map_err(|db_err| AppError::DatabaseError(db_err.to_string()))?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
@@ -262,7 +263,7 @@ pub async fn get_effective_vps_config(
 
     // 3. Get service monitor tasks for this agent
     let tasks =
-        db_services::service_monitor_service::get_tasks_for_agent(&app_state.db_pool, vps_id)
+        db_services::service_monitor_service::get_tasks_for_agent(db_pool, vps_id)
             .await
             .map_err(|e| {
                 AppError::DatabaseError(format!(

@@ -391,6 +391,8 @@ async fn run_agent_logic() -> Result<(), Box<dyn Error + Send + Sync>> {
         match ConnectionHandler::connect_and_handshake(&agent_cli_config, initial_id).await {
             Ok(handler) => {
                 info!("Connection and handshake successful. Spawning tasks.");
+                // Log the received config
+                info!(config = ?handler.initial_agent_config, "Received initial config from server.");
                 reconnect_delay_seconds = DEFAULT_RECONNECT_DELAY_SECONDS; // Reset delay on successful connection
 
                 // Create the shared, mutable configuration state

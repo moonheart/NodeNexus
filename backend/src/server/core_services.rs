@@ -131,17 +131,27 @@ pub async fn process_agent_stream<S>(
                         }
                     };
 
-                    let initial_config = AgentConfig {
-                        metrics_collect_interval_seconds: 1,
-                        metrics_upload_batch_max_size: 50,
-                        metrics_upload_interval_seconds: 1,
-                        docker_info_collect_interval_seconds: 1,
-                        docker_info_upload_interval_seconds: 1,
-                        generic_metrics_upload_batch_max_size: 50,
-                        generic_metrics_upload_interval_seconds: 1,
-                        feature_flags: std::collections::HashMap::new(),
-                        log_level: "INFO".to_string(),
-                        service_monitor_tasks: tasks,
+                    let initial_config = match crate::web::routes::config_routes::get_effective_vps_config(
+                        &context.db_pool,
+                        vps_db_id_from_msg,
+                    )
+                    .await
+                    {
+                        Ok(config) => config,
+                        Err(e) => {
+                            error!(vps_id = vps_db_id_from_msg, error = ?e, "Failed to get effective config for VPS during handshake. Disconnecting.");
+                            // Send a NACK and close the connection
+                            let ack = ServerHandshakeAck {
+                                authentication_successful: false,
+                                error_message: "Failed to retrieve server-side configuration.".to_string(),
+                                ..Default::default()
+                            };
+                             let _ = agent_stream.send(MessageToAgent {
+                                server_message_id: server_message_id_counter,
+                                payload: Some(AgentPayload::ServerHandshakeAck(ack)),
+                            }).await;
+                            return;
+                        }
                     };
 
                     if let Err(e) = services::update_vps_info_on_handshake(

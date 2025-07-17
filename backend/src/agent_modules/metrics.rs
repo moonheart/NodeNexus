@@ -243,13 +243,16 @@ pub async fn metrics_collection_loop(
     // --- Dynamic Configuration Setup ---
     let (mut collect_interval_duration, mut upload_interval_duration, mut batch_max_size) = {
         let config = shared_agent_config.read().unwrap();
+        let initial_collect_interval = config.metrics_collect_interval_seconds;
+        info!(initial_value = initial_collect_interval, "Metrics loop initializing with collect interval.");
         (
-            config.metrics_collect_interval_seconds,
+            initial_collect_interval,
             config.metrics_upload_interval_seconds,
             config.metrics_upload_batch_max_size,
         )
     };
     if collect_interval_duration == 0 {
+        warn!("Initial collect interval is 0, falling back to 60 seconds.");
         collect_interval_duration = 60;
     }
     if upload_interval_duration == 0 {
@@ -290,6 +293,11 @@ pub async fn metrics_collection_loop(
             } else {
                 60
             };
+            debug!(
+                current_interval = collect_interval_duration,
+                new_interval_from_config = new_collect_interval,
+                "Checking for metrics configuration changes."
+            );
             let new_upload_interval = if config.metrics_upload_interval_seconds > 0 {
                 config.metrics_upload_interval_seconds
             } else {
