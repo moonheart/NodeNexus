@@ -3,9 +3,10 @@ use crate::agent_service::{
     message_to_server::Payload,
 };
 use netdev::interface::InterfaceType;
+use std::collections::HashSet;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use sysinfo::{Disks, Networks, ProcessRefreshKind, System};
+use sysinfo::{DiskKind, Disks, Networks, ProcessRefreshKind, System};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
@@ -20,6 +21,7 @@ fn collect_performance_snapshot(
     networks: &mut Networks,
     prev_collection_time_opt: &Option<Instant>, // Changed from PreviousNetworkState
     current_time: Instant,                      // Pass current time for rate calculation
+    excluded_fs_types: &HashSet<&str>,
 ) -> PerformanceSnapshot {
     // Return type changed back
     // Refresh relevant parts of System
@@ -46,9 +48,17 @@ fn collect_performance_snapshot(
     let mut delta_total_disk_written_bytes: u64 = 0;
 
     for disk_info in disks.list() {
-        let disk_usage_stats = disk_info.usage();
-        delta_total_disk_read_bytes += disk_usage_stats.read_bytes; // Use delta directly
-        delta_total_disk_written_bytes += disk_usage_stats.written_bytes; // Use delta directly
+        let fs_type_str = disk_info.file_system().to_string_lossy();
+
+        // Filter out disks that are not physical, have no total space, or are of an excluded fs type.
+        if disk_info.total_space() > 0
+            && matches!(disk_info.kind(), DiskKind::HDD | DiskKind::SSD)
+            && !excluded_fs_types.contains(fs_type_str.as_ref())
+        {
+            let disk_usage_stats = disk_info.usage();
+            delta_total_disk_read_bytes += disk_usage_stats.read_bytes; // Use delta directly
+            delta_total_disk_written_bytes += disk_usage_stats.written_bytes; // Use delta directly
+        }
     }
 
     // Calculate Disk I/O BPS using deltas from sysinfo and time from prev_net_state
@@ -72,23 +82,31 @@ fn collect_performance_snapshot(
     let mut collected_disk_usages = Vec::new();
     // The 'disks' variable is already refreshed and contains the list and their stats.
     for disk_info in disks.list() {
-        let total_space = disk_info.total_space();
-        let available_space = disk_info.available_space();
-        let used_space = total_space.saturating_sub(available_space); // Use saturating_sub for safety
-        let usage_percent = if total_space > 0 {
-            (used_space as f64 / total_space as f64) * 100.0
-        } else {
-            0.0
-        };
+        let fs_type_str = disk_info.file_system().to_string_lossy();
 
-        collected_disk_usages.push(crate::agent_service::DiskUsage {
-            // Explicitly use crate::agent_service
-            mount_point: disk_info.mount_point().to_string_lossy().into_owned(),
-            used_bytes: used_space,
-            total_bytes: total_space,
-            fstype: disk_info.file_system().to_string_lossy().into_owned(),
-            usage_percent,
-        });
+        // Apply the same filter here for consistency.
+        if disk_info.total_space() > 0
+            && matches!(disk_info.kind(), DiskKind::HDD | DiskKind::SSD)
+            && !excluded_fs_types.contains(fs_type_str.as_ref())
+        {
+            let total_space = disk_info.total_space();
+            let available_space = disk_info.available_space();
+            let used_space = total_space.saturating_sub(available_space); // Use saturating_sub for safety
+            let usage_percent = if total_space > 0 {
+                (used_space as f64 / total_space as f64) * 100.0
+            } else {
+                0.0
+            };
+
+            collected_disk_usages.push(crate::agent_service::DiskUsage {
+                // Explicitly use crate::agent_service
+                mount_point: disk_info.mount_point().to_string_lossy().into_owned(),
+                used_bytes: used_space,
+                total_bytes: total_space,
+                fstype: fs_type_str.into_owned(),
+                usage_percent,
+            });
+        }
     }
 
     // --- Network I/O (Default Interface Only) ---
@@ -216,6 +234,12 @@ pub async fn metrics_collection_loop(
     let mut networks = Networks::new_with_refreshed_list();
     let mut snapshot_batch_vec = Vec::new();
 
+    // Define a set of file system types to exclude.
+    let excluded_fs_types: HashSet<&str> = ["squashfs", "overlay", "devtmpfs", "tmpfs"]
+        .iter()
+        .cloned()
+        .collect();
+
     // --- Dynamic Configuration Setup ---
     let (mut collect_interval_duration, mut upload_interval_duration, mut batch_max_size) = {
         let config = shared_agent_config.read().unwrap();
@@ -311,6 +335,7 @@ pub async fn metrics_collection_loop(
                     &mut networks,
                     &prev_collection_time, // Pass the Option<Instant>
                     current_time,
+                    &excluded_fs_types,
                 );
                 snapshot_batch_vec.push(snapshot.clone());
                 prev_collection_time = Some(current_time); // Update prev_collection_time for the next iteration
