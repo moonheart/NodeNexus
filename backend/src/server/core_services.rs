@@ -12,7 +12,7 @@ use crate::agent_service::{
     AgentConfig, CommandStatus as GrpcCommandStatus, MessageToAgent, MessageToServer,
     OutputType as GrpcOutputType, ServerHandshakeAck,
 };
-use crate::db::entities::{performance_disk_usage, performance_metric};
+use crate::db::entities::performance_metric;
 use crate::db::enums::ChildCommandStatus;
 use crate::db::services;
 use crate::server::agent_state::{AgentSender, AgentState, ConnectedAgents};
@@ -35,10 +35,7 @@ pub struct AgentStreamContext {
     pub ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     pub update_trigger_tx: mpsc::Sender<()>,
     pub batch_command_manager: Arc<crate::db::services::BatchCommandManager>,
-    pub metric_sender: mpsc::Sender<(
-        performance_metric::Model,
-        Vec<performance_disk_usage::Model>,
-    )>,
+    pub metric_sender: mpsc::Sender<performance_metric::Model>,
 }
 
 

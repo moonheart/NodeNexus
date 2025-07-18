@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast, mpsc};
 
 use crate::axum_embed::{FallbackBehavior, ServeEmbed};
-use crate::db::entities::{performance_disk_usage, performance_metric};
+use crate::db::entities::performance_metric;
 use crate::db::services::{AlertService, BatchCommandManager};
 use crate::notifications::service::NotificationService;
 use crate::server::agent_state::{ConnectedAgents, LiveServerDataCache};
@@ -65,10 +65,7 @@ pub struct AppState {
     pub batch_command_updates_tx: broadcast::Sender<BatchCommandUpdateMsg>,
     pub result_broadcaster: Arc<ResultBroadcaster>,
     pub config: Arc<ServerConfig>,
-    pub metric_sender: mpsc::Sender<(
-        performance_metric::Model,
-        Vec<performance_disk_usage::Model>,
-    )>,
+    pub metric_sender: mpsc::Sender<performance_metric::Model>,
 }
 
 async fn register_handler(
@@ -128,10 +125,7 @@ pub fn create_axum_router(
     batch_command_updates_tx: broadcast::Sender<BatchCommandUpdateMsg>,
     result_broadcaster: Arc<ResultBroadcaster>,
     config: Arc<ServerConfig>,
-    metric_sender: mpsc::Sender<(
-        performance_metric::Model,
-        Vec<performance_disk_usage::Model>,
-    )>,
+    metric_sender: mpsc::Sender<performance_metric::Model>,
 ) -> Router {
     let command_dispatcher = Arc::new(CommandDispatcher::new(
         connected_agents.clone(),

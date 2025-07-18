@@ -33,6 +33,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "agent_service.ServiceMonitorTask",
             "#[derive(serde::Serialize, serde::Deserialize)]",
         )
+        .type_attribute(
+            "agent_service.DiskUsage",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
         .compile_protos(&proto_files, &["./proto"])?;
 
     // Tell cargo to re-run this build script if any proto file changes.

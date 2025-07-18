@@ -7,7 +7,7 @@ use tonic::{Request, Response, Status, Streaming};
 use super::agent_state::{ConnectedAgents, LiveServerDataCache};
 use super::core_services::AgentStreamContext;
 use super::handlers::handle_connection;
-use crate::db::entities::{performance_disk_usage, performance_metric};
+use crate::db::entities::performance_metric;
 use crate::db::services::BatchCommandManager;
 use crate::web::models::websocket_models::WsMessage;
 use tokio::sync::broadcast; // Added BatchCommandManager
@@ -20,10 +20,7 @@ pub struct MyAgentCommService {
     pub ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     pub update_trigger_tx: mpsc::Sender<()>,
     pub batch_command_manager: Arc<BatchCommandManager>, // Added BatchCommandManager
-    pub metric_sender: mpsc::Sender<(
-        performance_metric::Model,
-        Vec<performance_disk_usage::Model>,
-    )>,
+    pub metric_sender: mpsc::Sender<performance_metric::Model>,
 }
 
 impl MyAgentCommService {
@@ -34,10 +31,7 @@ impl MyAgentCommService {
         ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
         update_trigger_tx: mpsc::Sender<()>,
         batch_command_manager: Arc<BatchCommandManager>, // Added BatchCommandManager
-        metric_sender: mpsc::Sender<(
-            performance_metric::Model,
-            Vec<performance_disk_usage::Model>,
-        )>,
+        metric_sender: mpsc::Sender<performance_metric::Model>,
     ) -> Self {
         Self {
             connected_agents,

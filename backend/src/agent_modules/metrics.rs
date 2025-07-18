@@ -109,6 +109,12 @@ fn collect_performance_snapshot(
         }
     }
 
+    // --- Calculate total disk space from collected usages ---
+    let (total_disk_space_bytes, used_disk_space_bytes) = collected_disk_usages.iter().fold(
+        (0, 0),
+        |(total_acc, used_acc), disk| (total_acc + disk.total_bytes, used_acc + disk.used_bytes),
+    );
+
     // --- Network I/O (Default Interface Only) ---
     let mut cumulative_rx_bytes: u64 = 0;
     let mut cumulative_tx_bytes: u64 = 0;
@@ -207,6 +213,8 @@ fn collect_performance_snapshot(
         disk_total_io_read_bytes_per_sec: disk_read_bps, // NOW ACTUAL BPS
         disk_total_io_write_bytes_per_sec: disk_write_bps, // NOW ACTUAL BPS
         disk_usages: collected_disk_usages,              // MODIFIED
+        total_disk_space_bytes,                          // NEW
+        used_disk_space_bytes,                           // NEW
         // Cumulative network data (Default Interface Only)
         network_rx_bytes_cumulative: cumulative_rx_bytes, // Field 10
         network_tx_bytes_cumulative: cumulative_tx_bytes, // Field 11

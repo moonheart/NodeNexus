@@ -1,48 +1,57 @@
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use sea_orm::{
-    ActiveModelTrait,
-    ColumnTrait,
-    DatabaseConnection,
-    DbErr,
-    EntityTrait,
-    FromQueryResult,
-    Order,
-    QueryFilter,
-    QueryOrder,
-    QuerySelect,
-    Set, // Removed IntoActiveModel, ModelTrait, PaginatorTrait, Value
-    TransactionTrait,
-    sea_query::{Alias, Expr, Func},
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
+    FromQueryResult, Order, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
+    sea_query::{Alias, Expr, Func, Query},
 };
 use serde::{Deserialize, Serialize};
-use tracing::error;
+use serde_json::{json, Value as Json};
+use std::collections::HashMap;
+use tracing::{debug, error};
 
-use crate::agent_service::PerformanceSnapshotBatch;
-use crate::db::entities::{performance_disk_usage, performance_metric};
-use crate::db::services::vps_traffic_service; // Corrected direct import
+use crate::agent_service::{DiskUsage, PerformanceSnapshotBatch};
+use crate::db::entities::{performance_metric, vps};
+use crate::db::services::vps_traffic_service;
 
-// --- PerformanceMetric Service Functions ---
+// --- Data Structures for API Response ---
 
-/// Represents a unified performance metric point for API responses.
-/// It can hold either raw or aggregated data, but presents it with consistent field names.
-#[derive(FromQueryResult, Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PerformanceMetricPoint {
     pub time: DateTime<Utc>,
     pub vps_id: i32,
+    // Base metrics (from AVG)
     pub cpu_usage_percent: Option<f64>,
-    pub memory_usage_bytes: Option<f64>, // f64 for potential AVG
-    pub memory_total_bytes: Option<i64>, // i64 for MAX or raw value
-    pub network_rx_instant_bps: Option<f64>, // f64 for potential AVG
-    pub network_tx_instant_bps: Option<f64>, // f64 for potential AVG
-    pub disk_io_read_bps: Option<f64>,       // f64 for potential AVG
-    pub disk_io_write_bps: Option<f64>,      // f64 for potential AVG
+    pub memory_usage_bytes: Option<f64>,
+    pub swap_usage_bytes: Option<f64>,
+    pub disk_io_read_bps: Option<f64>,
+    pub disk_io_write_bps: Option<f64>,
+    pub network_rx_instant_bps: Option<f64>,
+    pub network_tx_instant_bps: Option<f64>,
+    // Aggregated disk usages
+    pub used_disk_space_bytes: Option<f64>,
+    pub total_disk_space_bytes: Option<f64>,
 }
 
-/// Retrieves performance metrics for a given VPS within a time range.
-/// If `interval_seconds` is provided, data is aggregated into time buckets.
-/// Otherwise, raw data points are returned.
-/// The returned `PerformanceMetricPoint` has a consistent structure for both cases.
+// --- Data Structures for Query Results ---
+
+#[derive(FromQueryResult, Debug)]
+struct UnifiedMetricResult {
+    time: DateTime<Utc>,
+    vps_id: i32,
+    avg_cpu_usage_percent: Option<f64>,
+    avg_memory_usage_bytes: Option<f64>,
+    avg_swap_usage_bytes: Option<f64>,
+    avg_disk_io_read_bps: Option<f64>,
+    avg_disk_io_write_bps: Option<f64>,
+    avg_network_rx_instant_bps: Option<f64>,
+    avg_network_tx_instant_bps: Option<f64>,
+    avg_used_disk_space_bytes: Option<f64>,
+    avg_total_disk_space_bytes: Option<f64>,
+}
+
+/// Retrieves performance metrics for a given VPS within a time range,
+/// intelligently selecting the appropriate continuous aggregate view.
 pub async fn get_performance_metrics_for_vps(
     db: &DatabaseConnection,
     vps_id: i32,
@@ -50,113 +59,64 @@ pub async fn get_performance_metrics_for_vps(
     end_time: DateTime<Utc>,
     interval_seconds: Option<u32>,
 ) -> Result<Vec<PerformanceMetricPoint>, DbErr> {
-    if let Some(seconds) = interval_seconds {
-        // AGGREGATED QUERY
-        let time_bucket_expr = Expr::cust(format!(
-            "time_bucket(INTERVAL '{} seconds', \"time\")",
-            seconds.max(1)
-        ));
+    let duration = end_time - start_time;
+    let interval_secs = interval_seconds.unwrap_or(60).max(1);
 
-        performance_metric::Entity::find()
-            .select_only()
-            .column_as(time_bucket_expr.clone(), "time")
-            .column(performance_metric::Column::VpsId)
-            .column_as(
-                Expr::expr(Func::avg(Expr::col(
-                    performance_metric::Column::CpuUsagePercent,
-                ))),
-                "cpu_usage_percent", // Map AVG to the base field name
-            )
-            .column_as(
-                Expr::expr(Func::avg(Expr::col(
-                    performance_metric::Column::MemoryUsageBytes,
-                ))).cast_as(Alias::new("double precision")),
-                "memory_usage_bytes", // Map AVG to the base field name
-            )
-            .column_as(
-                Expr::expr(Func::max(Expr::col(
-                    performance_metric::Column::MemoryTotalBytes,
-                ))),
-                "memory_total_bytes", // Map MAX to the base field name
-            )
-            .column_as(
-                Expr::expr(Func::avg(Expr::col(
-                    performance_metric::Column::NetworkRxInstantBps,
-                ))).cast_as(Alias::new("double precision")),
-                "network_rx_instant_bps", // Map AVG to the base field name
-            )
-            .column_as(
-                Expr::expr(Func::avg(Expr::col(
-                    performance_metric::Column::NetworkTxInstantBps,
-                ))).cast_as(Alias::new("double precision")),
-                "network_tx_instant_bps", // Map AVG to the base field name
-            )
-            .column_as(
-                Expr::expr(Func::avg(Expr::col(
-                    performance_metric::Column::DiskIoReadBps,
-                ))).cast_as(Alias::new("double precision")),
-                "disk_io_read_bps", // Map AVG to the base field name
-            )
-            .column_as(
-                Expr::expr(Func::avg(Expr::col(
-                    performance_metric::Column::DiskIoWriteBps,
-                ))).cast_as(Alias::new("double precision")),
-                "disk_io_write_bps", // Map AVG to the base field name
-            )
-            .filter(performance_metric::Column::VpsId.eq(vps_id))
-            .filter(performance_metric::Column::Time.gte(start_time))
-            .filter(performance_metric::Column::Time.lte(end_time))
-            .group_by(time_bucket_expr)
-            .group_by(performance_metric::Column::VpsId)
-            .order_by(Expr::col(Alias::new("time")), Order::Asc)
-            .into_model::<PerformanceMetricPoint>()
-            .all(db)
-            .await
+    let (metric_source, time_col) = if duration <= Duration::days(2) {
+        ("performance_metrics_summary_1m", "bucket")
+    } else if duration <= Duration::days(30) {
+        ("performance_metrics_summary_1h", "bucket")
     } else {
-        // RAW DATA QUERY
-        performance_metric::Entity::find()
-            .select_only()
-            .column(performance_metric::Column::Time)
-            .column(performance_metric::Column::VpsId)
-            .column_as(
-                performance_metric::Column::CpuUsagePercent,
-                "cpu_usage_percent",
-            )
-            .column_as(
-                Expr::col(performance_metric::Column::MemoryUsageBytes)
-                    .cast_as(Alias::new("float")),
-                "memory_usage_bytes",
-            )
-            .column_as(
-                performance_metric::Column::MemoryTotalBytes,
-                "memory_total_bytes",
-            )
-            .column_as(
-                Expr::col(performance_metric::Column::NetworkRxInstantBps)
-                    .cast_as(Alias::new("float")),
-                "network_rx_instant_bps",
-            )
-            .column_as(
-                Expr::col(performance_metric::Column::NetworkTxInstantBps)
-                    .cast_as(Alias::new("float")),
-                "network_tx_instant_bps",
-            )
-            .column_as(
-                Expr::col(performance_metric::Column::DiskIoReadBps).cast_as(Alias::new("float")),
-                "disk_io_read_bps",
-            )
-            .column_as(
-                Expr::col(performance_metric::Column::DiskIoWriteBps).cast_as(Alias::new("float")),
-                "disk_io_write_bps",
-            )
-            .filter(performance_metric::Column::VpsId.eq(vps_id))
-            .filter(performance_metric::Column::Time.gte(start_time))
-            .filter(performance_metric::Column::Time.lte(end_time))
-            .order_by(performance_metric::Column::Time, Order::Asc)
-            .into_model::<PerformanceMetricPoint>()
-            .all(db)
-            .await
-    }
+        ("performance_metrics_summary_1d", "bucket")
+    };
+
+    debug!(?duration, ?interval_seconds, metric_source, "Choosing data source for performance query");
+
+    let time_bucket_expr = |col: &str| -> String {
+        format!("time_bucket(INTERVAL '{} seconds', \"{}\")", interval_secs, col)
+    };
+
+    // --- Query for all metrics from a single source ---
+    let metric_query = Query::select()
+        .from(Alias::new(metric_source))
+        .expr_as(Expr::cust(&time_bucket_expr(time_col)), Alias::new("time"))
+        .column(Alias::new("vps_id"))
+        .expr_as(Expr::cust("AVG(avg_cpu_usage_percent)::double precision"), Alias::new("avg_cpu_usage_percent"))
+        .expr_as(Expr::cust("AVG(avg_memory_usage_bytes)::double precision"), Alias::new("avg_memory_usage_bytes"))
+        .expr_as(Expr::cust("AVG(avg_swap_usage_bytes)::double precision"), Alias::new("avg_swap_usage_bytes"))
+        .expr_as(Expr::cust("AVG(avg_disk_io_read_bps)::double precision"), Alias::new("avg_disk_io_read_bps"))
+        .expr_as(Expr::cust("AVG(avg_disk_io_write_bps)::double precision"), Alias::new("avg_disk_io_write_bps"))
+        .expr_as(Expr::cust("AVG(avg_network_rx_instant_bps)::double precision"), Alias::new("avg_network_rx_instant_bps"))
+        .expr_as(Expr::cust("AVG(avg_network_tx_instant_bps)::double precision"), Alias::new("avg_network_tx_instant_bps"))
+        .expr_as(Expr::cust("AVG(avg_used_disk_space_bytes)::double precision"), Alias::new("avg_used_disk_space_bytes"))
+        .expr_as(Expr::cust("AVG(avg_total_disk_space_bytes)::double precision"), Alias::new("avg_total_disk_space_bytes"))
+        .and_where(Expr::col("vps_id").eq(vps_id))
+        .and_where(Expr::col(time_col).gte(start_time))
+        .and_where(Expr::col(time_col).lte(end_time))
+        .add_group_by(vec![Expr::cust("1"), Expr::cust("2")]) // Group by time bucket and vps_id
+        .order_by(Alias::new("time"), Order::Asc)
+        .to_owned();
+
+    let metric_results = UnifiedMetricResult::find_by_statement(db.get_database_backend().build(&metric_query)).all(db).await?;
+
+    // --- Map results to response struct ---
+    let results = metric_results.into_iter().map(|metric_res| {
+        PerformanceMetricPoint {
+            time: metric_res.time,
+            vps_id: metric_res.vps_id,
+            cpu_usage_percent: metric_res.avg_cpu_usage_percent,
+            memory_usage_bytes: metric_res.avg_memory_usage_bytes,
+            swap_usage_bytes: metric_res.avg_swap_usage_bytes,
+            disk_io_read_bps: metric_res.avg_disk_io_read_bps,
+            disk_io_write_bps: metric_res.avg_disk_io_write_bps,
+            network_rx_instant_bps: metric_res.avg_network_rx_instant_bps,
+            network_tx_instant_bps: metric_res.avg_network_tx_instant_bps,
+            used_disk_space_bytes: metric_res.avg_used_disk_space_bytes,
+            total_disk_space_bytes: metric_res.avg_total_disk_space_bytes,
+        }
+    }).collect();
+
+    Ok(results)
 }
 
 /// Retrieves the latest performance metric for a given VPS.
@@ -173,11 +133,14 @@ pub async fn get_latest_performance_metric_for_vps(
 
 /// Saves a batch of performance snapshots for a given VPS.
 /// This includes the main metrics, detailed disk usage, and detailed network interface stats.
+/// Saves a batch of performance snapshots for a given VPS.
+/// This function now saves aggregated disk usage into `performance_metrics`
+/// and detailed disk usage into the `vps.metadata` JSONB column.
 pub async fn save_performance_snapshot_batch(
     db: &DatabaseConnection,
     vps_id: i32,
     batch: &PerformanceSnapshotBatch,
-) -> Result<Vec<(performance_metric::Model, Vec<performance_disk_usage::Model>)>, DbErr> {
+) -> Result<Vec<performance_metric::Model>, DbErr> {
     if batch.snapshots.is_empty() {
         return Ok(Vec::new());
     }
@@ -201,38 +164,27 @@ pub async fn save_performance_snapshot_batch(
             swap_total_bytes: Set(snapshot.swap_total_bytes as i64),
             disk_io_read_bps: Set(snapshot.disk_total_io_read_bytes_per_sec as i64),
             disk_io_write_bps: Set(snapshot.disk_total_io_write_bytes_per_sec as i64),
+            // New aggregated disk fields
+            total_disk_space_bytes: Set(snapshot.total_disk_space_bytes as i64),
+            used_disk_space_bytes: Set(snapshot.used_disk_space_bytes as i64),
+            // Network fields
             network_rx_cumulative: Set(snapshot.network_rx_bytes_cumulative as i64),
             network_tx_cumulative: Set(snapshot.network_tx_bytes_cumulative as i64),
             network_rx_instant_bps: Set(snapshot.network_rx_bytes_per_sec as i64),
             network_tx_instant_bps: Set(snapshot.network_tx_bytes_per_sec as i64),
+            // Other system stats
             uptime_seconds: Set(snapshot.uptime_seconds as i64),
             total_processes_count: Set(snapshot.total_processes_count as i32),
             running_processes_count: Set(snapshot.running_processes_count as i32),
             tcp_established_connection_count: Set(snapshot.tcp_established_connection_count as i32),
-            ..Default::default() // For id
         };
         let metric_model = metric_active_model.insert(&txn).await?;
-
-        let mut saved_disk_usages = Vec::with_capacity(snapshot.disk_usages.len());
-        for disk_usage in &snapshot.disk_usages {
-            let disk_usage_active_model = performance_disk_usage::ActiveModel {
-                performance_metric_id: Set(metric_model.id),
-                mount_point: Set(disk_usage.mount_point.clone()),
-                used_bytes: Set(disk_usage.used_bytes as i64),
-                total_bytes: Set(disk_usage.total_bytes as i64),
-                fstype: Set(Some(disk_usage.fstype.clone())),
-                usage_percent: Set(disk_usage.usage_percent),
-                ..Default::default() // For id
-            };
-            let disk_usage_model = disk_usage_active_model.insert(&txn).await?;
-            saved_disk_usages.push(disk_usage_model);
-        }
-        saved_metrics.push((metric_model, saved_disk_usages));
+        saved_metrics.push(metric_model);
     }
 
-    // After saving all metrics in the batch, update the traffic stats ONCE
-    // using the LATEST cumulative values from the last snapshot in the batch.
+    // After saving all metrics, update related VPS data using the LATEST snapshot.
     if let Some(last_snapshot) = batch.snapshots.last() {
+        // 1. Update VPS traffic stats
         if let Err(e) = vps_traffic_service::update_vps_traffic_stats_after_metric(
             &txn,
             vps_id,
@@ -241,11 +193,14 @@ pub async fn save_performance_snapshot_batch(
         )
         .await
         {
-            error!(
-                vps_id = vps_id,
-                error = %e,
-                "Failed to update VPS traffic stats. Rolling back metric save."
-            );
+            error!(vps_id, error = %e, "Failed to update VPS traffic stats. Rolling back.");
+            txn.rollback().await?;
+            return Err(e);
+        }
+
+        // 2. Update VPS metadata with the latest detailed disk usage
+        if let Err(e) = update_vps_disk_usage_metadata(&txn, vps_id, &last_snapshot.disk_usages).await {
+            error!(vps_id, error = %e, "Failed to update VPS disk usage metadata. Rolling back.");
             txn.rollback().await?;
             return Err(e);
         }
@@ -255,14 +210,46 @@ pub async fn save_performance_snapshot_batch(
     Ok(saved_metrics)
 }
 
-/// Helper struct for the disk usage summary query
-#[derive(FromQueryResult, Debug)]
-struct DiskUsageSummary {
-    total_sum_bytes: Option<i64>,
-    used_sum_bytes: Option<i64>,
+/// Helper function to update the `metadata` field of a VPS with disk usage details.
+async fn update_vps_disk_usage_metadata(
+    txn: &impl ConnectionTrait,
+    vps_id: i32,
+    disk_usages: &[DiskUsage],
+) -> Result<(), DbErr> {
+    // Find the VPS to get its current metadata
+    let vps_model = vps::Entity::find_by_id(vps_id)
+        .one(txn)
+        .await?
+        .ok_or_else(|| DbErr::RecordNotFound(format!("VPS with ID {} not found", vps_id)))?;
+
+    // Serialize the detailed disk usage into a JSON value
+    let disk_usage_json = json!(disk_usages);
+
+    // Get current metadata or create a new JSON object
+    let mut current_metadata = vps_model.metadata.unwrap_or_else(|| Json::Object(Default::default()));
+
+    // Update the 'diskUsage' key within the metadata
+    if let Some(obj) = current_metadata.as_object_mut() {
+        obj.insert("diskUsage".to_string(), disk_usage_json);
+    } else {
+        // This case should be rare (if metadata is not an object), but we handle it by creating a new object.
+        current_metadata = json!({ "diskUsage": disk_usage_json });
+    }
+
+    // Create an active model to update the record
+    let vps_active_model = vps::ActiveModel {
+        id: Set(vps_id),
+        metadata: Set(Some(current_metadata)),
+        ..Default::default() // Important: only updates specified fields
+    };
+
+    vps::Entity::update(vps_active_model).exec(txn).await?;
+
+    Ok(())
 }
 
 /// Retrieves the summary of total and used disk space from the latest performance metric.
+/// This now reads directly from the latest `performance_metric` record.
 pub async fn get_latest_disk_usage_summary(
     db: &DatabaseConnection,
     vps_id: i32,
@@ -274,40 +261,10 @@ pub async fn get_latest_disk_usage_summary(
         .await?;
 
     if let Some(latest_metric) = latest_metric_opt {
-        let summary_opt: Option<DiskUsageSummary> = performance_disk_usage::Entity::find()
-            .select_only()
-            .column_as(
-                Expr::expr(Func::sum(Expr::col(
-                    performance_disk_usage::Column::TotalBytes,
-                ))),
-                "total_sum_bytes",
-            )
-            .column_as(
-                Expr::expr(Func::sum(Expr::col(
-                    performance_disk_usage::Column::UsedBytes,
-                ))),
-                "used_sum_bytes",
-            )
-            .filter(performance_disk_usage::Column::PerformanceMetricId.eq(latest_metric.id))
-            .into_model::<DiskUsageSummary>()
-            .one(db)
-            .await?;
-
-        match summary_opt {
-            Some(summary) => {
-                // If SUM results in NULL (no rows or all values NULL), FromQueryResult sets Option to None.
-                // If there are no disk usage records for the latest metric, both sums will be None.
-                if summary.total_sum_bytes.is_none() && summary.used_sum_bytes.is_none() {
-                    Ok(None)
-                } else {
-                    let total = summary.total_sum_bytes.unwrap_or(0);
-                    let used = summary.used_sum_bytes.unwrap_or(0);
-                    Ok(Some((total, used)))
-                }
-            }
-            None => Ok(None), // Should not happen if latest_metric exists and query is structured correctly,
-                              // but implies no disk usage records.
-        }
+        Ok(Some((
+            latest_metric.total_disk_space_bytes,
+            latest_metric.used_disk_space_bytes,
+        )))
     } else {
         Ok(None) // No performance metrics for this VPS
     }

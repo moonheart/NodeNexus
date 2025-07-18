@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "performance_metrics")]
 pub struct Model {
-    #[sea_orm(primary_key)]
-    pub id: i32,
+    #[sea_orm(primary_key, auto_increment = false)]
     pub time: ChronoDateTimeUtc,
+    #[sea_orm(primary_key, auto_increment = false)]
     pub vps_id: i32,
     pub cpu_usage_percent: f64,
     pub memory_usage_bytes: i64,
@@ -15,6 +15,8 @@ pub struct Model {
     pub swap_total_bytes: i64,
     pub disk_io_read_bps: i64,
     pub disk_io_write_bps: i64,
+    pub total_disk_space_bytes: i64,
+    pub used_disk_space_bytes: i64,
     pub network_rx_cumulative: i64,
     pub network_tx_cumulative: i64,
     pub network_rx_instant_bps: i64,
@@ -34,27 +36,11 @@ pub enum Relation {
     )]
     Vps,
     // PerformanceMetric might have_many PerformanceDiskUsage and PerformanceNetworkInterfaceStat
-    #[sea_orm(has_many = "super::performance_disk_usage::Entity")]
-    PerformanceDiskUsage,
-    #[sea_orm(has_many = "super::performance_network_interface_stat::Entity")]
-    PerformanceNetworkInterfaceStat,
 }
 
 impl Related<super::vps::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Vps.def()
-    }
-}
-
-impl Related<super::performance_disk_usage::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::PerformanceDiskUsage.def()
-    }
-}
-
-impl Related<super::performance_network_interface_stat::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::PerformanceNetworkInterfaceStat.def()
     }
 }
 

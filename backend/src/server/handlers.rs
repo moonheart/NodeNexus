@@ -1,19 +1,15 @@
 use futures_util::{Sink, Stream, StreamExt};
-use sea_orm::DatabaseConnection;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Status};
 use tracing::info;
 
 use super::core_services::{self, AgentStream, AgentStreamContext};
 use crate::agent_service::{MessageToAgent, MessageToServer};
-use crate::db::entities::{performance_disk_usage, performance_metric};
-use crate::server::agent_state::{AgentSender, ConnectedAgents, LiveServerDataCache};
-use crate::web::models::websocket_models::WsMessage;
-use tokio::sync::broadcast;
+use crate::server::agent_state::AgentSender;
 
 // 1. Define the GrpcStreamAdapter
 pub struct GrpcStreamAdapter {

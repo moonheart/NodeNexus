@@ -34,12 +34,15 @@ message PerformanceSnapshot {
   uint64 network_rx_bytes_cumulative = 10;
   uint64 network_tx_bytes_cumulative = 11;
   // Removed load_average fields
-  uint64 uptime_seconds = 12; // Renumbered from 15
-  uint32 total_processes_count = 13; // Renumbered from 16
-  uint32 running_processes_count = 14; // Renumbered from 17
-  uint32 tcp_established_connection_count = 15; // Renumbered from 18
-  uint64 network_rx_bytes_per_sec = 16; // Renumbered from 19
-  uint64 network_tx_bytes_per_sec = 17; // Renumbered from 20
+  uint64 uptime_seconds = 12;
+  uint32 total_processes_count = 13;
+  uint32 running_processes_count = 14;
+  uint32 tcp_established_connection_count = 15;
+  uint64 network_rx_bytes_per_sec = 16;
+  uint64 network_tx_bytes_per_sec = 17;
+  // New fields for consolidated disk space
+  uint64 total_disk_space_bytes = 18;
+  uint64 used_disk_space_bytes = 19;
 }
 
 message PerformanceSnapshotBatch {

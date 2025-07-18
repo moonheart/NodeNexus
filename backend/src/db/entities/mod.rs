@@ -14,9 +14,7 @@ pub mod docker_container;
 pub mod docker_metric;
 pub mod notification_channel;
 pub mod oauth2_provider;
-pub mod performance_disk_usage;
 pub mod performance_metric;
-pub mod performance_network_interface_stat;
 pub mod service_monitor;
 pub mod service_monitor_agent;
 pub mod service_monitor_result;
@@ -85,16 +83,6 @@ pub mod prelude {
     pub use super::vps_monthly_traffic::Column as VpsMonthlyTrafficColumn;
     pub use super::vps_monthly_traffic::Entity as VpsMonthlyTraffic;
     pub use super::vps_monthly_traffic::Model as VpsMonthlyTrafficModel;
-
-    pub use super::performance_disk_usage::ActiveModel as PerformanceDiskUsageActiveModel;
-    pub use super::performance_disk_usage::Column as PerformanceDiskUsageColumn;
-    pub use super::performance_disk_usage::Entity as PerformanceDiskUsage;
-    pub use super::performance_disk_usage::Model as PerformanceDiskUsageModel;
-
-    pub use super::performance_network_interface_stat::ActiveModel as PerformanceNetworkInterfaceStatActiveModel;
-    pub use super::performance_network_interface_stat::Column as PerformanceNetworkInterfaceStatColumn;
-    pub use super::performance_network_interface_stat::Entity as PerformanceNetworkInterfaceStat;
-    pub use super::performance_network_interface_stat::Model as PerformanceNetworkInterfaceStatModel;
 
     pub use super::setting::ActiveModel as SettingActiveModel;
     pub use super::setting::Column as SettingColumn;
