@@ -19,19 +19,19 @@ export const TIME_RANGE_CONFIG: Record<TimeRangeValue, Omit<TimeRangeOption, 'la
   },
   '1h': {
     getDates: (now: Date) => ({ startTime: new Date(now.getTime() - 60 * 60 * 1000), endTime: now }),
-    interval: '1m',
+    interval: null,
   },
   '6h': {
     getDates: (now: Date) => ({ startTime: new Date(now.getTime() - 6 * 60 * 60 * 1000), endTime: now }),
-    interval: '5m',
+    interval: null,
   },
   '12h': {
     getDates: (now: Date) => ({ startTime: new Date(now.getTime() - 12 * 60 * 60 * 1000), endTime: now }),
-    interval: '10m',
+    interval: '1m',
   },
   '1d': {
     getDates: (now: Date) => ({ startTime: new Date(now.getTime() - 24 * 60 * 60 * 1000), endTime: now }),
-    interval: '15m',
+    interval: '5m',
   },
   '3d': {
     getDates: (now: Date) => ({ startTime: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000), endTime: now }),
