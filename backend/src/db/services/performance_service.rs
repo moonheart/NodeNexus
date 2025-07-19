@@ -22,6 +22,7 @@ pub struct PerformanceMetricPoint {
     // Base metrics (from AVG)
     pub cpu_usage_percent: Option<f64>,
     pub memory_usage_bytes: Option<f64>,
+    pub memory_total_bytes: Option<f64>,
     pub swap_usage_bytes: Option<f64>,
     pub disk_io_read_bps: Option<f64>,
     pub disk_io_write_bps: Option<f64>,
@@ -40,6 +41,7 @@ struct UnifiedMetricResult {
     vps_id: i32,
     avg_cpu_usage_percent: Option<f64>,
     avg_memory_usage_bytes: Option<f64>,
+    max_memory_total_bytes: Option<f64>,
     avg_swap_usage_bytes: Option<f64>,
     avg_disk_io_read_bps: Option<f64>,
     avg_disk_io_write_bps: Option<f64>,
@@ -58,45 +60,99 @@ pub async fn get_performance_metrics_for_vps(
     end_time: DateTime<Utc>,
     interval_seconds: Option<u32>,
 ) -> Result<Vec<PerformanceMetricPoint>, DbErr> {
+    // If no interval is specified, return raw data points.
+    if interval_seconds.is_none() {
+        debug!("No interval specified, fetching raw performance_metrics.");
+        let raw_metrics = performance_metric::Entity::find()
+            .filter(performance_metric::Column::VpsId.eq(vps_id))
+            .filter(performance_metric::Column::Time.gte(start_time))
+            .filter(performance_metric::Column::Time.lte(end_time))
+            .order_by_asc(performance_metric::Column::Time)
+            .all(db)
+            .await?;
+
+        let results = raw_metrics.into_iter().map(|m| PerformanceMetricPoint {
+            time: m.time,
+            vps_id: m.vps_id,
+            cpu_usage_percent: Some(m.cpu_usage_percent),
+            memory_usage_bytes: Some(m.memory_usage_bytes as f64),
+            memory_total_bytes: Some(m.memory_total_bytes as f64),
+            swap_usage_bytes: Some(m.swap_usage_bytes as f64),
+            disk_io_read_bps: Some(m.disk_io_read_bps as f64),
+            disk_io_write_bps: Some(m.disk_io_write_bps as f64),
+            network_rx_instant_bps: Some(m.network_rx_instant_bps as f64),
+            network_tx_instant_bps: Some(m.network_tx_instant_bps as f64),
+            used_disk_space_bytes: Some(m.used_disk_space_bytes as f64),
+            total_disk_space_bytes: Some(m.total_disk_space_bytes as f64),
+        }).collect();
+        return Ok(results);
+    }
+
+    // If an interval is specified, proceed with aggregation.
     let duration = end_time - start_time;
-    let interval_secs = interval_seconds.unwrap_or(60).max(1);
+    let interval_secs = interval_seconds.unwrap().max(1); // We know it's Some(t) here.
 
-    let (metric_source, time_col) = if duration <= Duration::days(2) {
-        ("performance_metrics_summary_1m", "bucket")
-    } else if duration <= Duration::days(30) {
-        ("performance_metrics_summary_1h", "bucket")
-    } else {
-        ("performance_metrics_summary_1d", "bucket")
-    };
-
-    debug!(?duration, ?interval_seconds, metric_source, "Choosing data source for performance query");
+    let mut query_builder = Query::select();
 
     let time_bucket_expr = |col: &str| -> String {
         format!("time_bucket(INTERVAL '{interval_secs} seconds', \"{col}\")")
     };
 
-    // --- Query for all metrics from a single source ---
-    let metric_query = Query::select()
-        .from(Alias::new(metric_source))
-        .expr_as(Expr::cust(time_bucket_expr(time_col)), Alias::new("time"))
-        .column(Alias::new("vps_id"))
-        .expr_as(Expr::cust("AVG(avg_cpu_usage_percent)::double precision"), Alias::new("avg_cpu_usage_percent"))
-        .expr_as(Expr::cust("AVG(avg_memory_usage_bytes)::double precision"), Alias::new("avg_memory_usage_bytes"))
-        .expr_as(Expr::cust("AVG(avg_swap_usage_bytes)::double precision"), Alias::new("avg_swap_usage_bytes"))
-        .expr_as(Expr::cust("AVG(avg_disk_io_read_bps)::double precision"), Alias::new("avg_disk_io_read_bps"))
-        .expr_as(Expr::cust("AVG(avg_disk_io_write_bps)::double precision"), Alias::new("avg_disk_io_write_bps"))
-        .expr_as(Expr::cust("AVG(avg_network_rx_instant_bps)::double precision"), Alias::new("avg_network_rx_instant_bps"))
-        .expr_as(Expr::cust("AVG(avg_network_tx_instant_bps)::double precision"), Alias::new("avg_network_tx_instant_bps"))
-        .expr_as(Expr::cust("AVG(avg_used_disk_space_bytes)::double precision"), Alias::new("avg_used_disk_space_bytes"))
-        .expr_as(Expr::cust("AVG(avg_total_disk_space_bytes)::double precision"), Alias::new("avg_total_disk_space_bytes"))
-        .and_where(Expr::col("vps_id").eq(vps_id))
-        .and_where(Expr::col(time_col).gte(start_time))
-        .and_where(Expr::col(time_col).lte(end_time))
-        .add_group_by(vec![Expr::cust("1"), Expr::cust("2")]) // Group by time bucket and vps_id
-        .order_by(Alias::new("time"), Order::Asc)
-        .to_owned();
+    if duration <= Duration::hours(1) {
+        // Query raw data for recent queries (<= 1 hour)
+        debug!("Querying raw performance_metrics for recent data with interval.");
+        query_builder
+            .from(performance_metric::Entity)
+            .expr_as(Expr::cust(time_bucket_expr("time")), Alias::new("time"))
+            .column(performance_metric::Column::VpsId)
+            .expr_as(Expr::cust("AVG(cpu_usage_percent)::double precision"), Alias::new("avg_cpu_usage_percent"))
+            .expr_as(Expr::cust("AVG(memory_usage_bytes)::double precision"), Alias::new("avg_memory_usage_bytes"))
+            .expr_as(Expr::cust("MAX(memory_total_bytes)::double precision"), Alias::new("max_memory_total_bytes"))
+            .expr_as(Expr::cust("AVG(swap_usage_bytes)::double precision"), Alias::new("avg_swap_usage_bytes"))
+            .expr_as(Expr::cust("AVG(disk_io_read_bps)::double precision"), Alias::new("avg_disk_io_read_bps"))
+            .expr_as(Expr::cust("AVG(disk_io_write_bps)::double precision"), Alias::new("avg_disk_io_write_bps"))
+            .expr_as(Expr::cust("AVG(network_rx_instant_bps)::double precision"), Alias::new("avg_network_rx_instant_bps"))
+            .expr_as(Expr::cust("AVG(network_tx_instant_bps)::double precision"), Alias::new("avg_network_tx_instant_bps"))
+            .expr_as(Expr::cust("AVG(used_disk_space_bytes)::double precision"), Alias::new("avg_used_disk_space_bytes"))
+            .expr_as(Expr::cust("AVG(total_disk_space_bytes)::double precision"), Alias::new("avg_total_disk_space_bytes"))
+            .and_where(Expr::col(performance_metric::Column::VpsId).eq(vps_id))
+            .and_where(Expr::col(performance_metric::Column::Time).gte(start_time))
+            .and_where(Expr::col(performance_metric::Column::Time).lte(end_time))
+            .add_group_by(vec![Expr::cust("1"), Expr::cust("2")]) // Group by time bucket and vps_id
+            .order_by(Alias::new("time"), Order::Asc);
+    } else {
+        // Query aggregated data for older queries
+        let (metric_source, time_col) = if duration <= Duration::days(7) {
+            ("performance_metrics_summary_1m", "bucket")
+        } else if duration <= Duration::days(30) {
+            ("performance_metrics_summary_1h", "bucket")
+        } else {
+            ("performance_metrics_summary_1d", "bucket")
+        };
+        debug!(?duration, ?interval_seconds, metric_source, "Choosing aggregated data source for performance query");
 
-    let metric_results = UnifiedMetricResult::find_by_statement(db.get_database_backend().build(&metric_query)).all(db).await?;
+        query_builder
+            .from(Alias::new(metric_source))
+            .expr_as(Expr::cust(time_bucket_expr(time_col)), Alias::new("time"))
+            .column(Alias::new("vps_id"))
+            .expr_as(Expr::cust("AVG(avg_cpu_usage_percent)::double precision"), Alias::new("avg_cpu_usage_percent"))
+            .expr_as(Expr::cust("AVG(avg_memory_usage_bytes)::double precision"), Alias::new("avg_memory_usage_bytes"))
+            .expr_as(Expr::cust("MAX(max_memory_total_bytes)::double precision"), Alias::new("max_memory_total_bytes"))
+            .expr_as(Expr::cust("AVG(avg_swap_usage_bytes)::double precision"), Alias::new("avg_swap_usage_bytes"))
+            .expr_as(Expr::cust("AVG(avg_disk_io_read_bps)::double precision"), Alias::new("avg_disk_io_read_bps"))
+            .expr_as(Expr::cust("AVG(avg_disk_io_write_bps)::double precision"), Alias::new("avg_disk_io_write_bps"))
+            .expr_as(Expr::cust("AVG(avg_network_rx_instant_bps)::double precision"), Alias::new("avg_network_rx_instant_bps"))
+            .expr_as(Expr::cust("AVG(avg_network_tx_instant_bps)::double precision"), Alias::new("avg_network_tx_instant_bps"))
+            .expr_as(Expr::cust("AVG(avg_used_disk_space_bytes)::double precision"), Alias::new("avg_used_disk_space_bytes"))
+            .expr_as(Expr::cust("AVG(avg_total_disk_space_bytes)::double precision"), Alias::new("avg_total_disk_space_bytes"))
+            .and_where(Expr::col("vps_id").eq(vps_id))
+            .and_where(Expr::col(time_col).gte(start_time))
+            .and_where(Expr::col(time_col).lte(end_time))
+            .add_group_by(vec![Expr::cust("1"), Expr::cust("2")]) // Group by time bucket and vps_id
+            .order_by(Alias::new("time"), Order::Asc);
+    }
+
+    let metric_results = UnifiedMetricResult::find_by_statement(db.get_database_backend().build(&query_builder)).all(db).await?;
 
     // --- Map results to response struct ---
     let results = metric_results.into_iter().map(|metric_res| {
@@ -105,6 +161,7 @@ pub async fn get_performance_metrics_for_vps(
             vps_id: metric_res.vps_id,
             cpu_usage_percent: metric_res.avg_cpu_usage_percent,
             memory_usage_bytes: metric_res.avg_memory_usage_bytes,
+            memory_total_bytes: metric_res.max_memory_total_bytes,
             swap_usage_bytes: metric_res.avg_swap_usage_bytes,
             disk_io_read_bps: metric_res.avg_disk_io_read_bps,
             disk_io_write_bps: metric_res.avg_disk_io_write_bps,

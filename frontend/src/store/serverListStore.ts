@@ -15,7 +15,7 @@ export type UnsubscribeFunction = () => void;
 type VpsMonitorResultCallback = (results: ServiceMonitorResult[]) => void;
 const vpsMonitorResultsCache: Record<number, ServiceMonitorResult[]> = {};
 const vpsMonitorResultListeners: Record<number, Set<VpsMonitorResultCallback>> = {};
-const isFetchingInitialVpsData: Record<number, boolean> = {};
+const vpsInitialDataPromises: Record<number, Promise<ServiceMonitorResult[]>> = {};
 
 // --- Legacy Pub/Sub for ServiceMonitorDetailPage ---
 type MonitorResultCallback = (results: ServiceMonitorResult[]) => void;
@@ -113,26 +113,28 @@ export const useServerListStore = create<ServerListState>()(
             return vpsMonitorResultsCache[vpsId];
         }
 
-        if (isFetchingInitialVpsData[vpsId]) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-            return get().getInitialVpsMonitorResults(vpsId);
+        if (vpsId in vpsInitialDataPromises) {
+            return vpsInitialDataPromises[vpsId];
         }
 
-        try {
-            isFetchingInitialVpsData[vpsId] = true;
-            const endTime = new Date();
-            const startTime = new Date(endTime.getTime() - 10 * 60 * 1000);
+        const promise = (async () => {
+            try {
+                const endTime = new Date();
+                const startTime = new Date(endTime.getTime() - 10 * 60 * 1000);
+                const results = await getMonitorResultsByVpsId(vpsId, startTime.toISOString(), endTime.toISOString(), null);
+                const sortedResults = results.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+                vpsMonitorResultsCache[vpsId] = sortedResults;
+                return sortedResults;
+            } catch (error) {
+                console.error(`Failed to get initial monitor results for VPS ${vpsId}:`, error);
+                return [];
+            } finally {
+                delete vpsInitialDataPromises[vpsId];
+            }
+        })();
 
-            const results = await getMonitorResultsByVpsId(vpsId, startTime.toISOString(), endTime.toISOString(), null);
-            const sortedResults = results.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-            vpsMonitorResultsCache[vpsId] = sortedResults;
-            return sortedResults;
-        } catch (error) {
-            console.error(`Failed to get initial monitor results for VPS ${vpsId}:`, error);
-            return [];
-        } finally {
-            isFetchingInitialVpsData[vpsId] = false;
-        }
+        vpsInitialDataPromises[vpsId] = promise;
+        return promise;
     },
     
     clearVpsMonitorResults: () => {
@@ -321,14 +323,6 @@ export const useServerListStore = create<ServerListState>()(
         const vpsId = data.agentId;
         if (vpsId === undefined) return;
         
-        if (!vpsMonitorResultsCache[vpsId]) vpsMonitorResultsCache[vpsId] = [];
-        vpsMonitorResultsCache[vpsId].push(data);
-
-        const CACHE_MAX_SIZE = 1000;
-        if (vpsMonitorResultsCache[vpsId].length > CACHE_MAX_SIZE) {
-            vpsMonitorResultsCache[vpsId] = vpsMonitorResultsCache[vpsId].slice(-CACHE_MAX_SIZE);
-        }
-
         if (vpsMonitorResultListeners[vpsId]) {
             vpsMonitorResultListeners[vpsId].forEach(callback => callback([data]));
         }
@@ -337,6 +331,7 @@ export const useServerListStore = create<ServerListState>()(
         if (monitorResultListeners[monitorId]) {
             if (!monitorResultsCache[monitorId]) monitorResultsCache[monitorId] = [];
             monitorResultsCache[monitorId].push(data);
+            const CACHE_MAX_SIZE = 1000;
             if (monitorResultsCache[monitorId].length > CACHE_MAX_SIZE) {
                 monitorResultsCache[monitorId] = monitorResultsCache[monitorId].slice(-CACHE_MAX_SIZE);
             }
