@@ -12,7 +12,6 @@ use backend::db::services::{AlertService, BatchCommandManager}; // Added BatchCo
 use backend::notifications::{encryption::EncryptionService, service::NotificationService};
 use backend::server::agent_state::{ConnectedAgents, LiveServerDataCache}; // Added LiveServerDataCache
 use backend::server::config::ServerConfig;
-use backend::db::entities::performance_metric;
 use backend::server::metric_broadcaster::MetricBroadcaster;
 use backend::server::result_broadcaster::{BatchCommandUpdateMsg, ResultBroadcaster}; // Added ResultBroadcaster
 use backend::server::service::MyAgentCommService;

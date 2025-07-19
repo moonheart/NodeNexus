@@ -4,7 +4,7 @@ use std::time::Duration;
 use dashmap::DashMap;
 use tokio::sync::{broadcast, mpsc};
 use tokio::time;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 use crate::db::entities::performance_metric;
 use crate::web::models::websocket_models::{

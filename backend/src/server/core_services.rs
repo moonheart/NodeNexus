@@ -8,8 +8,7 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::agent_service::{
-    message_to_agent::Payload as AgentPayload, message_to_server::Payload as ServerPayload,
-    AgentConfig, CommandStatus as GrpcCommandStatus, MessageToAgent, MessageToServer,
+    message_to_agent::Payload as AgentPayload, message_to_server::Payload as ServerPayload, CommandStatus as GrpcCommandStatus, MessageToAgent, MessageToServer,
     OutputType as GrpcOutputType, ServerHandshakeAck,
 };
 use crate::db::entities::performance_metric;

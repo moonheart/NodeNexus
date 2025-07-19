@@ -2,6 +2,7 @@ use std::error::Error;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
+use sysinfo::{CpuRefreshKind, MemoryRefreshKind, ProcessRefreshKind, RefreshKind};
 use tokio::task::JoinHandle; // For task handles
 // Added for gRPC server
 
@@ -24,6 +25,10 @@ use clap::{Parser, arg, command};
 use tracing::{error, info, warn};
 use tracing_appender::rolling;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
 
 #[cfg(windows)]
 use windows_service::{
@@ -81,6 +86,11 @@ async fn spawn_and_monitor_core_tasks(
             metrics_id_provider_counter,
         );
 
+    let sys = sysinfo::System::new_with_specifics(
+        RefreshKind::nothing()
+        .with_cpu(CpuRefreshKind::nothing().with_cpu_usage())
+        .with_memory(MemoryRefreshKind::nothing().with_ram().with_swap())
+        .with_processes(ProcessRefreshKind::nothing()));
     tasks.push(tokio::spawn(async move {
         metrics_collection_loop(
             metrics_tx,
@@ -88,6 +98,7 @@ async fn spawn_and_monitor_core_tasks(
             metrics_id_provider, // Pass the closure
             metrics_vps_id,
             metrics_agent_secret,
+            sys,
         )
         .await;
         info!("Metrics collection loop ended.");
@@ -325,13 +336,23 @@ fn run_console_mode() {
         .build()
         .unwrap()
         .block_on(async {
-            if let Err(e) = run_agent_logic().await {
-                error!(error = %e, "An error occurred in console mode.");
+            tokio::select! {
+                res = run_agent_logic() => {
+                    if let Err(e) = res {
+                        error!(error = %e, "An error occurred in console mode.");
+                    }
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    info!("Ctrl-C received, shutting down gracefully.");
+                }
             }
         });
 }
 
 async fn run_agent_logic() -> Result<(), Box<dyn Error + Send + Sync>> {
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
+
     let args: Vec<String> = std::env::args().collect();
 
     if args.contains(&"--version".to_string()) {

@@ -13,7 +13,7 @@ use axum::{
     routing::{delete, get, post, put},
     Json, Router,
 };
-use chrono::{DateTime, Duration, Utc}; // Added for DateTime<Utc>
+use chrono::{DateTime, Utc}; // Added for DateTime<Utc>
 use sea_orm::{ColumnTrait, DbErr, EntityTrait, QueryFilter}; // Added DbErr for error handling
 use serde::{Deserialize, Serialize}; // Added Serialize
 use std::collections::{HashMap, HashSet};
@@ -752,7 +752,7 @@ async fn get_vps_monitor_results_handler(
                 monitor_name,
                 // For aggregated data, is_up is a float (availability). Convert back to bool.
                 // We consider > 50% availability as "up". For raw data, it will be 1.0 or 0.0.
-                is_up: point.is_up.map_or(false, |v| v > 0.5),
+                is_up: point.is_up.is_some_and(|v| v > 0.5),
                 latency_ms: point.latency_ms.map(|f| f as i32),
                 details: point.details,
             }

@@ -1,6 +1,5 @@
 use crate::db::entities::{service_monitor, vps};
 use crate::db::services::service_monitor_service;
-use crate::server::update_service;
 use crate::web::config_routes::push_config_to_vps;
 use crate::web::models::service_monitor_models::{
     CreateMonitor, ServiceMonitorResultDetails, UpdateMonitor,
@@ -189,7 +188,7 @@ async fn get_monitor_results(
                 agent_id: point.agent_id,
                 agent_name,
                 monitor_name: monitor.name.clone(),
-                is_up: point.is_up.map_or(false, |v| v > 0.5),
+                is_up: point.is_up.is_some_and(|v| v > 0.5),
                 latency_ms: point.latency_ms.map(|f| f as i32),
                 details: point.details,
             }

@@ -15,7 +15,6 @@ use uuid::Uuid;
 
 use crate::{
     agent_service::CommandType as GrpcCommandType,
-    db::enums::ChildCommandStatus,
     web::{
         models::{
             batch_command_models::CreateBatchCommandRequest, AuthenticatedUser,

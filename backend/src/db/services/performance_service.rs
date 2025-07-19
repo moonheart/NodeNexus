@@ -2,11 +2,10 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
     FromQueryResult, Order, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
-    sea_query::{Alias, Expr, Func, Query},
+    sea_query::{Alias, Expr, Query},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
-use std::collections::HashMap;
 use tracing::{debug, error};
 
 use crate::agent_service::{DiskUsage, PerformanceSnapshotBatch};
@@ -73,13 +72,13 @@ pub async fn get_performance_metrics_for_vps(
     debug!(?duration, ?interval_seconds, metric_source, "Choosing data source for performance query");
 
     let time_bucket_expr = |col: &str| -> String {
-        format!("time_bucket(INTERVAL '{} seconds', \"{}\")", interval_secs, col)
+        format!("time_bucket(INTERVAL '{interval_secs} seconds', \"{col}\")")
     };
 
     // --- Query for all metrics from a single source ---
     let metric_query = Query::select()
         .from(Alias::new(metric_source))
-        .expr_as(Expr::cust(&time_bucket_expr(time_col)), Alias::new("time"))
+        .expr_as(Expr::cust(time_bucket_expr(time_col)), Alias::new("time"))
         .column(Alias::new("vps_id"))
         .expr_as(Expr::cust("AVG(avg_cpu_usage_percent)::double precision"), Alias::new("avg_cpu_usage_percent"))
         .expr_as(Expr::cust("AVG(avg_memory_usage_bytes)::double precision"), Alias::new("avg_memory_usage_bytes"))
@@ -220,7 +219,7 @@ async fn update_vps_disk_usage_metadata(
     let vps_model = vps::Entity::find_by_id(vps_id)
         .one(txn)
         .await?
-        .ok_or_else(|| DbErr::RecordNotFound(format!("VPS with ID {} not found", vps_id)))?;
+        .ok_or_else(|| DbErr::RecordNotFound(format!("VPS with ID {vps_id} not found")))?;
 
     // Serialize the detailed disk usage into a JSON value
     let disk_usage_json = json!(disk_usages);

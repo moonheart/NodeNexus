@@ -6,7 +6,7 @@ use netdev::interface::InterfaceType;
 use std::collections::HashSet;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use sysinfo::{DiskKind, Disks, Networks, ProcessRefreshKind, System};
+use sysinfo::{DiskKind, Disks, Networks, System};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
@@ -16,90 +16,71 @@ use tracing::{debug, error, info, warn};
 /// Collects a performance snapshot focusing ONLY on the default network interface
 /// for both cumulative and instantaneous network data, and total disk I/O rates.
 fn collect_performance_snapshot(
-    sys: &mut System,
-    disks: &mut Disks, // Added Disks as a mutable reference
+    sys: &System,
+    disks: &mut Disks,
     networks: &mut Networks,
-    prev_collection_time_opt: &Option<Instant>, // Changed from PreviousNetworkState
-    current_time: Instant,                      // Pass current time for rate calculation
+    prev_collection_time_opt: &Option<Instant>,
+    current_time: Instant,
     excluded_fs_types: &HashSet<&str>,
+    active_interface_name: &Option<String>, // Accept pre-determined interface name
 ) -> PerformanceSnapshot {
-    // Return type changed back
-    // Refresh relevant parts of System
-    sys.refresh_cpu_all();
-    sys.refresh_memory();
-    sys.refresh_processes_specifics(
-        sysinfo::ProcessesToUpdate::All,
-        true,
-        ProcessRefreshKind::nothing(),
-    );
+    // Refresh logic is now handled in the main loop.
 
     // Refresh the persistent Networks instance. This updates delta values.
-    networks.refresh(true);
+    networks.refresh(false);
 
     let cpu_usage = sys.global_cpu_usage();
     let mem_used = sys.used_memory();
     let mem_total = sys.total_memory();
 
     // Cumulative Disk I/O (Remains the same - sums across all disks)
-    // disks.refresh_list(); // Refresh the list of disks
-    disks.refresh(true); // Refresh stats for all disks in the list. This updates usage().read_bytes/written_bytes to be deltas.
+    disks.refresh(false); // Refresh stats for all disks in the list.
 
     let mut delta_total_disk_read_bytes: u64 = 0;
     let mut delta_total_disk_written_bytes: u64 = 0;
 
     for disk_info in disks.list() {
         let fs_type_str = disk_info.file_system().to_string_lossy();
-
-        // Filter out disks that are not physical, have no total space, or are of an excluded fs type.
         if disk_info.total_space() > 0
             && matches!(disk_info.kind(), DiskKind::HDD | DiskKind::SSD)
             && !excluded_fs_types.contains(fs_type_str.as_ref())
         {
             let disk_usage_stats = disk_info.usage();
-            delta_total_disk_read_bytes += disk_usage_stats.read_bytes; // Use delta directly
-            delta_total_disk_written_bytes += disk_usage_stats.written_bytes; // Use delta directly
+            delta_total_disk_read_bytes += disk_usage_stats.read_bytes;
+            delta_total_disk_written_bytes += disk_usage_stats.written_bytes;
         }
     }
 
-    // Calculate Disk I/O BPS using deltas from sysinfo and time from prev_net_state
+    // Calculate Disk I/O BPS
     let mut disk_read_bps: u64 = 0;
     let mut disk_write_bps: u64 = 0;
-    let mut duration_secs_for_disk: f64 = 0.0;
-
     if let Some(prev_time) = prev_collection_time_opt {
         let duration = current_time.duration_since(*prev_time);
-        duration_secs_for_disk = duration.as_secs_f64();
+        let duration_secs_for_disk = duration.as_secs_f64();
         if duration_secs_for_disk > 0.0 {
             disk_read_bps = (delta_total_disk_read_bytes as f64 / duration_secs_for_disk) as u64;
             disk_write_bps =
                 (delta_total_disk_written_bytes as f64 / duration_secs_for_disk) as u64;
         }
     }
-    // If prev_net_state is None (first run), BPS will remain 0, which is correct.
-    // --- End Disk I/O BPS ---
 
     // Collect detailed disk usages
     let mut collected_disk_usages = Vec::new();
-    // The 'disks' variable is already refreshed and contains the list and their stats.
     for disk_info in disks.list() {
         let fs_type_str = disk_info.file_system().to_string_lossy();
-
-        // Apply the same filter here for consistency.
         if disk_info.total_space() > 0
             && matches!(disk_info.kind(), DiskKind::HDD | DiskKind::SSD)
             && !excluded_fs_types.contains(fs_type_str.as_ref())
         {
             let total_space = disk_info.total_space();
             let available_space = disk_info.available_space();
-            let used_space = total_space.saturating_sub(available_space); // Use saturating_sub for safety
+            let used_space = total_space.saturating_sub(available_space);
             let usage_percent = if total_space > 0 {
                 (used_space as f64 / total_space as f64) * 100.0
             } else {
                 0.0
             };
-
             collected_disk_usages.push(crate::agent_service::DiskUsage {
-                // Explicitly use crate::agent_service
                 mount_point: disk_info.mount_point().to_string_lossy().into_owned(),
                 used_bytes: used_space,
                 total_bytes: total_space,
@@ -109,37 +90,26 @@ fn collect_performance_snapshot(
         }
     }
 
-    // --- Calculate total disk space from collected usages ---
-    let (total_disk_space_bytes, used_disk_space_bytes) = collected_disk_usages.iter().fold(
-        (0, 0),
-        |(total_acc, used_acc), disk| (total_acc + disk.total_bytes, used_acc + disk.used_bytes),
-    );
+    let (total_disk_space_bytes, used_disk_space_bytes) = collected_disk_usages
+        .iter()
+        .fold((0, 0), |(total_acc, used_acc), disk| {
+            (total_acc + disk.total_bytes, used_acc + disk.used_bytes)
+        });
 
     // --- Network I/O (Default Interface Only) ---
     let mut cumulative_rx_bytes: u64 = 0;
     let mut cumulative_tx_bytes: u64 = 0;
-    let mut delta_rx_bytes_for_rate: u64 = 0; // Delta used for BPS calculation
-    let mut delta_tx_bytes_for_rate: u64 = 0; // Delta used for BPS calculation
+    let mut delta_rx_bytes_for_rate: u64 = 0;
+    let mut delta_tx_bytes_for_rate: u64 = 0;
 
-    // Try to find an active interface and get its stats
-    let interfaces = netdev::get_interfaces();
-    let active_interface = interfaces.into_iter().find(|iface| {
-        (!iface.ipv4.is_empty() || !iface.ipv6.is_empty())
-            && iface.gateway.is_some()
-            && iface.if_type == InterfaceType::Ethernet
-    });
-
-    match active_interface {
-        Some(interface) => {
-            let interface_name = interface.friendly_name.unwrap_or(interface.name);
+    // Use the pre-determined active interface name
+    match active_interface_name {
+        Some(interface_name) => {
             let mut found_in_sysinfo = false;
-            // Find the interface in the refreshed sysinfo networks list
             for (if_name, data) in networks.iter() {
                 if if_name == interface_name.as_str() {
-                    // Get cumulative totals from the interface
                     cumulative_rx_bytes = data.total_received();
                     cumulative_tx_bytes = data.total_transmitted();
-                    // Get delta values from the interface for rate calculation
                     delta_rx_bytes_for_rate = data.received();
                     delta_tx_bytes_for_rate = data.transmitted();
                     found_in_sysinfo = true;
@@ -155,15 +125,11 @@ fn collect_performance_snapshot(
                 }
             }
             if !found_in_sysinfo {
-                warn!(interface_name = %interface_name, "Active interface found by netdev, but not in sysinfo list. Network stats will be 0.");
-                // Keep cumulative and delta values at 0
+                warn!(interface_name = %interface_name, "Active interface found at startup, but not in sysinfo list now. Network stats will be 0.");
             }
         }
         None => {
-            warn!(
-                "Failed to find an active network interface with a gateway. Network stats will be 0."
-            );
-            // Keep cumulative and delta values at 0
+            // Warning is now logged at startup, no need to log every time here.
         }
     }
 
@@ -236,8 +202,8 @@ pub async fn metrics_collection_loop(
     mut id_provider: impl FnMut() -> u64 + Send + 'static,
     vps_db_id: i32,
     agent_secret: String,
+    mut sys: System,
 ) {
-    let mut sys = System::new_all();
     let mut disks = Disks::new_with_refreshed_list();
     let mut networks = Networks::new_with_refreshed_list();
     let mut snapshot_batch_vec = Vec::new();
@@ -248,11 +214,35 @@ pub async fn metrics_collection_loop(
         .cloned()
         .collect();
 
+    // Find the active network interface once at startup to avoid repeated lookups.
+    let active_interface_name = {
+        let interfaces = netdev::get_interfaces();
+        interfaces
+            .into_iter()
+            .find(|iface| {
+                (!iface.ipv4.is_empty() || !iface.ipv6.is_empty())
+                    && iface.gateway.is_some()
+                    && iface.if_type == InterfaceType::Ethernet
+            })
+            .map(|iface| iface.friendly_name.unwrap_or(iface.name))
+    };
+
+    if let Some(name) = &active_interface_name {
+        info!(interface_name = %name, "Found active network interface for metrics.");
+    } else {
+        warn!(
+            "Could not find an active network interface with a gateway. Network stats will be 0."
+        );
+    }
+
     // --- Dynamic Configuration Setup ---
     let (mut collect_interval_duration, mut upload_interval_duration, mut batch_max_size) = {
         let config = shared_agent_config.read().unwrap();
         let initial_collect_interval = config.metrics_collect_interval_seconds;
-        info!(initial_value = initial_collect_interval, "Metrics loop initializing with collect interval.");
+        info!(
+            initial_value = initial_collect_interval,
+            "Metrics loop initializing with collect interval."
+        );
         (
             initial_collect_interval,
             config.metrics_upload_interval_seconds,
@@ -284,15 +274,18 @@ pub async fn metrics_collection_loop(
     );
 
     // Initial refresh to set the baseline for the *next* delta calculation by sysinfo
-    // Initial refresh to set the baseline for the *next* delta calculation by sysinfo
-    // for both networks and disks (disks.usage().read_bytes will be 0 after this first refresh)
     disks.refresh(true);
     networks.refresh(true);
-    // prev_collection_time will be initialized with the time of the first snapshot collection.
-    // The first disk and network BPS will be 0 as expected.
     let mut prev_collection_time: Option<Instant> = Some(Instant::now());
 
     loop {
+        // Refresh system data at the start of each loop iteration for efficiency.
+        sys.refresh_cpu_usage();
+        sys.refresh_memory();
+        // Use a minimal process refresh kind. We only need the process count,
+        // not expensive details like command lines or environment variables.
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+
         // --- Check for configuration changes ---
         {
             let config = shared_agent_config.read().unwrap();
@@ -346,12 +339,13 @@ pub async fn metrics_collection_loop(
             _ = collect_interval.tick() => {
                 let current_time = Instant::now();
                 let snapshot = collect_performance_snapshot(
-                    &mut sys,
+                    &sys,
                     &mut disks,
                     &mut networks,
-                    &prev_collection_time, // Pass the Option<Instant>
+                    &prev_collection_time,
                     current_time,
                     &excluded_fs_types,
+                    &active_interface_name, // Pass the cached interface name
                 );
                 snapshot_batch_vec.push(snapshot.clone());
                 prev_collection_time = Some(current_time); // Update prev_collection_time for the next iteration

@@ -672,18 +672,18 @@ pub async fn get_monitor_results_by_id(
     end_time: DateTime<Utc>,
     interval_seconds: Option<i64>,
 ) -> Result<Vec<ServiceMonitorPoint>, DbErr> {
-    let mut query = service_monitor_result::Entity::find()
+    let query = service_monitor_result::Entity::find()
         .filter(service_monitor_result::Column::MonitorId.eq(monitor_id))
         .filter(service_monitor_result::Column::Time.gte(start_time))
         .filter(service_monitor_result::Column::Time.lte(end_time));
 
     if let Some(interval) = interval_seconds {
         // Aggregated query
-        let interval_string = format!("{} seconds", interval);
+        let interval_string = format!("{interval} seconds");
         query
             .select_only()
             .column_as(
-                Expr::cust(format!("time_bucket('{} seconds', time)", interval)),
+                Expr::cust(format!("time_bucket('{interval} seconds', time)")),
                 "time",
             )
             .column(service_monitor_result::Column::MonitorId)
@@ -747,7 +747,7 @@ pub async fn get_monitor_results_by_vps_id(
     let monitor_ids: Vec<i32> = runnable_monitors.into_iter().map(|m| m.id).collect();
 
     // 2. Build the main query
-    let mut query = service_monitor_result::Entity::find()
+    let query = service_monitor_result::Entity::find()
         .filter(service_monitor_result::Column::MonitorId.is_in(monitor_ids))
         .filter(service_monitor_result::Column::AgentId.eq(vps_id)) // Results must be from this agent
         .filter(service_monitor_result::Column::Time.gte(start_time))
@@ -756,11 +756,11 @@ pub async fn get_monitor_results_by_vps_id(
     // 3. Apply aggregation or select raw data
     if let Some(interval) = interval_seconds {
         // Aggregated query
-        let interval_string = format!("{} seconds", interval);
+        let interval_string = format!("{interval} seconds");
         let results = query
             .select_only()
             .column_as(
-                Expr::cust(format!("time_bucket('{} seconds', time)", interval)),
+                Expr::cust(format!("time_bucket('{interval} seconds', time)")),
                 "time",
             )
             .column(service_monitor_result::Column::MonitorId)
