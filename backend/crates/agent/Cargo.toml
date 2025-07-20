@@ -7,14 +7,11 @@ edition = "2021"
 nodenexus-common = { path = "../common" }
 
 
-tokio = { version = "1.45", features = ["macros", "rt-multi-thread", "sync", "time", "process", "signal"] }
+tokio = { version = "1.45", features = ["macros", "rt-multi-thread", "sync", "time", "process", "signal", "fs"] }
 tonic = { version = "0.13", features = ["transport", "codegen", "prost", "tls-native-roots"] }
 prost = "0.13"
 futures-util = "0.3"
-tokio-rustls = "0.26"
 rustls = "0.23"
-rustls-native-certs = "0.8" # For establishing trusted connections
-bytes = "1.10"
 tokio-tungstenite = { version = "0.27", features = ["rustls-tls-native-roots"] }
 
 
@@ -26,7 +23,6 @@ toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
-thiserror = "2.0"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 surge-ping = "0.8"
 tokio-stream = "0.1"
