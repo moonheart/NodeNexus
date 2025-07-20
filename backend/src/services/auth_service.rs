@@ -96,7 +96,7 @@ pub fn create_jwt_for_user(
 ) -> Result<LoginResponse, AppError> {
     let now = Utc::now();
     // Token valid for 24 hours, as per plan
-    let expiration = (now + Duration::hours(24)).timestamp() as usize;
+    let expiration = (now + Duration::hours(24 * 7)).timestamp() as usize;
 
     let claims = Claims {
         sub: user.username.clone(), // Using username as subject
