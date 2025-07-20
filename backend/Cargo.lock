@@ -337,72 +337,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "backend"
-version = "0.1.1"
-dependencies = [
- "aes-gcm",
- "async-trait",
- "axum",
- "axum-extra",
- "bcrypt",
- "bytes",
- "chrono",
- "clap",
- "codepage",
- "dashmap",
- "dhat",
- "dotenv",
- "encoding_rs",
- "futures",
- "futures-util",
- "hex",
- "http-body-util",
- "hyper",
- "jsonwebtoken",
- "lazy_static",
- "mime_guess",
- "netdev",
- "once_cell",
- "prost",
- "prost-build",
- "rand 0.9.1",
- "reqwest",
- "rust-embed",
- "rust-i18n",
- "rustls",
- "rustls-native-certs",
- "sea-orm",
- "serde",
- "serde_json",
- "sqlx",
- "surge-ping",
- "sysinfo",
- "tempfile",
- "tera",
- "thiserror 2.0.12",
- "time",
- "tokio",
- "tokio-rustls",
- "tokio-stream",
- "tokio-tungstenite 0.27.0",
- "toml",
- "tonic",
- "tonic-build",
- "tower",
- "tower-http",
- "tower-service",
- "tracing",
- "tracing-appender",
- "tracing-log",
- "tracing-subscriber",
- "urlencoding",
- "uuid",
- "winapi",
- "windows-service",
- "windows-sys 0.60.2",
-]
-
-[[package]]
 name = "backtrace"
 version = "0.3.75"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2110,6 +2044,120 @@ name = "no-std-net"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43794a0ace135be66a25d3ae77d41b91615fb68ae937f904090203e81f755b65"
+
+[[package]]
+name = "nodenexus-agent"
+version = "0.1.1"
+dependencies = [
+ "bytes",
+ "chrono",
+ "clap",
+ "codepage",
+ "dhat",
+ "encoding_rs",
+ "futures",
+ "futures-util",
+ "lazy_static",
+ "netdev",
+ "nodenexus-common",
+ "once_cell",
+ "prost",
+ "rand 0.9.1",
+ "reqwest",
+ "rustls",
+ "rustls-native-certs",
+ "serde",
+ "surge-ping",
+ "sysinfo",
+ "tempfile",
+ "thiserror 2.0.12",
+ "tokio",
+ "tokio-rustls",
+ "tokio-stream",
+ "tokio-tungstenite 0.27.0",
+ "toml",
+ "tonic",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "uuid",
+ "winapi",
+ "windows-service",
+ "windows-sys 0.60.2",
+]
+
+[[package]]
+name = "nodenexus-common"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "prost-build",
+ "serde",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
+name = "nodenexus-server"
+version = "0.1.1"
+dependencies = [
+ "aes-gcm",
+ "async-trait",
+ "axum",
+ "axum-extra",
+ "bcrypt",
+ "bytes",
+ "chrono",
+ "clap",
+ "dashmap",
+ "dotenv",
+ "encoding_rs",
+ "futures",
+ "futures-util",
+ "hex",
+ "http-body-util",
+ "hyper",
+ "jsonwebtoken",
+ "lazy_static",
+ "mime_guess",
+ "netdev",
+ "nodenexus-common",
+ "once_cell",
+ "prost",
+ "prost-build",
+ "rand 0.9.1",
+ "reqwest",
+ "rust-embed",
+ "rust-i18n",
+ "rustls",
+ "rustls-native-certs",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "surge-ping",
+ "sysinfo",
+ "tempfile",
+ "tera",
+ "thiserror 2.0.12",
+ "time",
+ "tokio",
+ "tokio-rustls",
+ "tokio-stream",
+ "tokio-tungstenite 0.27.0",
+ "toml",
+ "tonic",
+ "tonic-build",
+ "tower",
+ "tower-http",
+ "tower-service",
+ "tracing",
+ "tracing-appender",
+ "tracing-log",
+ "tracing-subscriber",
+ "urlencoding",
+ "uuid",
+]
 
 [[package]]
 name = "nom"

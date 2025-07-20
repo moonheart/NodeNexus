@@ -31,11 +31,9 @@ RUN cargo install cargo-chef
 
 WORKDIR /app
 
-# Copy backend Cargo files and prepare recipe
+# Copy backend workspace files and prepare recipe
 COPY backend/Cargo.toml backend/Cargo.lock ./backend/
-COPY backend/src ./backend/src
-COPY backend/build.rs ./backend/build.rs
-COPY backend/proto ./backend/proto
+COPY backend/crates ./backend/crates
 COPY backend/migrations ./backend/migrations
 COPY locales ./locales
 
@@ -49,10 +47,12 @@ RUN cd backend && cargo chef cook --release --recipe-path recipe.json
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Copy the rest of the backend source code
-COPY backend/ ./backend/
+# This is intentionally redundant to ensure any changes are picked up
+# after the dependency cooking step.
+COPY backend/crates ./backend/crates
 
 # Build the backend application, embedding the frontend assets
-RUN cd backend && cargo build --release --bin server
+RUN cd backend && cargo build --release -p nodenexus-server
 
 # ---- Stage 3: Final Image ----
 FROM debian:bookworm-slim AS runner
@@ -62,7 +62,7 @@ RUN apt-get update && apt-get install -y libssl3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 # Copy the compiled binary from the backend-builder stage
-COPY --from=backend-builder /app/backend/target/release/server .
+COPY --from=backend-builder /app/backend/target/release/nodenexus-server .
 
 # Copy the .env file, assuming it's in the backend directory
 # You should create a .env file in your backend directory with necessary environment variables
@@ -72,4 +72,4 @@ COPY backend/.env.example ./.env
 EXPOSE 8080
 
 # Command to run the application
-CMD ["./server"]
+CMD ["./nodenexus-server"]
