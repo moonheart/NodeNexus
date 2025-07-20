@@ -296,7 +296,7 @@ const HomePage: React.FC = () => {
             <div className="flex items-center gap-2">
               <Select value={sortKey} onValueChange={setSortKey}>
                 <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder={t('homePage.sorting.placeholder')} />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {sortOptions.map(option => (

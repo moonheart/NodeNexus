@@ -62,11 +62,21 @@ export const useVpsPerformanceMetrics = ({
 
       try {
         if (viewMode === 'realtime') {
-          await useServerListStore.getState().ensureInitialVpsPerformanceMetrics(vpsId);
-          if (!isMounted) return;
-
-          const initialData = useServerListStore.getState().initialVpsMetrics[vpsId]?.data || [];
-          setData(transformVpsData(initialData));
+          const store = useServerListStore.getState();
+          const existingMetrics = store.initialVpsMetrics[vpsId];
+          
+          if (existingMetrics && existingMetrics.status === 'success') {
+            setData(transformVpsData(existingMetrics.data));
+          } else {
+            // Fetch only if no data exists or if there was a previous error.
+            if (!existingMetrics || existingMetrics.status === 'error') {
+                await store.ensureInitialVpsPerformanceMetrics(vpsId);
+            }
+            if (!isMounted) return;
+            // Set data from store, which might be empty initially but will be populated
+            const initialData = store.initialVpsMetrics[vpsId]?.data || [];
+            setData(transformVpsData(initialData));
+          }
 
           unsubscribe = useServerListStore.subscribe(
             (state) => {

@@ -160,7 +160,7 @@ export const useServerListStore = create<ServerListState>()(
 
         try {
             const endTime = new Date();
-            const startTime = new Date(endTime.getTime() - 5 * 60 * 1000); // 5 minutes ago
+            const startTime = new Date(endTime.getTime() - 10 * 60 * 1000); // 10 minutes ago
             
             const metrics = await getVpsMetrics(vpsId, startTime.toISOString(), endTime.toISOString(), null);
             const sortedMetrics = metrics.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
@@ -323,10 +323,23 @@ export const useServerListStore = create<ServerListState>()(
         const vpsId = data.agentId;
         if (vpsId === undefined) return;
         
+        // --- Handle Per-VPS Pub/Sub (for HomePage) ---
         if (vpsMonitorResultListeners[vpsId]) {
-            vpsMonitorResultListeners[vpsId].forEach(callback => callback([data]));
+            // Also update the cache so re-mounts get the latest data
+            if (vpsMonitorResultsCache[vpsId]) {
+                vpsMonitorResultsCache[vpsId].push(data);
+                const now = Date.now();
+                const windowStartTime = now - (10 * 60 * 1000); // 10 minute window
+                const filteredCache = vpsMonitorResultsCache[vpsId].filter(
+                    p => new Date(p.time).getTime() >= windowStartTime
+                );
+                vpsMonitorResultsCache[vpsId] = filteredCache;
+            }
+            // Push the entire filtered cache to subscribers, not just the new point
+            vpsMonitorResultListeners[vpsId].forEach(callback => callback(vpsMonitorResultsCache[vpsId]));
         }
 
+        // --- Handle Per-Monitor Pub/Sub (for ServiceMonitorDetailPage) ---
         const { monitorId } = data;
         if (monitorResultListeners[monitorId]) {
             if (!monitorResultsCache[monitorId]) monitorResultsCache[monitorId] = [];
@@ -372,9 +385,17 @@ export const useServerListStore = create<ServerListState>()(
                 if (newInitialMetrics[vpsId]?.status === 'success') {
                     const newPoints = metricsByVps[vpsId];
                     const existingPoints = newInitialMetrics[vpsId].data;
+                    const combinedPoints = [...existingPoints, ...newPoints];
+                    const now = Date.now();
+                    const windowStartTime = now - (10 * 60 * 1000); // 10 minute window
+
+                    const filteredPoints = combinedPoints.filter(
+                        p => new Date(p.time).getTime() >= windowStartTime
+                    );
+
                     newInitialMetrics[vpsId] = {
                         ...newInitialMetrics[vpsId],
-                        data: [...existingPoints, ...newPoints],
+                        data: filteredPoints,
                     };
                 }
             }

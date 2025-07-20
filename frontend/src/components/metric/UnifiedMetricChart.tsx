@@ -6,8 +6,6 @@ import type { TimeRangeValue } from '@/components/TimeRangeSelector';
 import ServerMetricsChart from './ServerMetricsChart';
 
 const AGENT_COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
-const REALTIME_WINDOW_SECONDS = 5 * 60; // 5 minutes
-
 export interface UnifiedMetricChartProps {
   sourceType: ChartSourceType;
   sourceId: number;
@@ -54,21 +52,20 @@ const UnifiedMetricChart: React.FC<UnifiedMetricChartProps> = ({
     enabled: injectedData === undefined,
   });
 
-  const { data, loading, error, ramTotal } = useMemo(() => {
+  const { data, loading, error } = useMemo(() => {
     if (injectedData !== undefined) {
       return {
         data: injectedData,
         loading: injectedLoading ?? false,
         error: null,
-        ramTotal: undefined // ramTotal is not available with injected data
       };
     }
     return hookResult;
   }, [injectedData, injectedLoading, hookResult]);
 
   const chartConfig = useMemo(
-    () => getChartConfig({ metricType, t, ramTotal }),
-    [metricType, t, ramTotal]
+    () => getChartConfig({ metricType, t }),
+    [metricType, t]
   );
 
   // Dynamically generate lines for service latency charts
@@ -94,7 +91,8 @@ const UnifiedMetricChart: React.FC<UnifiedMetricChartProps> = ({
 
   // --- Formatters and Domains based on viewMode ---
   const now = Date.now();
-  const realtimeXAxisDomain: [number, number] = [now - REALTIME_WINDOW_SECONDS * 1000, now];
+  const realtimeWindowMs = 10 * 60 * 1000; // 10 minutes
+  const realtimeXAxisDomain: [number, number] = [now - realtimeWindowMs, now];
 
   const xAxisDomain = viewMode === 'realtime' ? realtimeXAxisDomain : undefined;
   

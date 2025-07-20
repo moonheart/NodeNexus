@@ -4,7 +4,6 @@ import { getVpsMetrics } from '@/services/metricsService';
 import { getMonitorResults } from '@/services/serviceMonitorService';
 import { getTimeRangeDetails, type TimeRangeValue } from '@/components/TimeRangeSelector';
 import type { PerformanceMetricPoint, ServiceMonitorResult } from '@/types';
-import { useShallow } from 'zustand/react/shallow';
 
 // --- Types ---
 
@@ -88,12 +87,6 @@ export const useMetrics = ({
     viewModeRef.current = viewMode;
   }, [viewMode]);
 
-  // For VPS metrics, we need the total RAM for calculations
-  const latestVpsMetric = useServerListStore(
-    useShallow(state => state.latestMetrics[sourceId])
-  );
-  const ramTotal = latestVpsMetric?.memoryTotalBytes ?? 0;
-
   useEffect(() => {
     if (!enabled) {
       setLoading(false);
@@ -123,11 +116,8 @@ export const useMetrics = ({
 
               unsubscribe = subscribeToVpsMonitorResults(sourceId, (newResults) => {
                 if (viewModeRef.current === 'realtime') {
-                  setData(prevData => {
-                    const dataMap = new Map(prevData.map(p => [p.time, p]));
-                    transformMonitorData(newResults).forEach(p => dataMap.set(p.time, { ...dataMap.get(p.time), ...p }));
-                    return Array.from(dataMap.values()).sort((a, b) => a.time - b.time).slice(-1000);
-                  });
+                  // The store now pushes the full, filtered array, so we can just replace the data.
+                  setData(transformMonitorData(newResults));
                 }
               });
             } else { // Historical
@@ -140,14 +130,26 @@ export const useMetrics = ({
           // --- Performance Metrics for a VPS (cpu, ram, etc.) ---
           else {
             if (viewMode === 'realtime') {
-              await useServerListStore.getState().ensureInitialVpsPerformanceMetrics(sourceId);
-              if (!isMounted) return;
-              const initialData = useServerListStore.getState().initialVpsMetrics[sourceId]?.data || [];
-              setData(transformVpsData(initialData));
+              const store = useServerListStore.getState();
+              const existingMetrics = store.initialVpsMetrics[sourceId];
+              
+              // If we already have data, use it immediately. Otherwise, fetch it.
+              if (existingMetrics && existingMetrics.status === 'success') {
+                setData(transformVpsData(existingMetrics.data));
+              } else {
+                await store.ensureInitialVpsPerformanceMetrics(sourceId);
+                if (!isMounted) return;
+                const initialData = store.initialVpsMetrics[sourceId]?.data || [];
+                setData(transformVpsData(initialData));
+              }
+              
               unsubscribe = useServerListStore.subscribe((state) => {
                 if (viewModeRef.current === 'realtime') {
                   const newData = state.initialVpsMetrics[sourceId]?.data;
-                  if (newData) setData(transformVpsData(newData));
+                  if (newData) {
+                    // The store now provides pre-filtered data.
+                    setData(transformVpsData(newData));
+                  }
                 }
               });
             } else { // Historical
@@ -196,5 +198,5 @@ export const useMetrics = ({
 
   const displayData = loading && preserveDataOnFetch ? previousData.current : data;
 
-  return { data: displayData, loading, error, ramTotal };
+  return { data: displayData, loading, error };
 };

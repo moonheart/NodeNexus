@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import { formatBytesForDisplay, formatNetworkSpeed } from '@/utils/vpsUtils';
+import { formatNetworkSpeed } from '@/utils/vpsUtils';
 
 // Define a more specific type for metric types we can handle
 export type PerformanceMetricType = 'cpu' | 'ram' | 'network' | 'disk';
@@ -33,7 +33,7 @@ export interface ChartConfig {
  * @returns A configuration object for the ServerMetricsChart component.
  */
 export const getChartConfig = (options: ChartConfigOptions): ChartConfig => {
-  const { metricType, t, ramTotal = 0 } = options;
+  const { metricType, t } = options;
 
   const primaryColor = '#8884d8';
   const secondaryColor = '#82ca9d';
@@ -57,9 +57,9 @@ export const getChartConfig = (options: ChartConfigOptions): ChartConfig => {
         yAxisDomain: [0, 100],
         yAxisFormatter: (value: number) => `${value}%`,
         tooltipValueFormatter: (value: number) => {
-          if (ramTotal === 0) return [`${value.toFixed(1)}%`, 'RAM'];
-          const absoluteValue = (value / 100) * ramTotal;
-          return [`${value.toFixed(1)}% (${formatBytesForDisplay(absoluteValue)})`, 'RAM'];
+          return [`${value.toFixed(1)}%`, 'RAM'];
+          // const absoluteValue = (value / 100) * ramTotal;
+          // return [`${value.toFixed(1)}% (${formatBytesForDisplay(absoluteValue)})`, 'RAM'];
         },
         chartType: 'area',
         showLegend: false,
