@@ -284,7 +284,12 @@ pub async fn metrics_collection_loop(
         sys.refresh_memory();
         // Use a minimal process refresh kind. We only need the process count,
         // not expensive details like command lines or environment variables.
-        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        sys.refresh_processes_specifics(
+            sysinfo::ProcessesToUpdate::All,
+            true,
+            sysinfo::ProcessRefreshKind::nothing().without_tasks(),
+        );
+
 
         // --- Check for configuration changes ---
         {
