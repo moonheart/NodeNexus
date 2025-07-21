@@ -66,6 +66,7 @@ async fn spawn_and_monitor_core_tasks(
     shared_agent_config: Arc<RwLock<AgentConfig>>,
     command_tracker: Arc<RunningCommandsTracker>,
     update_lock: Arc<tokio::sync::Mutex<()>>,
+    mut shutdown_rx: tokio::sync::watch::Receiver<()>,
 ) -> Vec<JoinHandle<()>> {
     let (
         in_stream,
@@ -75,6 +76,11 @@ async fn spawn_and_monitor_core_tasks(
     ) = handler.split_for_tasks();
 
     let mut tasks = Vec::new();
+
+    // Clone the shutdown receiver for each task before moving it into the async block.
+    let shutdown_rx_metrics = shutdown_rx.clone();
+    let shutdown_rx_listener = shutdown_rx.clone();
+    let shutdown_rx_monitor = shutdown_rx.clone();
 
     // Metrics Task
     let metrics_tx = tx_to_server.clone();
@@ -101,6 +107,7 @@ async fn spawn_and_monitor_core_tasks(
             metrics_vps_id,
             metrics_agent_secret,
             sys,
+            shutdown_rx_metrics,
         )
         .await;
         info!("Metrics collection loop ended.");
@@ -133,6 +140,7 @@ async fn spawn_and_monitor_core_tasks(
             listener_config_path,
             listener_command_tracker, // Pass command_tracker
             listener_update_lock,
+            shutdown_rx_listener,
         )
         .await;
         info!("Server message handler loop ended.");
@@ -156,6 +164,7 @@ async fn spawn_and_monitor_core_tasks(
                 monitor_vps_id,
                 monitor_agent_secret,
                 monitor_id_provider,
+                shutdown_rx_monitor,
             )
             .await;
         info!("Service monitor loop ended.");
@@ -421,6 +430,9 @@ async fn run_agent_logic() -> Result<(), Box<dyn Error + Send + Sync>> {
                 // Create the shared, mutable configuration state
                 let shared_agent_config =
                     Arc::new(RwLock::new(handler.initial_agent_config.clone()));
+
+                let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(());
+
                 // Pass command_tracker to spawn_and_monitor_core_tasks
                 let task_handles = spawn_and_monitor_core_tasks(
                     handler,
@@ -428,6 +440,7 @@ async fn run_agent_logic() -> Result<(), Box<dyn Error + Send + Sync>> {
                     shared_agent_config,
                     command_tracker.clone(),
                     update_lock.clone(),
+                    shutdown_rx,
                 )
                 .await;
 
@@ -452,10 +465,19 @@ async fn run_agent_logic() -> Result<(), Box<dyn Error + Send + Sync>> {
                     }
 
                     // Abort all other running tasks to ensure a clean state before reconnecting.
-                    info!("Aborting remaining tasks before reconnecting...");
-                    for handle in remaining_handles {
-                        handle.abort();
+                    info!("A core task has finished. Signaling all other tasks to shut down...");
+                    drop(shutdown_tx); // This will trigger all receivers
+
+                    // Wait for all tasks to complete
+                    info!("Waiting for remaining tasks to shut down gracefully...");
+                    let results = futures::future::join_all(remaining_handles).await;
+
+                    for result in results {
+                        if let Err(e) = result {
+                            error!(error = ?e, "A task panicked during shutdown.");
+                        }
                     }
+                    info!("All tasks have shut down. Preparing to reconnect.");
                 } else {
                     error!("No tasks were spawned, which is unexpected after successful handshake. This should not happen.");
                     // This case implies an issue in spawn_and_monitor_core_tasks or ConnectionHandler::split_for_tasks

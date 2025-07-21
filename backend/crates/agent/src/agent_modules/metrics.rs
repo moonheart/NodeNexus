@@ -203,6 +203,7 @@ pub async fn metrics_collection_loop(
     vps_db_id: i32,
     agent_secret: String,
     mut sys: System,
+    mut shutdown_rx: tokio::sync::watch::Receiver<()>,
 ) {
     let mut disks = Disks::new_with_refreshed_list();
     let mut networks = Networks::new_with_refreshed_list();
@@ -341,6 +342,13 @@ pub async fn metrics_collection_loop(
         // --- End Check ---
 
         tokio::select! {
+            biased;
+
+            _ = shutdown_rx.changed() => {
+                info!("Shutdown signal received, terminating metrics collection loop.");
+                break;
+            }
+
             _ = collect_interval.tick() => {
                 let current_time = Instant::now();
                 let snapshot = collect_performance_snapshot(
@@ -394,4 +402,5 @@ pub async fn metrics_collection_loop(
             }
         }
     }
+    info!("Metrics collection loop gracefully shut down.");
 }
