@@ -1,6 +1,4 @@
-// backend/src/http_server/admin_oauth_routes.rs
-
-use crate::db::services::oauth_service::{self, ProviderUpsertPayload};
+use crate::db::duckdb_service::oauth_service::{self, ProviderUpsertPayload};
 use crate::web::{AppError, AppState};
 use axum::{
     Json, Router,
@@ -28,7 +26,7 @@ async fn list_providers_handler(
     State(app_state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
     let providers = oauth_service::get_all_providers_for_admin(
-        &app_state.db_pool,
+        app_state.duckdb_pool.clone(),
         &app_state.config.notification_encryption_key,
     )
     .await?;
@@ -40,7 +38,7 @@ async fn create_provider_handler(
     Json(payload): Json<ProviderUpsertPayload>,
 ) -> Result<impl IntoResponse, AppError> {
     let new_provider = oauth_service::create_provider(
-        &app_state.db_pool,
+        app_state.duckdb_pool.clone(),
         payload,
         &app_state.config.notification_encryption_key,
     )
@@ -54,7 +52,7 @@ async fn update_provider_handler(
     Json(payload): Json<ProviderUpsertPayload>,
 ) -> Result<impl IntoResponse, AppError> {
     let updated_provider = oauth_service::update_provider(
-        &app_state.db_pool,
+        app_state.duckdb_pool.clone(),
         &provider_name,
         payload,
         &app_state.config.notification_encryption_key,
@@ -67,7 +65,7 @@ async fn delete_provider_handler(
     State(app_state): State<Arc<AppState>>,
     Path(provider_name): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    oauth_service::delete_provider(&app_state.db_pool, &provider_name).await?;
+    oauth_service::delete_provider(app_state.duckdb_pool.clone(), &provider_name).await?;
     Ok(Json(
         serde_json::json!({"status": "ok", "message": "Provider deleted successfully"}),
     ))

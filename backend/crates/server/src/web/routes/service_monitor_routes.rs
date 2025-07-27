@@ -1,5 +1,4 @@
-use crate::db::entities::{service_monitor, vps};
-use crate::db::services::service_monitor_service;
+use crate::db::duckdb_service::service_monitor_service;
 use crate::web::config_routes::push_config_to_vps;
 use crate::web::models::service_monitor_models::{
     CreateMonitor, ServiceMonitorResultDetails, UpdateMonitor,
@@ -12,7 +11,6 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::error;
@@ -35,7 +33,7 @@ async fn list_monitors(
 {
     let user_id = 1; // Hardcoded user_id
     let monitors =
-        service_monitor_service::get_monitors_with_details_by_user_id(&app_state.db_pool, user_id)
+        service_monitor_service::get_monitors_with_details_by_user_id(app_state.duckdb_pool.clone(), user_id)
             .await?;
     Ok(Json(monitors))
 }
@@ -48,10 +46,10 @@ async fn create_monitor(
 ) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
     let user_id = 1; // Hardcoded user_id
     let created_monitor =
-        service_monitor_service::create_monitor(&app_state.db_pool, user_id, payload).await?;
+        service_monitor_service::create_monitor(app_state.duckdb_pool.clone(), user_id, payload).await?;
 
     let affected_vps_ids =
-        service_monitor_service::get_vps_ids_for_monitor(&app_state.db_pool, created_monitor.id)
+        service_monitor_service::get_vps_ids_for_monitor(app_state.duckdb_pool.clone(), created_monitor.id)
             .await?;
     for vps_id in affected_vps_ids {
         if let Err(e) = push_config_to_vps(app_state.clone(), vps_id).await {
@@ -60,7 +58,7 @@ async fn create_monitor(
     }
 
     let monitor_details =
-        service_monitor_service::get_monitor_details_by_id(&app_state.db_pool, created_monitor.id)
+        service_monitor_service::get_monitor_details_by_id(app_state.duckdb_pool.clone(), created_monitor.id)
             .await?
             .ok_or_else(|| {
                 AppError::NotFound("Failed to fetch created monitor details".to_string())
@@ -78,7 +76,7 @@ async fn get_monitor(
     Path(id): Path<i32>,
     // TODO: Add user extraction and authorization
 ) -> Result<Json<crate::web::models::service_monitor_models::ServiceMonitorDetails>, AppError> {
-    let monitor = service_monitor_service::get_monitor_details_by_id(&app_state.db_pool, id)
+    let monitor = service_monitor_service::get_monitor_details_by_id(app_state.duckdb_pool.clone(), id)
         .await?
         .ok_or_else(|| AppError::NotFound("Monitor not found".to_string()))?;
     Ok(Json(monitor))
@@ -93,7 +91,7 @@ async fn update_monitor(
 ) -> Result<Json<crate::web::models::service_monitor_models::ServiceMonitorDetails>, AppError> {
     let user_id = 1; // Hardcoded user_id
     let (updated_details, affected_vps_ids) =
-        service_monitor_service::update_monitor(&app_state.db_pool, id, user_id, payload).await?;
+        service_monitor_service::update_monitor(app_state.duckdb_pool.clone(), id, user_id, payload).await?;
 
     for vps_id in affected_vps_ids {
         if let Err(e) = push_config_to_vps(app_state.clone(), vps_id).await {
@@ -113,12 +111,12 @@ async fn delete_monitor(
     let user_id = 1; // Hardcoded user_id
 
     let affected_vps_ids =
-        service_monitor_service::get_vps_ids_for_monitor(&app_state.db_pool, id).await?;
+        service_monitor_service::get_vps_ids_for_monitor(app_state.duckdb_pool.clone(), id).await?;
 
     let delete_result =
-        service_monitor_service::delete_monitor(&app_state.db_pool, id, user_id).await?;
+        service_monitor_service::delete_monitor(app_state.duckdb_pool.clone(), id, user_id).await?;
 
-    if delete_result.rows_affected == 0 {
+    if delete_result == 0 {
         return Err(AppError::NotFound(
             "Monitor not found or permission denied".to_string(),
         ));
@@ -141,15 +139,14 @@ async fn get_monitor_results(
     // TODO: Add user extraction and authorization
 ) -> Result<Json<Vec<ServiceMonitorResultDetails>>, AppError> {
     // Fetch the monitor to get its name and verify existence
-    let monitor = service_monitor::Entity::find_by_id(id)
-        .one(&app_state.db_pool)
+    let monitor = service_monitor_service::get_monitor_details_by_id(app_state.duckdb_pool.clone(), id)
         .await?
         .ok_or_else(|| AppError::NotFound("Monitor not found".to_string()))?;
 
     let interval_seconds = parse_interval_to_seconds(query.interval);
 
     let points = service_monitor_service::get_monitor_results_by_id(
-        &app_state.db_pool,
+        app_state.duckdb_pool.clone(),
         id,
         query.start_time,
         query.end_time,
@@ -166,10 +163,9 @@ async fn get_monitor_results(
     let agent_ids: Vec<i32> = points.iter().map(|p| p.agent_id).collect::<Vec<_>>();
 
     // 2. Fetch all agent (VPS) models for these IDs
-    let agents = vps::Entity::find()
-        .filter(vps::Column::Id.is_in(agent_ids))
-        .all(&app_state.db_pool)
-        .await?;
+    // This part needs to be refactored to use the duckdb_service
+    // For now, we'll have to query the vps service from duckdb
+    let agents = crate::db::duckdb_service::vps_service::get_vps_by_ids(app_state.duckdb_pool.clone(), agent_ids).await?;
     let agent_name_map: HashMap<i32, String> =
         agents.into_iter().map(|a| (a.id, a.name)).collect();
 

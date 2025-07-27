@@ -1,6 +1,6 @@
 // backend/src/http_server/oauth_routes.rs
 
-use crate::db::services::oauth_service::{self, OAuthCallbackResult, OAuthState};
+use crate::db::duckdb_service::oauth_service::{self, OAuthCallbackResult, OAuthState};
 use crate::web::{AppError, AppState, models::AuthenticatedUser};
 use axum::{
     Router,
@@ -28,7 +28,7 @@ pub fn create_protected_router() -> Router<Arc<AppState>> {
 async fn get_providers_handler(
     State(app_state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
-    let providers = oauth_service::get_all_providers(&app_state.db_pool).await?;
+    let providers = oauth_service::get_all_providers(app_state.duckdb_pool.clone()).await?;
     Ok(axum::Json(providers))
 }
 
@@ -37,7 +37,7 @@ async fn login_handler(
     Path(provider): Path<String>,
 ) -> Result<Response, AppError> {
     let provider_config = oauth_service::get_provider_config(
-        &app_state.db_pool,
+        app_state.duckdb_pool.clone(),
         &provider,
         &app_state.config.notification_encryption_key,
     )
@@ -86,7 +86,7 @@ async fn link_handler(
     Extension(user): Extension<AuthenticatedUser>,
 ) -> Result<Response, AppError> {
     let provider_config = oauth_service::get_provider_config(
-        &app_state.db_pool,
+        app_state.duckdb_pool.clone(),
         &provider,
         &app_state.config.notification_encryption_key,
     )
@@ -156,7 +156,7 @@ async fn callback_handler(
     }
 
     let result = oauth_service::handle_oauth_callback(
-        &app_state.db_pool,
+        app_state.duckdb_pool.clone(),
         &app_state.config,
         &provider,
         &query.code,

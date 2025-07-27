@@ -1,7 +1,7 @@
 use chrono::{TimeZone, Utc};
 use futures_util::{Sink, SinkExt, Stream};
 use sea_orm::{DatabaseConnection, EntityTrait};
-use std::sync::Arc;
+use std::sync::{mpsc as std_mpsc, Arc};
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info, warn};
@@ -13,7 +13,7 @@ use nodenexus_common::agent_service::{
 };
 use crate::db::entities::performance_metric;
 use crate::db::enums::ChildCommandStatus;
-use crate::db::services;
+use crate::db::{self, services};
 use crate::server::agent_state::{AgentSender, AgentState, ConnectedAgents};
 use crate::web::models::websocket_models::WsMessage;
 
@@ -31,10 +31,11 @@ pub trait AgentStream:
 pub struct AgentStreamContext {
     pub connected_agents: Arc<Mutex<ConnectedAgents>>,
     pub db_pool: Arc<DatabaseConnection>,
+    pub duckdb_pool: crate::db::duckdb_service::DuckDbPool,
     pub ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     pub update_trigger_tx: mpsc::Sender<()>,
-    pub batch_command_manager: Arc<crate::db::services::BatchCommandManager>,
     pub metric_sender: mpsc::Sender<performance_metric::Model>,
+    pub duckdb_metric_sender: std_mpsc::Sender<performance_metric::Model>,
 }
 
 
@@ -61,7 +62,7 @@ pub async fn process_agent_stream<S>(
                 let mut error_message_for_ack = String::new();
 
                 // Authenticate every message
-                match services::get_vps_by_id(&context.db_pool, vps_db_id_from_msg).await {
+                match db::duckdb_service::vps_service::get_vps_by_id(context.duckdb_pool.clone(), vps_db_id_from_msg).await {
                     Ok(Some(vps_record)) => {
                         if vps_record.agent_secret == *agent_secret_from_msg {
                             auth_successful_for_msg = true;
@@ -114,8 +115,8 @@ pub async fn process_agent_stream<S>(
                     info!(vps_id = vps_db_id_from_msg, "Received AgentHandshake.");
                     handshake_completed = true;
 
-                    let tasks = match services::service_monitor_service::get_tasks_for_agent(
-                        &context.db_pool,
+                    let tasks = match crate::db::duckdb_service::service_monitor_service::get_tasks_for_agent(
+                        context.duckdb_pool.clone(),
                         vps_db_id_from_msg,
                     )
                     .await
@@ -128,7 +129,7 @@ pub async fn process_agent_stream<S>(
                     };
 
                     let initial_config = match crate::web::routes::config_routes::get_effective_vps_config(
-                        &context.db_pool,
+                        context.duckdb_pool.clone(),
                         vps_db_id_from_msg,
                     )
                     .await
@@ -150,8 +151,8 @@ pub async fn process_agent_stream<S>(
                         }
                     };
 
-                    if let Err(e) = services::update_vps_info_on_handshake(
-                        &context.db_pool,
+                    if let Err(e) = db::duckdb_service::vps_service::update_vps_info_on_handshake(
+                        context.duckdb_pool.clone(),
                         vps_db_id_from_msg,
                         handshake,
                     )
@@ -218,36 +219,40 @@ pub async fn process_agent_stream<S>(
                         match payload {
                             ServerPayload::PerformanceBatch(batch) => {
                                 debug!(vps_id = vps_db_id_from_msg, "Received performance batch with {} records.", batch.snapshots.len());
-                                match services::save_performance_snapshot_batch(
-                                    &context.db_pool,
-                                    vps_db_id_from_msg,
-                                    &batch,
-                                )
-                                .await
-                                {
-                                    Ok(saved_metrics) => {
-                                        debug!(vps_id = vps_db_id_from_msg, saved_count = saved_metrics.len(), "Successfully saved performance batch.");
-                                        let has_metrics = !saved_metrics.is_empty();
-                                        for metric in saved_metrics {
-                                            if let Err(e) = context.metric_sender.send(metric).await {
-                                                error!(error = %e, "Failed to send metric to broadcaster channel.");
-                                            }
-                                        }
 
-                                        if has_metrics && context.update_trigger_tx.send(()).await.is_err() {
-                                            error!("Failed to send update trigger after metrics batch.");
+                                // Convert to the SeaORM entity model and send to the DuckDB writer service
+                                for snapshot in &batch.snapshots {
+                                    let metric_model = performance_metric::Model::from_snapshot(vps_db_id_from_msg, snapshot);
+                                    // Send to DuckDB for persistence
+                                    if let Err(e) = context.duckdb_metric_sender.send(metric_model.clone()) {
+                                        error!(vps_id = vps_db_id_from_msg, error = %e, "Failed to send metric to DuckDB writer channel.");
+                                    }
+                                    // Send to broadcaster for live WebSocket updates
+                                    let metric_sender = context.metric_sender.clone();
+                                    let vps_id = vps_db_id_from_msg;
+                                    tokio::spawn(async move {
+                                        if let Err(e) = metric_sender.send(metric_model).await {
+                                            error!(vps_id = vps_id, error = %e, "Failed to send metric to broadcaster channel.");
                                         }
-                                    }
-                                    Err(e) => {
-                                        error!(vps_id = vps_db_id_from_msg, error = %e, "Failed to save performance batch.");
-                                    }
+                                    });
                                 }
+
+                                // The old dual-write logic to PostgreSQL has been removed.
+                                // The metric_sender is still needed for live WebSocket broadcasts.
+                                if !batch.snapshots.is_empty()
+                                    && context.update_trigger_tx.send(()).await.is_err() {
+                                        error!("Failed to send update trigger after metrics batch.");
+                                    }
+                                    // We can create a dummy metric for the broadcaster from the last snapshot
+                                    // or decide if the broadcaster should be refactored to accept a different type.
+                                    // For now, let's just trigger the update.
+                                    // In a future step, we might want to send the raw snapshot data to the broadcaster.
                             }
                             ServerPayload::UpdateConfigResponse(response) => {
                                 let status = if response.success { "synced" } else { "failed" };
                                 let error_msg = if response.success { None } else { Some(response.error_message.as_str()) };
-                                if let Err(e) = services::update_vps_config_status(
-                                    &context.db_pool,
+                                if let Err(e) = db::duckdb_service::settings_service::update_vps_config_status(
+                                    context.duckdb_pool.clone(),
                                     vps_db_id_from_msg,
                                     status,
                                     error_msg,
@@ -262,11 +267,12 @@ pub async fn process_agent_stream<S>(
                             ServerPayload::BatchCommandOutputStream(output_stream) => {
                                 if let Ok(child_task_id) = Uuid::parse_str(&output_stream.command_id) {
                                     let stream_type = GrpcOutputType::try_from(output_stream.stream_type).unwrap_or(GrpcOutputType::Unspecified);
-                                    if let Err(e) = context.batch_command_manager.record_child_task_output(
+                                    let output_chunk = output_stream.chunk.as_str();
+                                    if let Err(e) = db::duckdb_service::batch_command_service::record_child_task_output(
+                                        context.duckdb_pool.clone(),
                                         child_task_id,
+                                        output_chunk,
                                         stream_type,
-                                        output_stream.chunk.into_bytes(),
-                                        Some(output_stream.timestamp),
                                     ).await {
                                         error!(child_task_id = %child_task_id, error = ?e, "Error recording child task output.");
                                     }
@@ -281,10 +287,10 @@ pub async fn process_agent_stream<S>(
                                         _ => ChildCommandStatus::AgentError,
                                     };
                                     let error_message = if command_result.error_message.is_empty() { None } else { Some(command_result.error_message) };
-                                    if let Err(e) = context.batch_command_manager.update_child_task_status(
+                                    if let Err(e) = db::duckdb_service::batch_command_service::update_child_task_status(
+                                        context.duckdb_pool.clone(),
                                         child_task_id,
                                         new_status,
-                                        Some(command_result.exit_code),
                                         error_message,
                                     ).await {
                                         error!(child_task_id = %child_task_id, error = ?e, "Error updating child task status.");
@@ -292,8 +298,8 @@ pub async fn process_agent_stream<S>(
                                 }
                             }
                             ServerPayload::ServiceMonitorResult(result) => {
-                                if let Err(e) = services::service_monitor_service::record_monitor_result(
-                                    &context.db_pool,
+                                if let Err(e) = crate::db::duckdb_service::service_monitor_service::record_monitor_result(
+                                    context.duckdb_pool.clone(),
                                     vps_db_id_from_msg,
                                     &result,
                                 )
@@ -305,8 +311,8 @@ pub async fn process_agent_stream<S>(
                                     // No need to re-fetch from DB. Use the data we just received.
                                     if context.ws_data_broadcaster_tx.receiver_count() > 0 {
                                         // Fetch monitor and agent names in parallel for efficiency
-                                        let monitor_future = crate::db::entities::service_monitor::Entity::find_by_id(result.monitor_id).one(&*context.db_pool);
-                                        let agent_future = crate::db::entities::vps::Entity::find_by_id(vps_db_id_from_msg).one(&*context.db_pool);
+                                        let monitor_future = crate::db::duckdb_service::service_monitor_service::get_monitor_details_by_id(context.duckdb_pool.clone(), result.monitor_id);
+                                        let agent_future = crate::db::duckdb_service::vps_service::get_vps_by_id(context.duckdb_pool.clone(), vps_db_id_from_msg);
 
                                         match tokio::try_join!(monitor_future, agent_future) {
                                                 Ok((Some(monitor), Some(agent))) => {

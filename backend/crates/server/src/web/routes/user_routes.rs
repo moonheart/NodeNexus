@@ -6,12 +6,12 @@ use axum::{
     response::IntoResponse,
     routing::{delete, get, put},
 };
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::EntityTrait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::{
-    db::entities::{user, user_identity_provider},
+    db::duckdb_service,
     web::{AppError, AppState, models::AuthenticatedUser},
 };
 
@@ -34,15 +34,12 @@ async fn update_preference(
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<UpdatePreferenceRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let mut user: user::ActiveModel = user::Entity::find_by_id(auth_user.id)
-        .one(&app_state.db_pool)
-        .await?
-        .ok_or(AppError::UserNotFound)?
-        .into();
-
-    user.language = Set(payload.language);
-    user.update(&app_state.db_pool).await?;
-
+    duckdb_service::user_service::update_preference(
+        app_state.duckdb_pool.clone(),
+        auth_user.id,
+        &payload.language,
+    )
+    .await?;
     Ok(Json(serde_json::json!({ "message": "Preference updated successfully" })))
 }
 
@@ -57,14 +54,12 @@ async fn update_username(
     Json(payload): Json<UpdateUsernameRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     // TODO: Add validation (e.g., check if username is already taken)
-    let mut user: user::ActiveModel = user::Entity::find_by_id(auth_user.id)
-        .one(&app_state.db_pool)
-        .await?
-        .ok_or(AppError::UserNotFound)?
-        .into();
-
-    user.username = Set(payload.username);
-    let updated_user = user.update(&app_state.db_pool).await?;
+    let updated_user = duckdb_service::user_service::update_username(
+        app_state.duckdb_pool.clone(),
+        auth_user.id,
+        &payload.username,
+    )
+    .await?;
 
     Ok(Json(serde_json::json!({
         "id": updated_user.id,
@@ -83,9 +78,7 @@ async fn update_password(
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<UpdatePasswordRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // TODO: Implement password update logic
-    let user_model = user::Entity::find_by_id(auth_user.id)
-        .one(&app_state.db_pool)
+    let user_model = duckdb_service::user_service::get_user_by_id(app_state.duckdb_pool.clone(), auth_user.id)
         .await?
         .ok_or(AppError::UserNotFound)?;
 
@@ -109,9 +102,12 @@ async fn update_password(
     let new_password_hash = bcrypt::hash(&payload.new_password, bcrypt::DEFAULT_COST)
         .map_err(|_| AppError::InternalServerError("Failed to hash new password".to_string()))?;
 
-    let mut user_active_model: user::ActiveModel = user_model.into();
-    user_active_model.password_hash = Set(Some(new_password_hash));
-    user_active_model.update(&app_state.db_pool).await?;
+    duckdb_service::user_service::update_password(
+        app_state.duckdb_pool.clone(),
+        auth_user.id,
+        &new_password_hash,
+    )
+    .await?;
 
     Ok(Json(
         serde_json::json!({ "message": "Password updated successfully" }),
@@ -128,10 +124,11 @@ async fn get_connected_accounts(
     Extension(auth_user): Extension<AuthenticatedUser>,
     State(app_state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
-    let identities = user_identity_provider::Entity::find()
-        .filter(user_identity_provider::Column::UserId.eq(auth_user.id))
-        .all(&app_state.db_pool)
-        .await?;
+    let identities = duckdb_service::user_service::get_connected_accounts(
+        app_state.duckdb_pool.clone(),
+        auth_user.id,
+    )
+    .await?;
 
     let response: Vec<ConnectedAccountResponse> = identities
         .into_iter()
@@ -150,11 +147,12 @@ async fn unlink_provider(
     Path(provider): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     // TODO: Add logic to prevent unlinking the last/only sign-in method if no password is set.
-    user_identity_provider::Entity::delete_many()
-        .filter(user_identity_provider::Column::UserId.eq(auth_user.id))
-        .filter(user_identity_provider::Column::ProviderName.eq(provider))
-        .exec(&app_state.db_pool)
-        .await?;
+    duckdb_service::user_service::unlink_provider(
+        app_state.duckdb_pool.clone(),
+        auth_user.id,
+        &provider,
+    )
+    .await?;
 
     Ok(Json(
         serde_json::json!({ "message": "Account unlinked successfully" }),

@@ -6,8 +6,8 @@ use axum::{
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::db::entities::command_script::{self, ScriptLanguage};
-use crate::db::services::command_script_service::{CommandScriptError, CommandScriptService};
+use crate::db::duckdb_service::command_script_service;
+use crate::db::entities::command_script::ScriptLanguage;
 use crate::web::models::AuthenticatedUser;
 use crate::web::{AppError, AppState};
 
@@ -33,9 +33,9 @@ async fn create_script(
     State(app_state): State<Arc<AppState>>,
     Extension(user): Extension<AuthenticatedUser>,
     Json(payload): Json<ScriptPayload>,
-) -> Result<Json<command_script::Model>, AppError> {
-    let script = CommandScriptService::create_script(
-        &app_state.db_pool,
+) -> Result<Json<command_script_service::CommandScript>, AppError> {
+    let script = command_script_service::create_script(
+        app_state.duckdb_pool.clone(),
         user.id,
         payload.name,
         payload.description,
@@ -50,8 +50,8 @@ async fn create_script(
 async fn list_scripts(
     State(app_state): State<Arc<AppState>>,
     Extension(user): Extension<AuthenticatedUser>,
-) -> Result<Json<Vec<command_script::Model>>, AppError> {
-    let scripts = CommandScriptService::get_scripts_by_user(&app_state.db_pool, user.id).await?;
+) -> Result<Json<Vec<command_script_service::CommandScript>>, AppError> {
+    let scripts = command_script_service::get_scripts_by_user(app_state.duckdb_pool.clone(), user.id).await?;
     Ok(Json(scripts))
 }
 
@@ -59,8 +59,8 @@ async fn get_script(
     State(app_state): State<Arc<AppState>>,
     Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<i32>,
-) -> Result<Json<command_script::Model>, AppError> {
-    let script = CommandScriptService::get_script_by_id(&app_state.db_pool, id, user.id).await?;
+) -> Result<Json<command_script_service::CommandScript>, AppError> {
+    let script = command_script_service::get_script_by_id(app_state.duckdb_pool.clone(), id, user.id).await?;
     Ok(Json(script))
 }
 
@@ -69,9 +69,9 @@ async fn update_script(
     Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<i32>,
     Json(payload): Json<ScriptPayload>,
-) -> Result<Json<command_script::Model>, AppError> {
-    let script = CommandScriptService::update_script(
-        &app_state.db_pool,
+) -> Result<Json<command_script_service::CommandScript>, AppError> {
+    let script = command_script_service::update_script(
+        app_state.duckdb_pool.clone(),
         id,
         user.id,
         payload.name,
@@ -89,24 +89,7 @@ async fn delete_script(
     Extension(user): Extension<AuthenticatedUser>,
     Path(id): Path<i32>,
 ) -> Result<Json<()>, AppError> {
-    CommandScriptService::delete_script(&app_state.db_pool, id, user.id).await?;
+    command_script_service::delete_script(app_state.duckdb_pool.clone(), id, user.id).await?;
     Ok(Json(()))
 }
 
-// Implement the From trait to convert CommandScriptError to AppError
-impl From<CommandScriptError> for AppError {
-    fn from(err: CommandScriptError) -> Self {
-        match err {
-            CommandScriptError::DbErr(e) => AppError::InternalServerError(e.to_string()),
-            CommandScriptError::NotFound(id) => {
-                AppError::NotFound(format!("Script with ID {id} not found"))
-            }
-            CommandScriptError::Unauthorized => {
-                AppError::Unauthorized("You are not authorized to perform this action.".to_string())
-            }
-            CommandScriptError::DuplicateName(name) => {
-                AppError::Conflict(format!("A script with the name '{name}' already exists."))
-            }
-        }
-    }
-}

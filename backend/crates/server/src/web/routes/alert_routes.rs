@@ -1,15 +1,17 @@
-use crate::web::{
-    AppError,
-    AppState,
-    models::AuthenticatedUser,
-    models::alert_models::{
-        CreateAlertRuleRequest, UpdateAlertRuleRequest, UpdateAlertRuleStatusRequest,
-    }, // Added UpdateAlertRuleStatusRequest
+use crate::{
+    db::duckdb_service::alert_service,
+    web::{
+        models::alert_models::{
+            CreateAlertRuleRequest, UpdateAlertRuleRequest, UpdateAlertRuleStatusRequest,
+        },
+        models::AuthenticatedUser,
+        AppError, AppState,
+    },
 };
 use axum::{
-    Json, Router,
     extract::{Extension, Path, State},
     routing::{get, post, put},
+    Json, Router,
 };
 use std::sync::Arc;
 
@@ -27,7 +29,7 @@ pub fn create_alert_router() -> Router<Arc<AppState>> {
                 .put(update_alert_rule_handler)
                 .delete(delete_alert_rule_handler),
         )
-        .route("/{id}/status", put(update_alert_rule_status_handler)) // Added route for status update
+        .route("/{id}/status", put(update_alert_rule_status_handler))
 }
 
 async fn create_alert_rule_handler(
@@ -36,10 +38,8 @@ async fn create_alert_rule_handler(
     Json(payload): Json<CreateAlertRuleRequest>,
 ) -> Result<Json<AlertRule>, AppError> {
     let user_id = authenticated_user.id;
-    let alert_rule = app_state
-        .alert_service
-        .create_alert_rule(user_id, payload)
-        .await?;
+    let alert_rule =
+        alert_service::create_alert_rule(app_state.duckdb_pool.clone(), user_id, payload).await?;
     Ok(Json(alert_rule))
 }
 
@@ -48,10 +48,8 @@ async fn get_all_alert_rules_handler(
     Extension(authenticated_user): Extension<AuthenticatedUser>,
 ) -> Result<Json<Vec<AlertRule>>, AppError> {
     let user_id = authenticated_user.id;
-    let alert_rules = app_state
-        .alert_service
-        .get_all_alert_rules_for_user(user_id)
-        .await?;
+    let alert_rules =
+        alert_service::get_all_alert_rules_for_user(app_state.duckdb_pool.clone(), user_id).await?;
     Ok(Json(alert_rules))
 }
 
@@ -61,13 +59,13 @@ async fn get_alert_rule_handler(
     Path(id): Path<i32>,
 ) -> Result<Json<AlertRule>, AppError> {
     let user_id = authenticated_user.id;
-    let alert_rule = app_state
-        .alert_service
-        .get_alert_rule_by_id_for_user(id, user_id)
-        .await?;
+    let alert_rule =
+        alert_service::get_alert_rule_by_id_for_user(app_state.duckdb_pool.clone(), id, user_id)
+            .await?;
     Ok(Json(alert_rule))
 }
 
+#[axum::debug_handler]
 async fn update_alert_rule_handler(
     State(app_state): State<Arc<AppState>>,
     Extension(authenticated_user): Extension<AuthenticatedUser>,
@@ -75,10 +73,9 @@ async fn update_alert_rule_handler(
     Json(payload): Json<UpdateAlertRuleRequest>,
 ) -> Result<Json<AlertRule>, AppError> {
     let user_id = authenticated_user.id;
-    let updated_rule = app_state
-        .alert_service
-        .update_alert_rule(id, user_id, payload)
-        .await?;
+    let updated_rule =
+        alert_service::update_alert_rule(app_state.duckdb_pool.clone(), id, user_id, payload)
+            .await?;
     Ok(Json(updated_rule))
 }
 
@@ -88,10 +85,7 @@ async fn delete_alert_rule_handler(
     Path(id): Path<i32>,
 ) -> Result<(), AppError> {
     let user_id = authenticated_user.id;
-    app_state
-        .alert_service
-        .delete_alert_rule(id, user_id)
-        .await?;
+    alert_service::delete_alert_rule(app_state.duckdb_pool.clone(), id, user_id).await?;
     Ok(())
 }
 
@@ -102,9 +96,12 @@ async fn update_alert_rule_status_handler(
     Json(payload): Json<UpdateAlertRuleStatusRequest>,
 ) -> Result<Json<AlertRule>, AppError> {
     let user_id = authenticated_user.id;
-    let updated_rule = app_state
-        .alert_service
-        .update_alert_rule_status(id, user_id, payload.is_active)
-        .await?;
+    let updated_rule = alert_service::update_alert_rule_status(
+        app_state.duckdb_pool.clone(),
+        id,
+        user_id,
+        payload.is_active,
+    )
+    .await?;
     Ok(Json(updated_rule))
 }

@@ -7,7 +7,8 @@ use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 use uuid::Uuid; // Import the SinkExt trait
 
-use crate::db::services::BatchCommandManager; // To update task status
+use crate::db;
+use crate::db::duckdb_service::DuckDbPool;
 use crate::server::agent_state::ConnectedAgents; // To get agent connections (gRPC clients)
 // AgentCommandServiceClient is not used directly here anymore as we use the existing stream sender
 use nodenexus_common::agent_service::{
@@ -37,7 +38,7 @@ pub enum DispatcherError {
     // ResponseError might be handled by a separate task listening to AgentToServerMessage
     // For now, focusing on dispatch.
     #[error("Database update error: {0}")]
-    DbUpdateError(String), // From BatchCommandManager
+    DbUpdateError(String), // From batch_command_service
     #[error("Invalid VPS ID format: {0}")]
     InvalidVpsId(String),
 }
@@ -45,18 +46,17 @@ pub enum DispatcherError {
 #[derive(Clone)]
 pub struct CommandDispatcher {
     connected_agents: Arc<Mutex<ConnectedAgents>>,
-    batch_command_manager: Arc<BatchCommandManager>,
-    // db: Arc<DatabaseConnection>, // Alternatively, pass DB for direct updates if needed
+    duckdb_pool: DuckDbPool,
 }
 
 impl CommandDispatcher {
     pub fn new(
         connected_agents: Arc<Mutex<ConnectedAgents>>,
-        batch_command_manager: Arc<BatchCommandManager>,
+        duckdb_pool: DuckDbPool,
     ) -> Self {
         Self {
             connected_agents,
-            batch_command_manager,
+            duckdb_pool,
         }
     }
 
@@ -80,15 +80,14 @@ impl CommandDispatcher {
             Some(mut sender) => {
                 // Make sender mutable
                 // Update status to SentToAgent before actually sending
-                self.batch_command_manager
-                    .update_child_task_status(
-                        child_task_id,
-                        ChildCommandStatus::SentToAgent,
-                        None,
-                        None,
-                    )
-                    .await
-                    .map_err(|e| DispatcherError::DbUpdateError(e.to_string()))?;
+                db::duckdb_service::batch_command_service::update_child_task_status(
+                    self.duckdb_pool.clone(),
+                    child_task_id,
+                    ChildCommandStatus::SentToAgent,
+                    None,
+                )
+                .await
+                .map_err(|e| DispatcherError::DbUpdateError(e.to_string()))?;
 
                 let batch_command_req = BatchAgentCommandRequest {
                     command_id: child_task_id.to_string(),
@@ -105,15 +104,14 @@ impl CommandDispatcher {
 
                 if let Err(e) = sender.send(message_to_agent).await {
                     // If sending fails, update status to AgentUnreachable
-                    self.batch_command_manager
-                        .update_child_task_status(
-                            child_task_id,
-                            ChildCommandStatus::AgentUnreachable,
-                            None,
-                            Some(format!("Failed to send command to agent via mpsc: {e}")),
-                        )
-                        .await
-                        .map_err(|db_err| DispatcherError::DbUpdateError(db_err.to_string()))?;
+                    db::duckdb_service::batch_command_service::update_child_task_status(
+                        self.duckdb_pool.clone(),
+                        child_task_id,
+                        ChildCommandStatus::AgentUnreachable,
+                        Some(format!("Failed to send command to agent via mpsc: {e}")),
+                    )
+                    .await
+                    .map_err(|db_err| DispatcherError::DbUpdateError(db_err.to_string()))?;
                     return Err(DispatcherError::MpscSendError(e.to_string()));
                 }
 
@@ -124,15 +122,14 @@ impl CommandDispatcher {
                 // It would then call BatchCommandManager methods to update DB.
             }
             None => {
-                self.batch_command_manager
-                    .update_child_task_status(
-                        child_task_id,
-                        ChildCommandStatus::AgentUnreachable,
-                        None,
-                        Some("Agent not connected or found.".to_string()),
-                    )
-                    .await
-                    .map_err(|e| DispatcherError::DbUpdateError(e.to_string()))?;
+                db::duckdb_service::batch_command_service::update_child_task_status(
+                    self.duckdb_pool.clone(),
+                    child_task_id,
+                    ChildCommandStatus::AgentUnreachable,
+                    Some("Agent not connected or found.".to_string()),
+                )
+                .await
+                .map_err(|e| DispatcherError::DbUpdateError(e.to_string()))?;
                 return Err(DispatcherError::AgentNotFound(vps_id.to_string()));
             }
         }
@@ -168,15 +165,14 @@ impl CommandDispatcher {
                 if let Err(e) = sender.send(message_to_agent).await {
                     error!(error = %e, "Failed to send terminate command to agent via mpsc. Marking as terminated.");
                     // If sending fails, the agent is unreachable. We should finalize the termination.
-                    self.batch_command_manager
-                        .update_child_task_status(
-                            child_task_id,
-                            ChildCommandStatus::Terminated,
-                            None,
-                            Some(format!("Agent unreachable during termination: {e}")),
-                        )
-                        .await
-                        .map_err(|db_err| DispatcherError::DbUpdateError(db_err.to_string()))?;
+                    db::duckdb_service::batch_command_service::update_child_task_status(
+                        self.duckdb_pool.clone(),
+                        child_task_id,
+                        ChildCommandStatus::Terminated,
+                        Some(format!("Agent unreachable during termination: {e}")),
+                    )
+                    .await
+                    .map_err(|db_err| DispatcherError::DbUpdateError(db_err.to_string()))?;
                 } else {
                     info!("Successfully dispatched terminate command to agent.");
                 }
@@ -186,15 +182,14 @@ impl CommandDispatcher {
                     "Agent not found when trying to send terminate. Marking as terminated."
                 );
                 // Agent not found, so we can consider the termination complete for this task.
-                self.batch_command_manager
-                    .update_child_task_status(
-                        child_task_id,
-                        ChildCommandStatus::Terminated,
-                        None,
-                        Some("Agent not connected, task terminated.".to_string()),
-                    )
-                    .await
-                    .map_err(|e| DispatcherError::DbUpdateError(e.to_string()))?;
+                db::duckdb_service::batch_command_service::update_child_task_status(
+                    self.duckdb_pool.clone(),
+                    child_task_id,
+                    ChildCommandStatus::Terminated,
+                    Some("Agent not connected, task terminated.".to_string()),
+                )
+                .await
+                .map_err(|e| DispatcherError::DbUpdateError(e.to_string()))?;
             }
         }
         Ok(())

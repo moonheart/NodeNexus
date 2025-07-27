@@ -13,7 +13,7 @@ use tokio::sync::{Mutex, broadcast, mpsc};
 
 use crate::axum_embed::{FallbackBehavior, ServeEmbed};
 use crate::db::entities::performance_metric;
-use crate::db::services::{AlertService, BatchCommandManager};
+// use crate::db::duckdb_service::alert_service::AlertService;
 use crate::notifications::service::NotificationService;
 use crate::server::agent_state::{ConnectedAgents, LiveServerDataCache};
 use crate::server::command_dispatcher::CommandDispatcher;
@@ -22,6 +22,7 @@ use crate::server::result_broadcaster::{BatchCommandUpdateMsg, ResultBroadcaster
 use crate::web::models::websocket_models::WsMessage;
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use tower_http::cors::{Any, CorsLayer};
+use crate::db::duckdb_service::DuckDbPool;
 
 use crate::services::auth_service;
 use crate::web::{
@@ -53,19 +54,20 @@ pub fn create_static_file_service() -> ServeEmbed<Assets> {
 #[derive(Clone)]
 pub struct AppState {
     pub db_pool: DatabaseConnection,
+    pub duckdb_pool: DuckDbPool,
     pub live_server_data_cache: LiveServerDataCache,
     pub ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     pub public_ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     pub connected_agents: Arc<Mutex<ConnectedAgents>>,
     pub update_trigger_tx: mpsc::Sender<()>,
     pub notification_service: Arc<NotificationService>,
-    pub alert_service: Arc<AlertService>,
-    pub batch_command_manager: Arc<BatchCommandManager>,
+    // pub alert_service: Arc<AlertService>,
     pub command_dispatcher: Arc<CommandDispatcher>,
     pub batch_command_updates_tx: broadcast::Sender<BatchCommandUpdateMsg>,
     pub result_broadcaster: Arc<ResultBroadcaster>,
     pub config: Arc<ServerConfig>,
     pub metric_sender: mpsc::Sender<performance_metric::Model>,
+    pub duckdb_metric_sender: std::sync::mpsc::Sender<performance_metric::Model>,
 }
 
 async fn register_handler(
@@ -115,38 +117,40 @@ async fn login_test_handler() -> (axum::http::StatusCode, Json<serde_json::Value
 pub fn create_axum_router(
     db_pool: DatabaseConnection,
     live_server_data_cache: LiveServerDataCache,
+    duckdb_pool: DuckDbPool,
     ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     public_ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     connected_agents: Arc<Mutex<ConnectedAgents>>,
     update_trigger_tx: mpsc::Sender<()>,
     notification_service: Arc<NotificationService>,
-    alert_service: Arc<AlertService>,
-    batch_command_manager: Arc<BatchCommandManager>,
+    // alert_service: Arc<AlertService>,
     batch_command_updates_tx: broadcast::Sender<BatchCommandUpdateMsg>,
     result_broadcaster: Arc<ResultBroadcaster>,
     config: Arc<ServerConfig>,
     metric_sender: mpsc::Sender<performance_metric::Model>,
+    duckdb_metric_sender: std::sync::mpsc::Sender<performance_metric::Model>,
 ) -> Router {
     let command_dispatcher = Arc::new(CommandDispatcher::new(
         connected_agents.clone(),
-        batch_command_manager.clone(),
+        duckdb_pool.clone(),
     ));
 
     let app_state = Arc::new(AppState {
         db_pool,
+        duckdb_pool,
         live_server_data_cache,
         ws_data_broadcaster_tx: ws_data_broadcaster_tx.clone(),
         public_ws_data_broadcaster_tx,
         connected_agents,
         update_trigger_tx,
         notification_service,
-        alert_service,
-        batch_command_manager,
+        // alert_service,
         command_dispatcher,
         batch_command_updates_tx,
         result_broadcaster,
         config,
         metric_sender,
+        duckdb_metric_sender,
     });
 
     let cors = CorsLayer::new()

@@ -14,7 +14,7 @@ pub struct Model {
     pub created_at: ChronoDateTimeUtc,
     pub updated_at: ChronoDateTimeUtc,
     pub theme_mode: String,
-    pub active_theme_id: Option<Uuid>,
+    pub active_theme_id: Option<i32>,
     pub language: String,
 }
 

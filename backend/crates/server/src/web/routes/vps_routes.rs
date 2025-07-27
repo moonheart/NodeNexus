@@ -1,22 +1,25 @@
 use crate::db::{
-    entities::{service_monitor, tag, vps},
-    models::PerformanceMetric as DbPerformanceMetric, // Keep DbPerformanceMetric for now
-    services,
+    duckdb_service::{
+        tag_service as duckdb_tag_service,
+        vps_renewal_service::VpsRenewalDataInput,
+        vps_service,
+    },
+    entities::{service_monitor, vps},
+    models::PerformanceMetric as DbPerformanceMetric,
 };
+use crate::db::entities::tag;
 use crate::server::update_service;
 use crate::web::models::service_monitor_models::ServiceMonitorResultDetails;
 use crate::web::models::AuthenticatedUser;
 use crate::web::{config_routes, AppError, AppState, routes::metrics_routes};
 use axum::{
-    extract::{Extension, Path, Query, State}, // Added Query
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     routing::{delete, get, post, put},
     Json, Router,
 };
-use chrono::{DateTime, Utc}; // Added for DateTime<Utc>
-use sea_orm::{ColumnTrait, DbErr, EntityTrait, QueryFilter}; // Added DbErr for error handling
-use serde::{Deserialize, Serialize}; // Added Serialize
-use std::collections::{HashMap, HashSet};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::error;
 
@@ -214,13 +217,12 @@ async fn create_vps_handler(
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<CreateVpsRequest>,
 ) -> Result<(StatusCode, Json<vps::Model>), AppError> {
-    // Changed Vps to vps::Model
     let user_id = authenticated_user.id;
-    match services::create_vps(&app_state.db_pool, user_id, &payload.name).await {
+    match vps_service::create_vps(app_state.duckdb_pool.clone(), user_id, &payload.name).await {
         Ok(vps_model) => {
             // After successful creation, broadcast the new state
             update_service::broadcast_full_state_update(
-                &app_state.db_pool,
+                app_state.duckdb_pool.clone(),
                 &app_state.live_server_data_cache,
                 &app_state.ws_data_broadcaster_tx,
             )
@@ -229,7 +231,7 @@ async fn create_vps_handler(
         }
         Err(db_err) => {
             error!(error = ?db_err, "Failed to create VPS.");
-            Err(AppError::DatabaseError(db_err.to_string()))
+            Err(db_err)
         }
     }
 }
@@ -239,18 +241,47 @@ async fn get_all_vps_handler(
     State(app_state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<VpsListItemResponse>>, AppError> {
     let user_id = authenticated_user.id;
-    // Use the unified query that fetches everything, including tags.
-    // Use the unified query that fetches everything for the specific user, including tags.
-    // Use the new, user-specific unified query that fetches everything, including tags.
-    let server_details_list =
-        services::get_all_vps_with_details_for_user(&app_state.db_pool, user_id)
-            .await
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?;
-
-    // Convert to the response type. Filtering is now correctly done in the database query.
-    let response_list: Vec<VpsListItemResponse> = server_details_list
+    let vps_list = vps_service::get_vps_by_user_id(app_state.duckdb_pool.clone(), user_id).await?;
+    
+    // TODO: This is inefficient. We should join tags and renewal info in the query.
+    // For now, we'll just convert the basic info.
+    let response_list: Vec<VpsListItemResponse> = vps_list
         .into_iter()
-        .map(|details| details.into())
+        .map(|vps| VpsListItemResponse {
+            id: vps.id,
+            user_id: vps.user_id,
+            name: vps.name,
+            ip_address: vps.ip_address,
+            os_type: vps.os_type,
+            status: vps.status,
+            agent_version: vps.agent_version,
+            created_at: vps.created_at.to_rfc3339(),
+            group: vps.group,
+            tags: None, // TODO
+            config_status: vps.config_status,
+            last_config_update_at: vps.last_config_update_at.map(|dt| dt.to_rfc3339()),
+            last_config_error: vps.last_config_error,
+            traffic_limit_bytes: vps.traffic_limit_bytes,
+            traffic_billing_rule: vps.traffic_billing_rule,
+            traffic_current_cycle_rx_bytes: vps.traffic_current_cycle_rx_bytes,
+            traffic_current_cycle_tx_bytes: vps.traffic_current_cycle_tx_bytes,
+            traffic_last_reset_at: vps.traffic_last_reset_at.map(|dt| dt.to_rfc3339()),
+            traffic_reset_config_type: vps.traffic_reset_config_type,
+            traffic_reset_config_value: vps.traffic_reset_config_value,
+            next_traffic_reset_at: vps.next_traffic_reset_at.map(|dt| dt.to_rfc3339()),
+            renewal_cycle: None, // TODO
+            renewal_cycle_custom_days: None, // TODO
+            renewal_price: None, // TODO
+            renewal_currency: None, // TODO
+            next_renewal_date: None, // TODO
+            last_renewal_date: None, // TODO
+            service_start_date: None, // TODO
+            payment_method: None, // TODO
+            auto_renew_enabled: None, // TODO
+            renewal_notes: None, // TODO
+            reminder_active: None, // TODO
+            agent_secret: None,
+        })
         .collect();
 
     Ok(Json(response_list))
@@ -263,29 +294,50 @@ async fn get_vps_detail_handler(
 ) -> Result<Json<VpsListItemResponse>, AppError> {
     let user_id = authenticated_user.id;
 
-    // Fetch the detailed view model, which has almost everything
-    let vps_details_for_view =
-        services::get_vps_with_details_for_cache_by_id(&app_state.db_pool, vps_id)
-            .await
-            .map_err(|e| AppError::DatabaseError(e.to_string()))?
-            .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
+    let vps = vps_service::get_vps_by_id(app_state.duckdb_pool.clone(), vps_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
 
-    // Authorize user based on the fetched details
-    if vps_details_for_view.basic_info.user_id != user_id {
+    if vps.user_id != user_id {
         return Err(AppError::Unauthorized("Access denied".to_string()));
     }
 
-    // Fetch the raw vps::Model to get the agent_secret
-    let vps_model = services::get_vps_by_id(&app_state.db_pool, vps_id)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?
-        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
-
-    // Convert the detailed view model to our response type
-    let mut response: VpsListItemResponse = vps_details_for_view.into();
-
-    // Securely add the agent secret to the response
-    response.agent_secret = Some(vps_model.agent_secret);
+    // TODO: This is inefficient. We should join tags and renewal info in the query.
+    let response = VpsListItemResponse {
+        id: vps.id,
+        user_id: vps.user_id,
+        name: vps.name,
+        ip_address: vps.ip_address,
+        os_type: vps.os_type,
+        status: vps.status,
+        agent_version: vps.agent_version,
+        created_at: vps.created_at.to_rfc3339(),
+        group: vps.group,
+        tags: None, // TODO
+        config_status: vps.config_status,
+        last_config_update_at: vps.last_config_update_at.map(|dt| dt.to_rfc3339()),
+        last_config_error: vps.last_config_error,
+        traffic_limit_bytes: vps.traffic_limit_bytes,
+        traffic_billing_rule: vps.traffic_billing_rule,
+        traffic_current_cycle_rx_bytes: vps.traffic_current_cycle_rx_bytes,
+        traffic_current_cycle_tx_bytes: vps.traffic_current_cycle_tx_bytes,
+        traffic_last_reset_at: vps.traffic_last_reset_at.map(|dt| dt.to_rfc3339()),
+        traffic_reset_config_type: vps.traffic_reset_config_type,
+        traffic_reset_config_value: vps.traffic_reset_config_value,
+        next_traffic_reset_at: vps.next_traffic_reset_at.map(|dt| dt.to_rfc3339()),
+        renewal_cycle: None, // TODO
+        renewal_cycle_custom_days: None, // TODO
+        renewal_price: None, // TODO
+        renewal_currency: None, // TODO
+        next_renewal_date: None, // TODO
+        last_renewal_date: None, // TODO
+        service_start_date: None, // TODO
+        payment_method: None, // TODO
+        auto_renew_enabled: None, // TODO
+        renewal_notes: None, // TODO
+        reminder_active: None, // TODO
+        agent_secret: Some(vps.agent_secret),
+    };
 
     Ok(Json(response))
 }
@@ -330,7 +382,6 @@ pub struct UpdateVpsRequest {
     auto_renew_enabled: Option<bool>,
     #[serde(default)]
     renewal_notes: Option<String>,
-    // reminder_active and last_reminder_generated_at are managed by backend, not set by client directly in update
 }
 
 async fn update_vps_handler(
@@ -341,21 +392,6 @@ async fn update_vps_handler(
 ) -> Result<StatusCode, AppError> {
     let user_id = authenticated_user.id;
 
-    // First, verify the user owns this VPS
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?
-        .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
-
-    if vps.user_id != user_id {
-        return Err(AppError::Unauthorized("Access denied".to_string()));
-    }
-
-    // Proceed with the update
-
-    // Construct VpsRenewalDataInput from payload
-    // Only create Some(VpsRenewalDataInput) if at least one renewal field is present in the payload.
-    // This avoids unnecessary database operations if no renewal info is being updated.
     let renewal_input_opt = if payload.renewal_cycle.is_some()
         || payload.renewal_cycle_custom_days.is_some()
         || payload.renewal_price.is_some()
@@ -367,7 +403,7 @@ async fn update_vps_handler(
         || payload.auto_renew_enabled.is_some()
         || payload.renewal_notes.is_some()
     {
-        Some(services::VpsRenewalDataInput {
+        Some(VpsRenewalDataInput {
             renewal_cycle: payload.renewal_cycle,
             renewal_cycle_custom_days: payload.renewal_cycle_custom_days,
             renewal_price: payload.renewal_price,
@@ -383,8 +419,8 @@ async fn update_vps_handler(
         None
     };
 
-    let change_detected = services::update_vps(
-        &app_state.db_pool,
+    let change_detected = vps_service::update_vps(
+        app_state.duckdb_pool.clone(),
         vps_id,
         user_id,
         payload.name,
@@ -395,15 +431,13 @@ async fn update_vps_handler(
         payload.traffic_reset_config_type,
         payload.traffic_reset_config_value,
         payload.next_traffic_reset_at,
-        renewal_input_opt, // Pass the constructed renewal input
+        renewal_input_opt,
     )
-    .await
-    .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+    .await?;
 
     if change_detected {
-        // Call the centralized broadcast function
         update_service::broadcast_full_state_update(
-            &app_state.db_pool,
+            app_state.duckdb_pool.clone(),
             &app_state.live_server_data_cache,
             &app_state.ws_data_broadcaster_tx,
         )
@@ -415,6 +449,7 @@ async fn update_vps_handler(
 }
 
 // --- VPS Tag Handlers ---
+// TODO: Migrate these handlers to DuckDB
 
 async fn add_tag_to_vps_handler(
     Extension(authenticated_user): Extension<AuthenticatedUser>,
@@ -423,10 +458,8 @@ async fn add_tag_to_vps_handler(
     Json(payload): Json<AddTagToVpsRequest>,
 ) -> Result<StatusCode, AppError> {
     let user_id = authenticated_user.id;
-    // Authorize: Check if user owns the VPS
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?
+    let vps = vps_service::get_vps_by_id(app_state.duckdb_pool.clone(), vps_id)
+        .await?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
     if vps.user_id != user_id {
         return Err(AppError::Unauthorized(
@@ -434,11 +467,14 @@ async fn add_tag_to_vps_handler(
         ));
     }
 
-    // TODO: Authorize: Check if user owns the Tag as well? For now, we assume if they can see it, they can use it.
+    duckdb_tag_service::add_tag_to_vps(app_state.duckdb_pool.clone(), vps_id, payload.tag_id).await?;
 
-    services::add_tag_to_vps(&app_state.db_pool, vps_id, payload.tag_id)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+    update_service::broadcast_full_state_update(
+        app_state.duckdb_pool.clone(),
+        &app_state.live_server_data_cache,
+        &app_state.ws_data_broadcaster_tx,
+    )
+    .await;
 
     Ok(StatusCode::CREATED)
 }
@@ -449,23 +485,24 @@ async fn remove_tag_from_vps_handler(
     Path((vps_id, tag_id)): Path<(i32, i32)>,
 ) -> Result<StatusCode, AppError> {
     let user_id = authenticated_user.id;
-    // Authorize: Check if user owns the VPS
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?
+    let vps = vps_service::get_vps_by_id(app_state.duckdb_pool.clone(), vps_id)
+        .await?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
     if vps.user_id != user_id {
         return Err(AppError::Unauthorized("Permission denied".to_string()));
     }
 
-    let delete_result = services::remove_tag_from_vps(&app_state.db_pool, vps_id, tag_id)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+    let rows_affected = duckdb_tag_service::remove_tag_from_vps(app_state.duckdb_pool.clone(), vps_id, tag_id).await?;
 
-    if delete_result.rows_affected > 0 {
+    if rows_affected > 0 {
+        update_service::broadcast_full_state_update(
+            app_state.duckdb_pool.clone(),
+            &app_state.live_server_data_cache,
+            &app_state.ws_data_broadcaster_tx,
+        )
+        .await;
         Ok(StatusCode::NO_CONTENT)
     } else {
-        // This could also mean the tag wasn't associated in the first place
         Ok(StatusCode::NOT_FOUND)
     }
 }
@@ -475,20 +512,15 @@ async fn get_tags_for_vps_handler(
     State(app_state): State<Arc<AppState>>,
     Path(vps_id): Path<i32>,
 ) -> Result<Json<Vec<tag::Model>>, AppError> {
-    // Changed Tag to tag::Model
     let user_id = authenticated_user.id;
-    // Authorize: Check if user owns the VPS
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?
+    let vps = vps_service::get_vps_by_id(app_state.duckdb_pool.clone(), vps_id)
+        .await?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
     if vps.user_id != user_id {
         return Err(AppError::Unauthorized("Permission denied".to_string()));
     }
 
-    let tags = services::get_tags_for_vps(&app_state.db_pool, vps_id)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?;
+    let tags = duckdb_tag_service::get_tags_for_vps(app_state.duckdb_pool.clone(), vps_id).await?;
 
     Ok(Json(tags))
 }
@@ -510,43 +542,26 @@ async fn bulk_update_vps_tags_handler(
     let user_id = authenticated_user.id;
 
     if payload.vps_ids.is_empty() {
-        return Ok(StatusCode::OK); // Nothing to do
+        return Ok(StatusCode::OK);
     }
 
-    match services::bulk_update_vps_tags(
-        &app_state.db_pool,
+    duckdb_tag_service::bulk_update_vps_tags(
+        app_state.duckdb_pool.clone(),
         user_id,
         &payload.vps_ids,
         &payload.add_tag_ids,
         &payload.remove_tag_ids,
     )
-    .await
-    {
-        Ok(_) => {
-            // Call the centralized broadcast function
-            update_service::broadcast_full_state_update(
-                &app_state.db_pool,
-                &app_state.live_server_data_cache,
-                &app_state.ws_data_broadcaster_tx,
-            )
-            .await;
-            Ok(StatusCode::OK)
-        }
-        Err(db_err) => {
-            // Changed to handle DbErr
-            if let DbErr::RecordNotFound(_) = &db_err {
-                // Directly match against &db_err
-                // This specific mapping might need adjustment based on how `bulk_update_vps_tags` signals auth failure.
-                // For now, assuming RecordNotFound might imply an issue with one of the VPS IDs not being found under user's ownership.
-                Err(AppError::Unauthorized(
-                    "Permission denied to one or more VPS, or VPS not found.".to_string(),
-                ))
-            } else {
-                // db_err is still available here as it was only borrowed
-                Err(AppError::DatabaseError(db_err.to_string()))
-            }
-        }
-    }
+    .await?;
+
+    update_service::broadcast_full_state_update(
+        app_state.duckdb_pool.clone(),
+        &app_state.live_server_data_cache,
+        &app_state.ws_data_broadcaster_tx,
+    )
+    .await;
+    
+    Ok(StatusCode::OK)
 }
 
 async fn bulk_trigger_update_check_handler(
@@ -564,14 +579,10 @@ async fn bulk_trigger_update_check_handler(
         }));
     }
 
-    // Verify user owns all VPS IDs and get the valid models
     let owned_vps_list =
-        services::get_owned_vps_from_ids(&app_state.db_pool, user_id, &payload.vps_ids).await?;
+        vps_service::get_owned_vps_from_ids(app_state.duckdb_pool.clone(), user_id, &payload.vps_ids).await?;
 
     if owned_vps_list.len() != payload.vps_ids.len() {
-        // This indicates a partial ownership, which we treat as a potential issue.
-        // For simplicity, we'll proceed with the ones they do own, but a stricter policy might be to error out.
-        // The service function already filters to only those owned.
         error!(
             "User {} attempted bulk update on VPS IDs they do not fully own. Requested: {:?}, Owned: {:?}",
             user_id,
@@ -605,7 +616,7 @@ async fn bulk_trigger_update_check_handler(
 }
 
 // --- Renewal Reminder Handler ---
-
+// TODO: Migrate this handler to DuckDB
 async fn dismiss_renewal_reminder_handler(
     Extension(authenticated_user): Extension<AuthenticatedUser>,
     State(app_state): State<Arc<AppState>>,
@@ -613,10 +624,8 @@ async fn dismiss_renewal_reminder_handler(
 ) -> Result<StatusCode, AppError> {
     let user_id = authenticated_user.id;
 
-    // Authorize: Check if user owns the VPS
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
-        .await
-        .map_err(|e| AppError::DatabaseError(e.to_string()))?
+    let vps = vps_service::get_vps_by_id(app_state.duckdb_pool.clone(), vps_id)
+        .await?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
 
     if vps.user_id != user_id {
@@ -625,25 +634,23 @@ async fn dismiss_renewal_reminder_handler(
         ));
     }
 
-    // Attempt to dismiss the reminder
-    match services::dismiss_vps_renewal_reminder(&app_state.db_pool, vps_id).await {
-        Ok(rows_affected) => {
-            if rows_affected > 0 {
-                // Successfully dismissed, trigger a full state update to ensure consistency
-                update_service::broadcast_full_state_update(
-                    &app_state.db_pool,
-                    &app_state.live_server_data_cache,
-                    &app_state.ws_data_broadcaster_tx,
-                )
-                .await;
-                Ok(StatusCode::OK)
-            } else {
-                // No reminder was active, or VPS not found in renewal info (though ownership check should catch this)
-                Ok(StatusCode::NOT_MODIFIED) // Or NOT_FOUND if we want to be more specific
-            }
-        }
-        Err(e) => Err(AppError::DatabaseError(e.to_string())),
-    }
+    // match services::dismiss_vps_renewal_reminder(&app_state.db_pool, vps_id).await {
+    //     Ok(rows_affected) => {
+    //         if rows_affected > 0 {
+    //             update_service::broadcast_full_state_update(
+    //                 &app_state.db_pool,
+    //                 &app_state.live_server_data_cache,
+    //                 &app_state.ws_data_broadcaster_tx,
+    //             )
+    //             .await;
+    //             Ok(StatusCode::OK)
+    //         } else {
+    //             Ok(StatusCode::NOT_MODIFIED)
+    //         }
+    //     }
+    //     Err(e) => Err(AppError::DatabaseError(e.to_string())),
+    // }
+    Ok(StatusCode::OK)
 }
 
 #[derive(Deserialize, Debug)]
@@ -676,6 +683,7 @@ pub fn parse_interval_to_seconds(interval: Option<String>) -> Option<i64> {
     })
 }
 
+// TODO: Migrate this handler to DuckDB
 async fn get_vps_monitor_results_handler(
     Extension(authenticated_user): Extension<AuthenticatedUser>,
     State(app_state): State<Arc<AppState>>,
@@ -684,84 +692,77 @@ async fn get_vps_monitor_results_handler(
 ) -> Result<Json<Vec<ServiceMonitorResultDetails>>, AppError> {
     let user_id = authenticated_user.id;
 
-    // Authorization: Verify the user owns the VPS.
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
+    let vps = vps_service::get_vps_by_id(app_state.duckdb_pool.clone(), vps_id)
         .await?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
     if vps.user_id != user_id {
         return Err(AppError::Unauthorized("Access denied".to_string()));
     }
 
-    let interval_seconds = parse_interval_to_seconds(query.interval);
+    // let interval_seconds = parse_interval_to_seconds(query.interval);
 
-    let points_result = services::get_monitor_results_by_vps_id(
-        &app_state.db_pool,
-        vps_id,
-        query.start_time,
-        query.end_time,
-        interval_seconds,
-    )
-    .await;
+    // let points_result = services::get_monitor_results_by_vps_id(
+    //     &app_state.db_pool,
+    //     vps_id,
+    //     query.start_time,
+    //     query.end_time,
+    //     interval_seconds,
+    // )
+    // .await;
 
-    let points = match points_result {
-        Ok(points) => points,
-        Err(e) => {
-            error!("Error fetching monitor results for VPS {}: {:?}", vps_id, e);
-            return Err(e.into());
-        }
-    };
+    // let points = match points_result {
+    //     Ok(points) => points,
+    //     Err(e) => {
+    //         error!("Error fetching monitor results for VPS {}: {:?}", vps_id, e);
+    //         return Err(e.into());
+    //     }
+    // };
 
-    if points.is_empty() {
-        return Ok(Json(Vec::new()));
-    }
+    // if points.is_empty() {
+    //     return Ok(Json(Vec::new()));
+    // }
 
-    // --- Conversion from ServiceMonitorPoint to ServiceMonitorResultDetails ---
-    // 1. Get all unique monitor IDs from the results
-    let monitor_ids: Vec<i32> = points
-        .iter()
-        .map(|p| p.monitor_id)
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
+    // let monitor_ids: Vec<i32> = points
+    //     .iter()
+    //     .map(|p| p.monitor_id)
+    //     .collect::<HashSet<_>>()
+    //     .into_iter()
+    //     .collect();
 
-    // 2. Fetch all monitor models for these IDs
-    let monitors = service_monitor::Entity::find()
-        .filter(service_monitor::Column::Id.is_in(monitor_ids))
-        .all(&app_state.db_pool)
-        .await?;
-    let monitor_name_map: HashMap<i32, String> =
-        monitors.into_iter().map(|m| (m.id, m.name)).collect();
+    // let monitors = service_monitor::Entity::find()
+    //     .filter(service_monitor::Column::Id.is_in(monitor_ids))
+    //     .all(&app_state.db_pool)
+    //     .await?;
+    // let monitor_name_map: HashMap<i32, String> =
+    //     monitors.into_iter().map(|m| (m.id, m.name)).collect();
 
-    // 3. The agent name is just the VPS name, which we already have.
-    let agent_name = vps.name;
+    // let agent_name = vps.name;
 
-    // 4. Map the points to the final details struct
-    let results = points
-        .into_iter()
-        .map(|point| {
-            let monitor_name = monitor_name_map
-                .get(&point.monitor_id)
-                .cloned()
-                .unwrap_or_else(|| "Unknown Monitor".to_string());
+    // let results = points
+    //     .into_iter()
+    //     .map(|point| {
+    //         let monitor_name = monitor_name_map
+    //             .get(&point.monitor_id)
+    //             .cloned()
+    //             .unwrap_or_else(|| "Unknown Monitor".to_string());
 
-            ServiceMonitorResultDetails {
-                time: point.time.to_rfc3339(),
-                monitor_id: point.monitor_id,
-                agent_id: point.agent_id,
-                agent_name: agent_name.clone(),
-                monitor_name,
-                // For aggregated data, is_up is a float (availability). Convert back to bool.
-                // We consider > 50% availability as "up". For raw data, it will be 1.0 or 0.0.
-                is_up: point.is_up.is_some_and(|v| v > 0.5),
-                latency_ms: point.latency_ms.map(|f| f as i32),
-                details: point.details,
-            }
-        })
-        .collect();
+    //         ServiceMonitorResultDetails {
+    //             time: point.time.to_rfc3339(),
+    //             monitor_id: point.monitor_id,
+    //             agent_id: point.agent_id,
+    //             agent_name: agent_name.clone(),
+    //             monitor_name,
+    //             is_up: point.is_up.is_some_and(|v| v > 0.5),
+    //             latency_ms: point.latency_ms.map(|f| f as i32),
+    //             details: point.details,
+    //         }
+    //     })
+    //     .collect();
 
-    Ok(Json(results))
+    Ok(Json(Vec::new()))
 }
 
+// TODO: Migrate this handler to DuckDB
 async fn get_vps_monitors_handler(
     Extension(authenticated_user): Extension<AuthenticatedUser>,
     State(app_state): State<Arc<AppState>>,
@@ -769,8 +770,7 @@ async fn get_vps_monitors_handler(
 ) -> Result<Json<Vec<service_monitor::Model>>, AppError> {
     let user_id = authenticated_user.id;
 
-    // Authorize: Check if user owns the VPS
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
+    let vps = vps_service::get_vps_by_id(app_state.duckdb_pool.clone(), vps_id)
         .await?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
 
@@ -778,8 +778,8 @@ async fn get_vps_monitors_handler(
         return Err(AppError::Unauthorized("Access denied".to_string()));
     }
 
-    // Fetch all monitors associated with the VPS (directly or via tags)
-    let monitors = services::get_monitors_for_vps(&app_state.db_pool, vps_id).await?;
+    // let monitors = services::get_monitors_for_vps(&app_state.db_pool, vps_id).await?;
+    let monitors = Vec::new();
 
     Ok(Json(monitors))
 }
@@ -802,20 +802,20 @@ pub fn vps_router() -> Router<Arc<AppState>> {
         .route(
             "/{vps_id}/renewal/dismiss-reminder",
             post(dismiss_renewal_reminder_handler),
-        ) // New route
+        )
         .route(
             "/{vps_id}/monitors",
             get(get_vps_monitors_handler),
-        ) // New route
+        )
         .route(
             "/{vps_id}/monitor-results",
             get(get_vps_monitor_results_handler),
-        ) // New route
+        )
         .route(
             "/{vps_id}/trigger-update-check",
             post(trigger_update_check_handler),
-        ) // New route for agent update
-        .nest("/{vps_id}/tags", vps_tags_router()) // Nest the tags router
+        )
+        .nest("/{vps_id}/tags", vps_tags_router())
         .merge(config_routes::create_vps_config_router())
         .merge(metrics_routes::metrics_router())
 }
@@ -827,20 +827,18 @@ async fn trigger_update_check_handler(
 ) -> Result<StatusCode, AppError> {
     let user_id = authenticated_user.id;
 
-    // Authorize: Check if user owns the VPS
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
+    let vps = vps_service::get_vps_by_id(app_state.duckdb_pool.clone(), vps_id)
         .await?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
     if vps.user_id != user_id {
         return Err(AppError::Unauthorized("Access denied".to_string()));
     }
 
-    // Send the command to the agent
     let agents_guard = app_state.connected_agents.lock().await;
     let sent = agents_guard.send_update_check_command(vps_id).await;
 
     if sent {
-        Ok(StatusCode::ACCEPTED) // Accepted for processing
+        Ok(StatusCode::ACCEPTED)
     } else {
         Err(AppError::NotFound(
             "Agent not connected or command could not be sent".to_string(),
@@ -855,20 +853,17 @@ async fn delete_vps_handler(
 ) -> Result<StatusCode, AppError> {
     let user_id = authenticated_user.id;
 
-    // Authorize: Check if user owns the VPS
-    let vps = services::get_vps_by_id(&app_state.db_pool, vps_id)
+    let vps = vps_service::get_vps_by_id(app_state.duckdb_pool.clone(), vps_id)
         .await?
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
     if vps.user_id != user_id {
         return Err(AppError::Unauthorized("Access denied".to_string()));
     }
 
-    // Proceed with deletion
-    services::delete_vps(&app_state.db_pool, vps_id).await?;
+    vps_service::delete_vps(app_state.duckdb_pool.clone(), vps_id).await?;
 
-    // Broadcast the change
     update_service::broadcast_full_state_update(
-        &app_state.db_pool,
+        app_state.duckdb_pool.clone(),
         &app_state.live_server_data_cache,
         &app_state.ws_data_broadcaster_tx,
     )

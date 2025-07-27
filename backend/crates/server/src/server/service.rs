@@ -1,46 +1,50 @@
-use sea_orm::DatabaseConnection; // Replaced PgPool
-use std::sync::Arc;
-use tokio::sync::{Mutex, mpsc};
+use sea_orm::DatabaseConnection;
+use std::sync::{mpsc as std_mpsc, Arc}; // Use std::sync::mpsc
+use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
 
 use super::agent_state::{ConnectedAgents, LiveServerDataCache};
 use super::core_services::AgentStreamContext;
 use super::handlers::handle_connection;
+use crate::db::duckdb_service::DuckDbPool;
 use crate::db::entities::performance_metric;
-use crate::db::services::BatchCommandManager;
 use crate::web::models::websocket_models::WsMessage;
-use tokio::sync::broadcast; // Added BatchCommandManager
 
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct MyAgentCommService {
     pub connected_agents: Arc<Mutex<ConnectedAgents>>,
-    pub db_pool: Arc<DatabaseConnection>, // Changed PgPool to DatabaseConnection
+    pub db_pool: Arc<DatabaseConnection>,
+    pub duckdb_pool: DuckDbPool,
     pub live_server_data_cache: LiveServerDataCache,
     pub ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     pub update_trigger_tx: mpsc::Sender<()>,
-    pub batch_command_manager: Arc<BatchCommandManager>, // Added BatchCommandManager
     pub metric_sender: mpsc::Sender<performance_metric::Model>,
+    // The service now holds the sender for DuckDB metrics.
+    pub duckdb_metric_sender: std_mpsc::Sender<performance_metric::Model>,
 }
 
 impl MyAgentCommService {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         connected_agents: Arc<Mutex<ConnectedAgents>>,
-        db_pool: Arc<DatabaseConnection>, // Changed PgPool to DatabaseConnection
+        db_pool: Arc<DatabaseConnection>,
+        duckdb_pool: DuckDbPool,
         live_server_data_cache: LiveServerDataCache,
         ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
         update_trigger_tx: mpsc::Sender<()>,
-        batch_command_manager: Arc<BatchCommandManager>, // Added BatchCommandManager
         metric_sender: mpsc::Sender<performance_metric::Model>,
+        duckdb_metric_sender: std_mpsc::Sender<performance_metric::Model>,
     ) -> Self {
         Self {
             connected_agents,
             db_pool,
+            duckdb_pool,
             live_server_data_cache,
             ws_data_broadcaster_tx,
             update_trigger_tx,
-            batch_command_manager, // Store BatchCommandManager
             metric_sender,
+            duckdb_metric_sender,
         }
     }
 }
@@ -59,10 +63,11 @@ impl nodenexus_common::agent_service::agent_communication_service_server::AgentC
         let context = Arc::new(AgentStreamContext {
             connected_agents: self.connected_agents.clone(),
             db_pool: self.db_pool.clone(),
+            duckdb_pool: self.duckdb_pool.clone(),
             ws_data_broadcaster_tx: self.ws_data_broadcaster_tx.clone(),
             update_trigger_tx: self.update_trigger_tx.clone(),
-            batch_command_manager: self.batch_command_manager.clone(),
             metric_sender: self.metric_sender.clone(),
+            duckdb_metric_sender: self.duckdb_metric_sender.clone(),
         });
 
         handle_connection(

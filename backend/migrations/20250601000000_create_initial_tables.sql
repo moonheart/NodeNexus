@@ -79,8 +79,6 @@ create table public.performance_metrics
     disk_io_write_bps                bigint                   not null,
     network_rx_cumulative            bigint                   not null,
     network_tx_cumulative            bigint                   not null,
-    id                               serial
-        primary key,
     swap_usage_bytes                 bigint  default 0        not null,
     swap_total_bytes                 bigint  default 0        not null,
     uptime_seconds                   bigint  default 0        not null,
@@ -88,7 +86,10 @@ create table public.performance_metrics
     running_processes_count          integer default 0        not null,
     tcp_established_connection_count integer default 0        not null,
     network_rx_instant_bps           bigint  default 0        not null,
-    network_tx_instant_bps           bigint  default 0        not null
+    network_tx_instant_bps           bigint  default 0        not null,
+    total_disk_space_bytes           bigint  default 0        not null,
+    used_disk_space_bytes            bigint  default 0        not null,
+    primary key (vps_id, time)
 );
 
 comment on column public.performance_metrics.network_rx_cumulative is 'Cumulative network received bytes for the default interface since agent start or counter reset. Stored here for historical reasons/potential future use.';
@@ -105,51 +106,20 @@ alter table public.performance_metrics
 create index idx_performance_metrics_vps_id_time_desc
     on public.performance_metrics (vps_id asc, time desc);
 
-create table public.performance_disk_usages
-(
-    id                    serial
-        primary key,
-    performance_metric_id integer          not null
-        references public.performance_metrics
-            on delete cascade,
-    mount_point           text             not null,
-    used_bytes            bigint           not null,
-    total_bytes           bigint           not null,
-    fstype                text,
-    usage_percent         double precision not null,
-    constraint uq_disk_usage_metric_mount
-        unique (performance_metric_id, mount_point)
-);
+create index performance_metrics_time_idx
+    on public.performance_metrics (time desc);
 
-alter table public.performance_disk_usages
-    owner to postgres;
+create trigger ts_insert_blocker
+    before insert
+    on public.performance_metrics
+    for each row
+execute procedure ???();
 
-create index idx_performance_disk_usages_metric_id
-    on public.performance_disk_usages (performance_metric_id);
-
-create table public.performance_network_interface_stats
-(
-    id                         serial
-        primary key,
-    performance_metric_id      integer not null
-        references public.performance_metrics
-            on delete cascade,
-    interface_name             text    not null,
-    rx_bytes_per_sec           bigint  not null,
-    tx_bytes_per_sec           bigint  not null,
-    rx_packets_per_sec         bigint  not null,
-    tx_packets_per_sec         bigint  not null,
-    rx_errors_total_cumulative bigint  not null,
-    tx_errors_total_cumulative bigint  not null,
-    constraint uq_network_stats_metric_interface
-        unique (performance_metric_id, interface_name)
-);
-
-alter table public.performance_network_interface_stats
-    owner to postgres;
-
-create index idx_performance_network_interface_stats_metric_id
-    on public.performance_network_interface_stats (performance_metric_id);
+create trigger ts_cagg_invalidation_trigger
+    after insert or update or delete
+    on public.performance_metrics
+    for each row
+execute procedure ???('5');
 
 create table public.settings
 (

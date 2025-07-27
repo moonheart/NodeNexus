@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::db::services::{self as db_services, performance_service::PerformanceMetricPoint};
+use crate::db::duckdb_service::performance_service::{self};
 use crate::web::AppError;
 use crate::web::AppState;
 
@@ -23,7 +23,7 @@ async fn get_vps_metrics_timeseries_handler(
     State(app_state): State<Arc<AppState>>,
     Path(vps_id): Path<i32>,
     Query(params): Query<MetricsTimeseriesQuery>,
-) -> Result<Json<Vec<PerformanceMetricPoint>>, AppError> {
+) -> Result<Json<Vec<performance_service::PerformanceMetricPoint>>, AppError> {
     let end_time = params.end_time.unwrap_or_else(Utc::now);
 
     if params.start_time >= end_time {
@@ -48,8 +48,8 @@ async fn get_vps_metrics_timeseries_handler(
         }
     });
 
-    let results = db_services::get_performance_metrics_for_vps(
-        &app_state.db_pool,
+    let results = performance_service::get_performance_metrics_for_vps(
+        &app_state.duckdb_pool,
         vps_id,
         params.start_time,
         end_time,
@@ -67,3 +67,4 @@ pub fn metrics_router() -> Router<Arc<AppState>> {
         get(get_vps_metrics_timeseries_handler),
     )
 }
+

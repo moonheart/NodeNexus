@@ -66,7 +66,7 @@ async fn spawn_and_monitor_core_tasks(
     shared_agent_config: Arc<RwLock<AgentConfig>>,
     command_tracker: Arc<RunningCommandsTracker>,
     update_lock: Arc<tokio::sync::Mutex<()>>,
-    mut shutdown_rx: tokio::sync::watch::Receiver<()>,
+    shutdown_rx: tokio::sync::watch::Receiver<()>,
 ) -> Vec<JoinHandle<()>> {
     let (
         in_stream,

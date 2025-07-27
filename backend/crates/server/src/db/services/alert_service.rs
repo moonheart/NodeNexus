@@ -189,7 +189,7 @@ impl AlertService {
         // Handle Option<Option<i32>> for vps_id
         if payload.vps_id.is_some() {
             // Check if the outer Option is Some
-            active_rule.vps_id = Set(payload.vps_id.flatten()); // flatten converts Option<Option<T>> to Option<T>
+            active_rule.vps_id = Set(payload.vps_id); // flatten converts Option<Option<T>> to Option<T>
         }
         if let Some(metric_type) = payload.metric_type {
             active_rule.metric_type = Set(metric_type);

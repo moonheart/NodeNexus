@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
-    db::entities::{theme, setting},
+    db::entities::theme,
     web::{error::AppError, models::AuthenticatedUser, AppState},
 };
 
@@ -140,27 +140,19 @@ async fn get_user_theme_settings(
     State(app_state): State<Arc<AppState>>,
     _authenticated_user: Extension<AuthenticatedUser>,
 ) -> Result<Json<UserThemeSettingsDto>, AppError> {
-    let db = &app_state.db_pool;
-    
-    let settings = setting::Entity::find().all(db).await?;
     let mut settings_dto = UserThemeSettingsDto::default();
     settings_dto.theme_mode = "system".to_string(); // Default value
 
-    for s in settings {
-        match s.key.as_str() {
-            "theme_mode" => {
-                if let Some(val) = s.value.as_str() {
-                    settings_dto.theme_mode = val.to_string();
-                }
-            },
-            "active_theme_id" => {
-                settings_dto.active_theme_id = s.value.as_str().map(String::from);
-            },
-            "background_image_url" => {
-                settings_dto.background_image_url = s.value.as_str().map(String::from);
-            },
-            _ => {}
+    if let Some(setting) = crate::db::duckdb_service::settings_service::get_setting(app_state.duckdb_pool.clone(), "theme_mode").await? {
+        if let Some(val) = setting.value.as_str() {
+            settings_dto.theme_mode = val.to_string();
         }
+    }
+    if let Some(setting) = crate::db::duckdb_service::settings_service::get_setting(app_state.duckdb_pool.clone(), "active_theme_id").await? {
+        settings_dto.active_theme_id = setting.value.as_str().map(String::from);
+    }
+    if let Some(setting) = crate::db::duckdb_service::settings_service::get_setting(app_state.duckdb_pool.clone(), "background_image_url").await? {
+        settings_dto.background_image_url = setting.value.as_str().map(String::from);
     }
 
     Ok(Json(settings_dto))
@@ -178,45 +170,16 @@ async fn update_user_theme_settings(
     _authenticated_user: Extension<AuthenticatedUser>,
     Json(payload): Json<UpdateThemeSettingsPayload>,
 ) -> Result<Json<()>, AppError> {
-    let db = &app_state.db_pool;
-
     if let Some(theme_mode) = payload.theme_mode {
-        let model = setting::ActiveModel {
-            key: Set("theme_mode".to_owned()),
-            value: Set(json!(theme_mode)),
-            updated_at: Set(chrono::Utc::now()),
-        };
-        setting::Entity::insert(model).on_conflict(
-            sea_orm::sea_query::OnConflict::column(setting::Column::Key)
-            .update_column(setting::Column::Value)
-            .to_owned()
-        ).exec(db).await?;
+        crate::db::duckdb_service::settings_service::update_setting(app_state.duckdb_pool.clone(), "theme_mode", &json!(theme_mode)).await?;
     }
 
     if let Some(active_theme_id) = payload.active_theme_id {
-        let model = setting::ActiveModel {
-            key: Set("active_theme_id".to_owned()),
-            value: Set(json!(active_theme_id)),
-            updated_at: Set(chrono::Utc::now()),
-        };
-        setting::Entity::insert(model).on_conflict(
-            sea_orm::sea_query::OnConflict::column(setting::Column::Key)
-            .update_column(setting::Column::Value)
-            .to_owned()
-        ).exec(db).await?;
+        crate::db::duckdb_service::settings_service::update_setting(app_state.duckdb_pool.clone(), "active_theme_id", &json!(active_theme_id)).await?;
     }
 
     if let Some(background_image_url) = payload.background_image_url {
-        let model = setting::ActiveModel {
-            key: Set("background_image_url".to_owned()),
-            value: Set(json!(background_image_url)),
-            updated_at: Set(chrono::Utc::now()),
-        };
-        setting::Entity::insert(model).on_conflict(
-            sea_orm::sea_query::OnConflict::column(setting::Column::Key)
-            .update_column(setting::Column::Value)
-            .to_owned()
-        ).exec(db).await?;
+        crate::db::duckdb_service::settings_service::update_setting(app_state.duckdb_pool.clone(), "background_image_url", &json!(background_image_url)).await?;
     }
 
     Ok(Json(()))

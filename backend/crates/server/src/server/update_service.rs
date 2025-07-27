@@ -1,8 +1,8 @@
-use sea_orm::DatabaseConnection; // Replaced PgPool
+use crate::db::duckdb_service::DuckDbPool;
 use tokio::sync::broadcast;
 use tracing::{debug, error};
 
-use crate::db::services;
+use crate::db::duckdb_service::vps_detail_service;
 use crate::server::agent_state::LiveServerDataCache;
 use crate::web::models::websocket_models::{FullServerListPush, ServerWithDetails, WsMessage};
 
@@ -19,12 +19,12 @@ use crate::web::models::websocket_models::{FullServerListPush, ServerWithDetails
 /// This function should be called after ANY event that modifies VPS data to ensure
 /// data consistency across the entire system.
 pub async fn broadcast_full_state_update(
-    pool: &DatabaseConnection, // Changed PgPool to DatabaseConnection
+    pool: DuckDbPool,
     cache: &LiveServerDataCache,
     broadcaster: &broadcast::Sender<WsMessage>,
 ) {
     // 1. Fetch the complete, fresh state for all servers from the database.
-    match services::get_all_vps_with_details_for_cache(pool).await {
+    match vps_detail_service::get_all_vps_with_details_for_cache(pool).await {
         Ok(all_servers) => {
             // 2. Update the in-memory cache with the fresh, complete list.
             {
@@ -65,13 +65,13 @@ pub async fn broadcast_full_state_update(
 }
 
 pub async fn broadcast_full_state_update_to_all(
-    pool: &DatabaseConnection,
+    pool: DuckDbPool,
     cache: &LiveServerDataCache,
     private_broadcaster: &broadcast::Sender<WsMessage>,
     public_broadcaster: &broadcast::Sender<WsMessage>,
 ) {
     // 1. Fetch the complete, fresh state for all servers from the database.
-    match services::get_all_vps_with_details_for_cache(pool).await {
+    match vps_detail_service::get_all_vps_with_details_for_cache(pool).await {
         Ok(all_servers) => {
             // 2. Update the in-memory cache with the fresh, complete list.
             {

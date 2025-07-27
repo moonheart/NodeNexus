@@ -1,55 +1,46 @@
 use crate::{
     db::{
-        entities::{alert_rule, performance_metric, vps}, // Changed to use entities
-        services::{AlertService, vps_service},
+        duckdb_service::{alert_evaluation_service, alert_service, vps_service, DuckDbPool},
+        entities::{alert_rule, performance_metric},
     },
     notifications::service::NotificationService,
 };
-use chrono::{Duration as ChronoDuration, Utc}; // Added ChronoDuration
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
-}; // Added SeaORM imports, removed IntoSimpleExpr
+use chrono::{Duration as ChronoDuration, Utc};
 use std::sync::Arc;
-use tokio::time::{Duration as TokioDuration, interval}; // Renamed to avoid conflict
+use tokio::time::{interval, Duration as TokioDuration};
 use tracing::{debug, error, info, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EvaluationError {
     #[error("Database query error: {0}")]
-    DatabaseError(#[from] DbErr), // Changed from sqlx::Error
+    DatabaseError(#[from] alert_evaluation_service::AlertEvaluationDbError),
     #[error("Notification error: {0}")]
     NotificationError(#[from] crate::notifications::service::NotificationError),
     #[error("Failed to get VPS name for ID {0}")]
     VpsNameNotFound(i32),
-    // Add other specific error types as needed
+    #[error("Application error: {0}")]
+    AppError(#[from] crate::web::error::AppError),
 }
 
 pub struct EvaluationService {
-    pool: Arc<DatabaseConnection>, // Changed PgPool to DatabaseConnection
+    pool: DuckDbPool,
     notification_service: Arc<NotificationService>,
-    alert_service: Arc<AlertService>,
 }
 
 impl EvaluationService {
-    pub fn new(
-        pool: Arc<DatabaseConnection>, // Changed PgPool to DatabaseConnection
-        notification_service: Arc<NotificationService>,
-        alert_service: Arc<AlertService>,
-    ) -> Self {
+    pub fn new(pool: DuckDbPool, notification_service: Arc<NotificationService>) -> Self {
         Self {
             pool,
             notification_service,
-            alert_service,
         }
     }
 
-    // Placeholder for the main evaluation loop
     pub async fn start_periodic_evaluation(self: Arc<Self>, period_seconds: u64) {
         info!(
             interval_seconds = period_seconds,
             "Alert evaluation service started."
         );
-        let mut interval = interval(TokioDuration::from_secs(period_seconds)); // Use TokioDuration
+        let mut interval = interval(TokioDuration::from_secs(period_seconds));
         loop {
             interval.tick().await;
             debug!("Running alert evaluation cycle...");
@@ -61,24 +52,15 @@ impl EvaluationService {
 
     async fn run_evaluation_cycle(&self) -> Result<(), EvaluationError> {
         debug!("Fetching active alert rules...");
-        let active_rules = self
-            .alert_service
-            .get_all_active_rules_for_evaluation()
-            .await?; // Assuming this method exists or will be created
+        let active_rules =
+            alert_service::get_all_active_rules_for_evaluation(self.pool.clone()).await?;
 
         info!(count = active_rules.len(), "Active rules to evaluate.");
 
         for rule in active_rules {
-            // TODO: Implement cooldown logic here later if needed (e.g., check rule.last_triggered_at)
-
             match self.evaluate_rule(&rule).await {
-                // rule is alert_rule::Model
                 Ok(Some(notification_message)) => {
                     info!(rule_name = %rule.name, rule_id = rule.id, "Alert rule triggered. Sending notifications.");
-                    // We need a method in NotificationService to send notifications for a given rule_id / user_id
-                    // This method would look up associated channels and send the message.
-                    // For now, let's assume such a method exists or we'll add it.
-                    // The user_id is on the rule object.
                     match self
                         .notification_service
                         .send_notifications_for_alert_rule(
@@ -93,10 +75,12 @@ impl EvaluationService {
                                 rule_id = rule.id,
                                 "Successfully sent notifications for alert rule."
                             );
-                            // Update last_triggered_at timestamp
-                            if let Err(e_update) = self
-                                .alert_service
-                                .update_alert_rule_last_triggered(rule.id, rule.user_id)
+                            if let Err(e_update) =
+                                alert_service::update_alert_rule_last_triggered(
+                                    self.pool.clone(),
+                                    rule.id,
+                                    rule.user_id,
+                                )
                                 .await
                             {
                                 error!(rule_id = rule.id, error = %e_update, "Failed to update last_triggered_at for rule.");
@@ -107,10 +91,7 @@ impl EvaluationService {
                         }
                     }
                 }
-                Ok(None) => {
-                    // Rule not triggered, do nothing or log verbosely if needed
-                    // debug!("Rule '{}' (ID: {}) not triggered.", rule.name, rule.id);
-                }
+                Ok(None) => {}
                 Err(e) => {
                     error!(rule_name = %rule.name, rule_id = rule.id, error = %e, "Error evaluating rule.");
                 }
@@ -124,24 +105,18 @@ impl EvaluationService {
         rule: &alert_rule::Model,
     ) -> Result<Option<String>, EvaluationError> {
         if let Some(specific_vps_id) = rule.vps_id {
-            // Rule is for a specific VPS
-            let vps_name = vps::Entity::find_by_id(specific_vps_id)
-                .select_only()
-                .column(vps::Column::Name)
-                .into_tuple::<Option<String>>()
-                .one(&*self.pool)
-                .await?
-                .flatten()
-                .unwrap_or_else(|| format!("VPS_ID_{specific_vps_id}"));
+            let vps_name =
+                vps_service::get_vps_by_id(self.pool.clone(), specific_vps_id)
+                    .await?
+                    .map(|v| v.name)
+                    .unwrap_or_else(|| format!("VPS_ID_{specific_vps_id}"));
 
             self.evaluate_rule_for_single_vps(rule, specific_vps_id, &vps_name)
                 .await
         } else {
-            // Rule is global, apply to all user's VPS
             debug!(rule_name = %rule.name, rule_id = rule.id, user_id = rule.user_id, "Evaluating global rule.");
-            // Assuming get_all_vps_for_user now returns Vec<vps::Model>
             let user_vps_list =
-                crate::db::services::vps_service::get_all_vps_for_user(&self.pool, rule.user_id)
+                alert_evaluation_service::get_all_vps_for_user(self.pool.clone(), rule.user_id)
                     .await?;
 
             if user_vps_list.is_empty() {
@@ -155,38 +130,29 @@ impl EvaluationService {
                     .await
                 {
                     Ok(Some(message)) => {
-                        // If any VPS triggers the global rule, return the message for that first trigger.
-                        // The cooldown for the global rule itself will be handled by run_evaluation_cycle.
                         return Ok(Some(message));
                     }
-                    Ok(None) => {
-                        // This specific VPS did not trigger the rule, continue to the next.
-                    }
+                    Ok(None) => {}
                     Err(e) => {
-                        // Log error for this specific VPS evaluation but continue trying others for a global rule.
                         error!(rule_name = %rule.name, vps_id = vps_instance.id, error = %e, "Error evaluating global rule for VPS.");
                     }
                 }
             }
-            // If no VPS triggered the global rule
             Ok(None)
         }
     }
 
     async fn evaluate_rule_for_single_vps(
         &self,
-        rule: &alert_rule::Model, // Changed AlertRuleFromDb to alert_rule::Model
+        rule: &alert_rule::Model,
         vps_id: i32,
         vps_name: &str,
     ) -> Result<Option<String>, EvaluationError> {
         let now = Utc::now();
 
-        // Cooldown check for the rule itself (relevant if called directly or for specific VPS rules)
-        // For global rules, this check is effectively done before iterating user's VPS if we consider the rule's last_triggered_at
         if rule.vps_id.is_some() || rule.vps_id.is_none() {
-            // Apply cooldown check universally for now
             if let Some(last_triggered) = rule.last_triggered_at {
-                let cooldown_period = ChronoDuration::seconds(rule.cooldown_seconds as i64); // Use rule.cooldown_seconds
+                let cooldown_period = ChronoDuration::seconds(rule.cooldown_seconds as i64);
                 if now < last_triggered + cooldown_period {
                     debug!(
                         rule_name = %rule.name,
@@ -204,31 +170,18 @@ impl EvaluationService {
 
         let start_time = now - ChronoDuration::seconds(rule.duration_seconds as i64);
 
-        let metrics: Vec<performance_metric::Model> = performance_metric::Entity::find()
-            .filter(performance_metric::Column::VpsId.eq(vps_id))
-            .filter(performance_metric::Column::Time.gte(start_time))
-            .filter(performance_metric::Column::Time.lte(now))
-            .order_by_asc(performance_metric::Column::Time)
-            .all(&*self.pool)
+        let metrics: Vec<performance_metric::Model> =
+            alert_evaluation_service::get_performance_metrics(
+                self.pool.clone(),
+                vps_id,
+                start_time,
+                now,
+            )
             .await?;
 
         if metrics.is_empty() {
             return Ok(None);
         }
-
-        // If duration_seconds is 0, we only need one metric point to trigger.
-        // If duration_seconds > 0, we need at least two points to confirm persistence over the duration.
-        // However, the current logic iterates all points within the duration.
-        // If rule.duration_seconds > 0 and metrics.len() < 2, it might be too few points to confirm persistence.
-        // For simplicity, let's keep the original logic: if any point in the duration window fails, the rule doesn't trigger.
-        // If all points match, it triggers. If duration_seconds is 0, it checks the latest point (or all points if multiple at 'now').
-        // The original check `metrics.len() < 2 && rule.duration_seconds > 0` seems to imply that for a duration,
-        // you need at least two data points to confirm it held true over that duration.
-        // Let's refine this: if duration_seconds > 0, we expect metrics to cover that duration.
-        // If only one metric point exists in a non-zero duration, it's hard to say it persisted.
-        // For now, we will keep the logic that all points in the window must match.
-        // If duration_seconds is 0, it means check the current state (latest metric).
-        // The query already filters by time window.
 
         let mut all_match = true;
         let mut last_metric_value_str = "N/A".to_string();
@@ -249,16 +202,11 @@ impl EvaluationService {
                         * 100.0;
                 }
                 "traffic_usage_percent" => {
-                    // For traffic, we need the current cycle usage from the VPS record, not the metric point.
-                    // We should fetch the VPS data once per rule evaluation for a specific VPS, not per metric point.
-                    // This logic needs to be outside the metric iteration loop.
-                    // For now, we'll break and handle this metric type separately or adjust the loop structure.
-                    // Let's adjust the structure to handle traffic separately as it doesn't rely on a series of metric points.
-                    all_match = false; // Indicate that this metric type is handled outside this loop
+                    all_match = false;
                     break;
                 }
                 _ => {
-                    all_match = false; // Unsupported metric type, stop evaluation for this rule/vps
+                    all_match = false;
                     break;
                 }
             }
@@ -266,7 +214,6 @@ impl EvaluationService {
                 last_metric_value_str = format!("{current_value:.2}");
             }
 
-            // Comparison logic remains the same for metric points
             if !rule.metric_type.eq("traffic_usage_percent") {
                 let condition_met = match rule.comparison_operator.as_str() {
                     ">" => current_value > rule.threshold,
@@ -276,7 +223,7 @@ impl EvaluationService {
                     "=" | "==" => (current_value - rule.threshold).abs() < f64::EPSILON,
                     "!=" => (current_value - rule.threshold).abs() > f64::EPSILON,
                     _ => {
-                        all_match = false; // Unsupported operator
+                        all_match = false;
                         break;
                     }
                 };
@@ -286,13 +233,12 @@ impl EvaluationService {
                     break;
                 }
             }
-        } // End of metric iteration loop
+        }
 
-        // Handle traffic_usage_percent separately as it uses current cycle data, not historical points
         if rule.metric_type.eq("traffic_usage_percent") {
-            let vps_model_option = vps_service::get_vps_by_id(&self.pool, vps_id).await?; // Assuming this returns Option<vps::Model>
+            let vps_model_option =
+                vps_service::get_vps_by_id(self.pool.clone(), vps_id).await?;
             if let Some(vps_model) = vps_model_option {
-                // Changed vps to vps_model
                 if let Some(limit_bytes) = vps_model.traffic_limit_bytes {
                     if limit_bytes > 0 {
                         let current_rx = vps_model.traffic_current_cycle_rx_bytes.unwrap_or(0);
@@ -306,12 +252,12 @@ impl EvaluationService {
                                     vps_id = vps_id,
                                     "Unsupported or missing traffic_billing_rule."
                                 );
-                                return Ok(None); // Cannot evaluate without a valid rule
+                                return Ok(None);
                             }
                         };
 
                         let usage_percent = (total_used as f64 / limit_bytes as f64) * 100.0;
-                        last_metric_value_str = format!("{usage_percent:.2}"); // Update for message
+                        last_metric_value_str = format!("{usage_percent:.2}");
 
                         let condition_met = match rule.comparison_operator.as_str() {
                             ">" => usage_percent > rule.threshold,
@@ -325,17 +271,12 @@ impl EvaluationService {
                                     rule_id = rule.id,
                                     "Unsupported comparison_operator for traffic_usage_percent rule."
                                 );
-                                return Ok(None); // Unsupported operator
+                                return Ok(None);
                             }
                         };
 
-                        if condition_met {
-                            all_match = true; // Condition met for traffic
-                        } else {
-                            all_match = false; // Condition not met for traffic
-                        }
+                        all_match = condition_met;
                     } else {
-                        // Limit is 0 or not set, cannot calculate percentage meaningfully for threshold rules
                         debug!(
                             vps_id = vps_id,
                             rule_id = rule.id,
@@ -344,7 +285,6 @@ impl EvaluationService {
                         return Ok(None);
                     }
                 } else {
-                    // Limit is not set, cannot calculate percentage
                     debug!(
                         vps_id = vps_id,
                         rule_id = rule.id,
@@ -357,7 +297,7 @@ impl EvaluationService {
                     vps_id = vps_id,
                     "VPS not found during traffic alert evaluation."
                 );
-                return Err(EvaluationError::VpsNameNotFound(vps_id)); // VPS not found
+                return Err(EvaluationError::VpsNameNotFound(vps_id));
             }
         }
 
@@ -371,7 +311,7 @@ impl EvaluationService {
                 "ALERT! Rule '{}' triggered for VPS '{}' (ID: {}): Metric {} {} {} (current: {}){}.",
                 rule.name,
                 vps_name,
-                vps_id, // Added vps_id to message for clarity with global rules
+                vps_id,
                 rule.metric_type,
                 rule.comparison_operator,
                 rule.threshold,

@@ -14,6 +14,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 use nodenexus_common::agent_service::CommandType as GrpcCommandType;
 use crate::{
+    db::duckdb_service::batch_command_service,
     web::{
         models::{
             batch_command_models::CreateBatchCommandRequest, AuthenticatedUser,
@@ -44,8 +45,7 @@ async fn handle_socket(
     let user_id = authenticated_user.id;
 
     // 1. Wait for the first message, which should contain the command payload.
-    // This has been moved inside the loop to handle multiple client messages.
-    let (batch_command_id, command_manager) = {
+    let batch_command_id = {
         let first_msg = match socket.next().await {
             Some(Ok(msg)) => msg,
             _ => {
@@ -73,15 +73,11 @@ async fn handle_socket(
             return;
         };
 
-    // 2. Create and dispatch the batch command.
         // 2. Create and dispatch the batch command.
-        let command_manager = app_state.batch_command_manager.clone();
         let dispatcher = app_state.command_dispatcher.clone();
+        let duckdb_pool = app_state.duckdb_pool.clone();
 
-        let batch_command_id = match command_manager
-            .create_batch_command(user_id, payload.clone())
-            .await
-        {
+        match batch_command_service::create_batch_command(duckdb_pool, user_id, payload.clone()).await {
             Ok((batch_task_model, child_tasks)) => {
                 let batch_id = batch_task_model.batch_command_id;
                 info!(%batch_id, "Successfully created batch command task in DB.");
@@ -95,11 +91,9 @@ async fn handle_socket(
                      warn!("Failed to send BATCH_TASK_CREATED message to client.");
                 }
 
-
                 // Asynchronously dispatch commands for each child task
                 for child_task in child_tasks {
                     let dispatcher_clone = dispatcher.clone();
-                    let command_manager_clone = command_manager.clone();
                     let payload_clone = payload.clone();
                     tokio::spawn(async move {
                         let command_content = payload_clone.command_content.unwrap_or_default();
@@ -131,9 +125,6 @@ async fn handle_socket(
 
                         if let Err(e) = dispatch_result {
                             error!(child_task_id = %child_task.child_command_id, error = ?e, "Failed to dispatch command.");
-                            // The dispatcher already handles setting the status to AgentUnreachable on failure.
-                            // We might only need to log here, or if there's a specific state for "failed to even try sending", set that.
-                            // For now, the dispatcher's update is sufficient.
                         }
                     });
                 }
@@ -153,17 +144,13 @@ async fn handle_socket(
                 let _ = socket.close().await;
                 return;
             }
-        };
-        (batch_command_id, command_manager)
+        }
     };
 
     // 3. Now, listen for broadcasted results and forward them to the client.
-    // This logic is adapted from the original ws_batch_command_handler.
     let mut rx = app_state.result_broadcaster.subscribe();
     info!(%batch_command_id, "Subscribed to result broadcaster. Forwarding messages to client.");
 
-    // Also need to deserialize the broadcast message to filter it.
-    // Define message structures for both incoming and outgoing messages.
     #[derive(Deserialize)]
     struct ClientMessage {
         #[serde(rename = "type")]
@@ -199,22 +186,22 @@ async fn handle_socket(
                         if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(&text) {
                             if client_msg.msg_type == "TERMINATE_TASK" {
                                 info!(%batch_command_id, "Received TERMINATE_TASK request from client.");
-                                match command_manager.terminate_batch_command(batch_command_id, user_id).await {
+                                let duckdb_pool = app_state.duckdb_pool.clone();
+                                let dispatcher = app_state.command_dispatcher.clone();
+                                match batch_command_service::terminate_batch_command(duckdb_pool, batch_command_id, user_id).await {
                                     Ok(tasks_to_terminate) => {
                                         info!(%batch_command_id, "Successfully marked tasks for termination. Sending signals to agents...");
-                                        let dispatcher = app_state.command_dispatcher.clone();
-                                        for task in tasks_to_terminate {
+                                        for (child_command_id, vps_id) in tasks_to_terminate {
                                             let dispatcher_clone = dispatcher.clone();
                                             tokio::spawn(async move {
-                                                if let Err(e) = dispatcher_clone.terminate_command_on_agent(task.child_command_id, task.vps_id).await {
-                                                    error!(child_command_id = %task.child_command_id, error = ?e, "Failed to dispatch termination signal to agent.");
+                                                if let Err(e) = dispatcher_clone.terminate_command_on_agent(child_command_id, vps_id).await {
+                                                    error!(child_command_id = %child_command_id, error = ?e, "Failed to dispatch termination signal to agent.");
                                                 }
                                             });
                                         }
                                     }
                                     Err(e) => {
                                         error!(%batch_command_id, error = ?e, "Failed to process batch command termination in DB.");
-                                        // Optionally, send an error back to the client.
                                     }
                                 }
                             }

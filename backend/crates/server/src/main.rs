@@ -18,8 +18,9 @@ i18n!("locales", fallback = "en");
 
 use nodenexus_common::agent_service::agent_communication_service_server::AgentCommunicationServiceServer;
 use crate::alerting::evaluation_service::EvaluationService; // Added EvaluationService
-use crate::db::services as db_services;
-use crate::db::services::{AlertService, BatchCommandManager}; // Added BatchCommandManager
+use crate::db::{duckdb_service, services as db_services};
+use crate::db::duckdb_service::{tasks::DuckDBTaskManager, DuckDBService};
+// use crate::db::services::{AlertService, BatchCommandManager}; // Added BatchCommandManager
 use crate::notifications::{encryption::EncryptionService, service::NotificationService};
 use crate::server::agent_state::{ConnectedAgents, LiveServerDataCache}; // Added LiveServerDataCache
 use crate::server::config::ServerConfig;
@@ -29,7 +30,7 @@ use crate::server::service::MyAgentCommService;
 use crate::server::update_service; // Added for cache population
 use crate::version::VERSION;
 use crate::web::models::websocket_models::{ServerWithDetails, WsMessage};
-
+ 
 use chrono::Utc;
 use clap::Parser;
 use dotenv::dotenv;
@@ -122,7 +123,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .await
         .expect("Failed to create database connection.");
 
-    // --- gRPC Server Setup ---
+   // --- DuckDB Setup ---
+   let duckdb_path = "nodenexus.duckdb";
+   let duckdb_manager = duckdb::DuckdbConnectionManager::file(duckdb_path).unwrap();
+   let duckdb_pool = r2d2::Pool::new(duckdb_manager).expect("Failed to create DuckDB connection pool.");
+   let duckdb_service = match DuckDBService::new(duckdb_pool.clone()) {
+       Ok(service) => {
+           info!("Successfully initialized DuckDB service.");
+           service
+       }
+       Err(e) => {
+           error!("Failed to create DuckDB service: {}", e);
+           return Err(e.into());
+       }
+   };
+   let duckdb_metric_sender = duckdb_service.get_sender();
+
+   // --- DuckDB Background Tasks ---
+   let duckdb_task_manager = Arc::new(DuckDBTaskManager::new(duckdb_path, duckdb_pool.clone()));
+   let duckdb_task_handle = tokio::spawn({
+       let manager = duckdb_task_manager.clone();
+       async move {
+           // Run tasks every hour
+           manager.run_periodic_tasks(Duration::from_secs(3600)).await;
+       }
+   });
+
+   // --- gRPC Server Setup ---
     let addr: SocketAddr = "0.0.0.0:8080".parse()?;
     let connected_agents = ConnectedAgents::new();
 
@@ -138,7 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 
     // Initialize the live server data cache
-    let initial_cache_data_result = db_services::get_all_vps_with_details_for_cache(&db_pool).await;
+    let initial_cache_data_result = db::duckdb_service::vps_detail_service::get_all_vps_with_details_for_cache(duckdb_pool.clone()).await;
     let initial_cache_map: HashMap<i32, ServerWithDetails> = match initial_cache_data_result {
         Ok(servers) => {
             info!(
@@ -165,22 +192,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         db_pool.clone(),
         encryption_service.clone(),
     ));
-    let alert_service = Arc::new(AlertService::new(Arc::new(db_pool.clone()))); // Initialize AlertService
     let result_broadcaster = Arc::new(ResultBroadcaster::new(batch_command_updates_tx.clone())); // Create ResultBroadcaster
-    let batch_command_manager = Arc::new(BatchCommandManager::new(
-        Arc::new(db_pool.clone()),
-        result_broadcaster.clone(),
-    )); // Create BatchCommandManager
 
     // --- gRPC Server Setup (continued) ---
     let agent_comm_service = MyAgentCommService::new(
         connected_agents.clone(),
         Arc::from(db_pool.clone()),
+        duckdb_pool.clone(),
         live_server_data_cache.clone(), // Pass cache to gRPC service
         ws_data_broadcaster_tx.clone(), // Pass broadcaster to gRPC service
         update_trigger_tx.clone(),      // Pass update trigger to gRPC service
-        batch_command_manager.clone(),  // Pass BatchCommandManager to gRPC service
         metric_sender.clone(),          // Pass the sender for the metric broadcaster
+        duckdb_metric_sender.clone(),
     );
 
     let grpc_service = AgentCommunicationServiceServer::new(agent_comm_service);
@@ -190,6 +213,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let pool_for_check = Arc::new(db_pool.clone());
     let trigger_for_check = update_trigger_tx.clone();
 
+    let duckdb_pool1 = duckdb_pool.clone();
     tokio::spawn(async move {
         let mut interval = interval(Duration::from_secs(60)); // Check every 60 seconds
         info!("Agent liveness check task started.");
@@ -235,7 +259,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 );
                 let mut needs_broadcast = false;
                 for vps_id in disconnected_vps_ids {
-                    match db_services::update_vps_status(&pool_for_check, vps_id, "offline").await {
+                    match duckdb_service::vps_service::update_vps_status(duckdb_pool1.clone(), vps_id, "offline").await {
                         // Dereference Arc
                         Ok(rows_affected) if rows_affected > 0 => {
                             needs_broadcast = true;
@@ -261,21 +285,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let http_router = crate::web::create_axum_router(
         db_pool.clone(),
         live_server_data_cache.clone(),
+        duckdb_pool.clone(),
         ws_data_broadcaster_tx.clone(),
         public_ws_data_broadcaster_tx.clone(), // Pass public broadcaster
         connected_agents.clone(),
         update_trigger_tx.clone(),
         notification_service.clone(),
-        alert_service.clone(),
-        batch_command_manager.clone(),
         batch_command_updates_tx.clone(),
         result_broadcaster.clone(),
         server_config.clone(),
         metric_sender.clone(),
+        duckdb_metric_sender.clone(),
     );
 
     // --- Debounced Broadcast Task ---
-    let pool_for_debounce = db_pool.clone();
+    let pool_for_debounce = duckdb_pool.clone();
     let cache_for_debounce = live_server_data_cache.clone();
     let private_broadcaster_for_debounce = ws_data_broadcaster_tx.clone();
     let public_broadcaster_for_debounce = public_ws_data_broadcaster_tx.clone();
@@ -302,7 +326,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // Now that the stream of updates has settled, perform the actual broadcast.
             debug!("Debounce window finished. Triggering broadcast to both channels.");
             update_service::broadcast_full_state_update_to_all(
-                &pool_for_debounce,
+                pool_for_debounce.clone(),
                 &cache_for_debounce,
                 &private_broadcaster_for_debounce,
                 &public_broadcaster_for_debounce,
@@ -313,72 +337,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // --- Alert Evaluation Service Task ---
     let alert_evaluation_service = Arc::new(EvaluationService::new(
-        Arc::new(db_pool.clone()), // Wrap db_pool in Arc
+        duckdb_pool.clone(),
         notification_service.clone(),
-        alert_service.clone(),
     ));
     let evaluation_task = tokio::spawn(async move {
         // Define the evaluation interval (e.g., 60 seconds)
         alert_evaluation_service.start_periodic_evaluation(60).await;
     });
 
-    // --- Traffic Reset Check Task ---
-    let pool_for_traffic_reset = db_pool.clone();
-    let trigger_for_traffic_reset = update_trigger_tx.clone();
-    let traffic_reset_task = tokio::spawn(async move {
-        // Check every 5 minutes, for example. This can be configurable.
-        let mut interval = interval(Duration::from_secs(5 * 60));
-        info!("Traffic reset check task started. Interval: 5 minutes.");
-
-        loop {
-            interval.tick().await;
-            info!("Performing scheduled VPS traffic reset check...");
-            match db_services::get_vps_due_for_traffic_reset(&pool_for_traffic_reset).await {
-                Ok(vps_ids) => {
-                    if vps_ids.is_empty() {
-                        debug!("No VPS due for traffic reset at this time.");
-                        continue;
-                    }
-                    info!(count = vps_ids.len(), vps_ids = ?vps_ids, "Found VPS(s) due for traffic reset.");
-                    let mut reset_performed_for_any_vps = false;
-                    for vps_id in vps_ids {
-                        match db_services::process_vps_traffic_reset(
-                            &pool_for_traffic_reset,
-                            vps_id,
-                        )
-                        .await
-                        {
-                            Ok(reset_performed) => {
-                                if reset_performed {
-                                    info!(vps_id = vps_id, "Traffic reset successfully processed.");
-                                    reset_performed_for_any_vps = true;
-                                } else {
-                                    debug!(
-                                        vps_id = vps_id,
-                                        "Traffic reset not performed (either not due or already handled)."
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                error!(vps_id = vps_id, error = %e, "Error processing traffic reset.");
-                            }
-                        }
-                    }
-                    if reset_performed_for_any_vps {
-                        info!(
-                            "Traffic reset performed for one or more VPS. Triggering state update broadcast."
-                        );
-                        if trigger_for_traffic_reset.send(()).await.is_err() {
-                            error!("Failed to send update trigger from traffic reset task.");
-                        }
-                    }
-                }
-                Err(e) => {
-                    error!(error = %e, "Error fetching VPS due for traffic reset.");
-                }
-            }
-        }
-    });
 
     // --- Renewal Reminder Check Task ---
     let pool_for_renewal_reminder = db_pool.clone();
@@ -386,6 +352,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     const REMINDER_THRESHOLD_DAYS: i64 = 7; // Remind 7 days in advance
     const RENEWAL_REMINDER_CHECK_INTERVAL_SECONDS: u64 = 6 * 60 * 60; // Check every 6 hours
 
+    let duckdb_pool1 = duckdb_pool.clone();
     tokio::spawn(async move {
         let mut interval = interval(Duration::from_secs(RENEWAL_REMINDER_CHECK_INTERVAL_SECONDS));
         info!(
@@ -397,8 +364,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         loop {
             interval.tick().await;
             info!("Performing scheduled renewal reminder check...");
-            match db_services::check_and_generate_reminders(
-                &pool_for_renewal_reminder,
+            match duckdb_service::vps_renewal_service::check_and_generate_reminders(
+                duckdb_pool1.clone(),
                 REMINDER_THRESHOLD_DAYS,
             )
             .await
@@ -438,7 +405,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         loop {
             interval.tick().await;
             info!("Performing scheduled automatic renewal processing...");
-            match db_services::process_all_automatic_renewals(&pool_for_auto_renewal).await {
+            match duckdb_service::vps_renewal_service::process_all_automatic_renewals(duckdb_pool.clone()).await {
                 Ok(renewed_count) => {
                     if renewed_count > 0 {
                         info!(
@@ -510,9 +477,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // The debouncer_task will be aborted when main exits. For a graceful shutdown,
     // a cancellation token would be needed, but this is sufficient for now.
     let _ = debouncer_task;
-    let _ = evaluation_task; // Keep the evaluation task handle
-    let _ = traffic_reset_task; // Keep the traffic reset task handle
+    let _ = evaluation_task;
+    let _ = duckdb_task_handle; // Keep the DuckDB task handle
     // The renewal reminder task also runs in the background and will be aborted when main exits.
-
+ 
     Ok(())
 }

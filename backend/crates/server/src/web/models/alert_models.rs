@@ -17,7 +17,7 @@ pub struct CreateAlertRuleRequest {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateAlertRuleRequest {
     pub name: Option<String>,
-    pub vps_id: Option<Option<i32>>, // Option<Option<i32>> to allow setting vps_id to null
+    pub vps_id: Option<i32>, // Option<Option<i32>> to allow setting vps_id to null
     pub metric_type: Option<String>,
     pub threshold: Option<f64>,
     pub comparison_operator: Option<String>,

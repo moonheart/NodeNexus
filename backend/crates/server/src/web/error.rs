@@ -31,6 +31,8 @@ pub enum AppError {
     Unauthorized(String),
     #[error("Conflict: {0}")]
     Conflict(String),
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
 }
 
 impl IntoResponse for AppError {
@@ -57,6 +59,7 @@ impl IntoResponse for AppError {
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
+            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
         };
         (status, Json(serde_json::json!({ "error": error_message }))).into_response()
     }
@@ -68,8 +71,29 @@ impl From<sea_orm::DbErr> for AppError {
     }
 }
 
+impl From<duckdb::Error> for AppError {
+    fn from(err: duckdb::Error) -> Self {
+        AppError::DatabaseError(err.to_string())
+    }
+}
+
+impl From<r2d2::Error> for AppError {
+    fn from(err: r2d2::Error) -> Self {
+        AppError::DatabaseError(err.to_string())
+    }
+}
+
 impl From<serde_json::Error> for AppError {
     fn from(err: serde_json::Error) -> Self {
         AppError::InternalServerError(format!("JSON serialization/deserialization error: {err}"))
+    }
+}
+
+
+use crate::db::duckdb_service;
+
+impl From<duckdb_service::Error> for AppError {
+    fn from(err: duckdb_service::Error) -> Self {
+        AppError::DatabaseError(err.to_string())
     }
 }
