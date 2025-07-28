@@ -68,6 +68,7 @@ pub struct AppState {
     pub config: Arc<ServerConfig>,
     pub metric_sender: mpsc::Sender<performance_metric::Model>,
     pub duckdb_metric_sender: std::sync::mpsc::Sender<performance_metric::Model>,
+    pub shutdown_rx: tokio::sync::watch::Receiver<()>,
 }
 
 async fn register_handler(
@@ -129,6 +130,7 @@ pub fn create_axum_router(
     config: Arc<ServerConfig>,
     metric_sender: mpsc::Sender<performance_metric::Model>,
     duckdb_metric_sender: std::sync::mpsc::Sender<performance_metric::Model>,
+    shutdown_rx: tokio::sync::watch::Receiver<()>,
 ) -> Router {
     let command_dispatcher = Arc::new(CommandDispatcher::new(
         connected_agents.clone(),
@@ -151,6 +153,7 @@ pub fn create_axum_router(
         config,
         metric_sender,
         duckdb_metric_sender,
+        shutdown_rx,
     });
 
     let cors = CorsLayer::new()

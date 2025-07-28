@@ -1,6 +1,6 @@
 use sea_orm::DatabaseConnection;
 use std::sync::{mpsc as std_mpsc, Arc}; // Use std::sync::mpsc
-use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio::sync::{broadcast, mpsc, Mutex, watch};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
 
@@ -20,8 +20,8 @@ pub struct MyAgentCommService {
     pub ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     pub update_trigger_tx: mpsc::Sender<()>,
     pub metric_sender: mpsc::Sender<performance_metric::Model>,
-    // The service now holds the sender for DuckDB metrics.
     pub duckdb_metric_sender: std_mpsc::Sender<performance_metric::Model>,
+    pub shutdown_rx: watch::Receiver<()>,
 }
 
 impl MyAgentCommService {
@@ -35,6 +35,7 @@ impl MyAgentCommService {
         update_trigger_tx: mpsc::Sender<()>,
         metric_sender: mpsc::Sender<performance_metric::Model>,
         duckdb_metric_sender: std_mpsc::Sender<performance_metric::Model>,
+        shutdown_rx: watch::Receiver<()>,
     ) -> Self {
         Self {
             connected_agents,
@@ -45,6 +46,7 @@ impl MyAgentCommService {
             update_trigger_tx,
             metric_sender,
             duckdb_metric_sender,
+            shutdown_rx,
         }
     }
 }
@@ -68,6 +70,7 @@ impl nodenexus_common::agent_service::agent_communication_service_server::AgentC
             update_trigger_tx: self.update_trigger_tx.clone(),
             metric_sender: self.metric_sender.clone(),
             duckdb_metric_sender: self.duckdb_metric_sender.clone(),
+            shutdown_rx: self.shutdown_rx.clone(),
         });
 
         handle_connection(

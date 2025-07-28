@@ -1,4 +1,3 @@
-
 pub mod axum_embed;
 pub mod db;
 pub mod services;
@@ -41,7 +40,7 @@ use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio::sync::{Mutex, broadcast}; // Added Mutex for LiveServerDataCache and broadcast
+use tokio::sync::{Mutex, broadcast, watch}; // Added watch
 use tokio::time::{Duration, interval}; // For the periodic push task
 use tracing::{debug, error, info, warn};
 use tracing_appender::rolling;
@@ -83,20 +82,44 @@ fn init_logging() {
     // tracing_log::LogTracer::init().expect("Failed to set logger");
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Added Send + Sync for tokio::spawn
+fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Manually check for --version before full parsing to keep the original simple output.
     if std::env::args().any(|arg| arg == "--version") {
         println!("Server version: {VERSION}");
         return Ok(());
     }
 
-    let args = Args::parse();
-
     init_logging(); // Initialize logging first
     info!("Starting server, version: {}", VERSION);
     dotenv().ok(); // Load .env file
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+
+    rt.block_on(async {
+        let (shutdown_tx, shutdown_rx) = watch::channel(());
+
+        let server_future = run_server(shutdown_rx);
+
+        tokio::select! {
+            res = server_future => {
+                if let Err(e) = res {
+                    error!(error = %e, "Server failed to run.");
+                }
+            },
+            _ = tokio::signal::ctrl_c() => {
+                info!("Ctrl-C received, shutting down gracefully.");
+                // The drop of shutdown_tx will signal all receivers.
+            },
+        }
+    });
+
+    Ok(())
+}
+
+async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let args = Args::parse();
 
     // --- Debounce Update Trigger Channel ---
     let (update_trigger_tx, mut update_trigger_rx) = mpsc::channel::<()>(100);
@@ -114,10 +137,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // --- Database Pool Setup ---
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set in .env file");
     let mut opt = ConnectOptions::new(database_url.to_owned());
-    opt.max_connections(10)
-       // .sqlx_logging(true) // 您可以根据需要启用日志记录
-       // .sqlx_logging_level(log::LevelFilter::Info) // 设置日志级别
-       ;
+    opt.max_connections(10);
 
     let db_pool: DatabaseConnection = Database::connect(opt)
         .await
@@ -143,9 +163,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
    let duckdb_task_manager = Arc::new(DuckDBTaskManager::new(duckdb_path, duckdb_pool.clone()));
    let duckdb_task_handle = tokio::spawn({
        let manager = duckdb_task_manager.clone();
+       let mut shutdown_rx = shutdown_rx.clone();
        async move {
-           // Run tasks every hour
-           manager.run_periodic_tasks(Duration::from_secs(3600)).await;
+            tokio::select! {
+                _ = manager.run_periodic_tasks(Duration::from_secs(3600)) => {},
+                _ = shutdown_rx.changed() => {
+                    info!("DuckDB task manager shutting down.");
+                }
+            }
        }
    });
 
@@ -154,15 +179,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let connected_agents = ConnectedAgents::new();
 
     // --- Shared State Initialization for WebSocket and gRPC ---
-    // Initialize the broadcast channel for WebSocket updates
-    let (ws_data_broadcaster_tx, _) = broadcast::channel::<WsMessage>(100); // For private, full data
-    let (public_ws_data_broadcaster_tx, _) = broadcast::channel::<WsMessage>(100); // For public, desensitized data
-    let (batch_command_updates_tx, _rx) = broadcast::channel::<BatchCommandUpdateMsg>(100); // Channel for batch command updates
+    let (ws_data_broadcaster_tx, _) = broadcast::channel::<WsMessage>(100);
+    let (public_ws_data_broadcaster_tx, _) = broadcast::channel::<WsMessage>(100);
+    let (batch_command_updates_tx, _rx) = broadcast::channel::<BatchCommandUpdateMsg>(100);
 
     // --- Metric Broadcaster Setup ---
     let (metric_broadcaster, metric_sender) = MetricBroadcaster::new(ws_data_broadcaster_tx.clone());
     metric_broadcaster.run();
-
 
     // Initialize the live server data cache
     let initial_cache_data_result = db::duckdb_service::vps_detail_service::get_all_vps_with_details_for_cache(duckdb_pool.clone()).await;
@@ -184,7 +207,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // --- Notification Service Setup ---
     let encryption_key = env::var("NOTIFICATION_ENCRYPTION_KEY")
         .expect("NOTIFICATION_ENCRYPTION_KEY must be set as a 32-byte hex-encoded string.");
-    // The hex crate will be added in the next step.
     let key_bytes = hex::decode(encryption_key).expect("Failed to decode encryption key.");
     let encryption_service =
         Arc::new(EncryptionService::new(&key_bytes).expect("Failed to create encryption service."));
@@ -192,18 +214,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         db_pool.clone(),
         encryption_service.clone(),
     ));
-    let result_broadcaster = Arc::new(ResultBroadcaster::new(batch_command_updates_tx.clone())); // Create ResultBroadcaster
+    let result_broadcaster = Arc::new(ResultBroadcaster::new(batch_command_updates_tx.clone()));
 
     // --- gRPC Server Setup (continued) ---
     let agent_comm_service = MyAgentCommService::new(
         connected_agents.clone(),
         Arc::from(db_pool.clone()),
         duckdb_pool.clone(),
-        live_server_data_cache.clone(), // Pass cache to gRPC service
-        ws_data_broadcaster_tx.clone(), // Pass broadcaster to gRPC service
-        update_trigger_tx.clone(),      // Pass update trigger to gRPC service
-        metric_sender.clone(),          // Pass the sender for the metric broadcaster
+        live_server_data_cache.clone(),
+        ws_data_broadcaster_tx.clone(),
+        update_trigger_tx.clone(),
+        metric_sender.clone(),
         duckdb_metric_sender.clone(),
+        shutdown_rx.clone(),
     );
 
     let grpc_service = AgentCommunicationServiceServer::new(agent_comm_service);
@@ -212,70 +235,61 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let connected_agents_for_check = connected_agents.clone();
     let pool_for_check = Arc::new(db_pool.clone());
     let trigger_for_check = update_trigger_tx.clone();
-
     let duckdb_pool1 = duckdb_pool.clone();
+    let mut liveness_shutdown_rx = shutdown_rx.clone();
     tokio::spawn(async move {
-        let mut interval = interval(Duration::from_secs(60)); // Check every 60 seconds
+        let mut interval = interval(Duration::from_secs(60));
         info!("Agent liveness check task started.");
 
         loop {
-            interval.tick().await;
-            let mut agents_guard = connected_agents_for_check.lock().await;
+            tokio::select! {
+                _ = interval.tick() => {
+                    let mut agents_guard = connected_agents_for_check.lock().await;
+                    let now = Utc::now().timestamp_millis();
+                    let timeout_duration_ms = 60 * 1000;
 
-            let now = Utc::now().timestamp_millis();
-            let timeout_duration_ms = 60 * 1000; // 60-second threshold
+                    let timed_out_agent_ids: Vec<i32> = agents_guard
+                        .agents
+                        .iter()
+                        .filter(|(_, state)| now - state.last_seen_ms > timeout_duration_ms)
+                        .map(|(id, _)| *id)
+                        .collect();
 
-            let timed_out_agent_ids: Vec<i32> = agents_guard
-                .agents
-                .iter()
-                .filter(|(_, state)| now - state.last_seen_ms > timeout_duration_ms)
-                .map(|(id, _)| *id)
-                .collect();
-
-            let mut disconnected_vps_ids = Vec::new();
-            for agent_id in timed_out_agent_ids {
-                if let Some(mut state) = agents_guard.agents.remove(&agent_id) {
-                    warn!(
-                        vps_id = state.vps_db_id,
-                        "Agent timed out. Closing connection gracefully."
-                    );
-                    disconnected_vps_ids.push(state.vps_db_id);
-
-                    // Spawn a new task to close the connection gracefully without blocking the liveness check loop.
-                    tokio::spawn(async move {
-                        if let Err(e) = state.sender.close().await {
-                            warn!(vps_id = %state.vps_db_id, error = %e, "Error closing agent sender gracefully.");
-                        }
-                    });
-                }
-            }
-
-            drop(agents_guard); // Release the lock before async DB operations
-
-            if !disconnected_vps_ids.is_empty() {
-                warn!(
-                    count = disconnected_vps_ids.len(),
-                    "Found disconnected agents. Updating status to 'offline'."
-                );
-                let mut needs_broadcast = false;
-                for vps_id in disconnected_vps_ids {
-                    match duckdb_service::vps_service::update_vps_status(duckdb_pool1.clone(), vps_id, "offline").await {
-                        // Dereference Arc
-                        Ok(rows_affected) if rows_affected > 0 => {
-                            needs_broadcast = true;
-                        }
-                        Ok(_) => {} // No rows affected, maybe already offline
-                        Err(e) => {
-                            error!(vps_id = vps_id, error = %e, "Failed to update status to 'offline'.");
+                    let mut disconnected_vps_ids = Vec::new();
+                    for agent_id in timed_out_agent_ids {
+                        if let Some(mut state) = agents_guard.agents.remove(&agent_id) {
+                            warn!(vps_id = state.vps_db_id, "Agent timed out. Closing connection gracefully.");
+                            disconnected_vps_ids.push(state.vps_db_id);
+                            tokio::spawn(async move {
+                                if let Err(e) = state.sender.close().await {
+                                    warn!(vps_id = %state.vps_db_id, error = %e, "Error closing agent sender gracefully.");
+                                }
+                            });
                         }
                     }
-                }
+                    drop(agents_guard);
 
-                if needs_broadcast {
-                    info!("Triggering broadcast after updating offline status.");
-                    if trigger_for_check.send(()).await.is_err() {
-                        error!("Failed to send update trigger from liveness check task.");
+                    if !disconnected_vps_ids.is_empty() {
+                        warn!(count = disconnected_vps_ids.len(), "Found disconnected agents. Updating status to 'offline'.");
+                        let mut needs_broadcast = false;
+                        for vps_id in disconnected_vps_ids {
+                            match duckdb_service::vps_service::update_vps_status(duckdb_pool1.clone(), vps_id, "offline").await {
+                                Ok(rows_affected) if rows_affected > 0 => needs_broadcast = true,
+                                Ok(_) => {}
+                                Err(e) => error!(vps_id = vps_id, error = %e, "Failed to update status to 'offline'."),
+                            }
+                        }
+                        if needs_broadcast {
+                            info!("Triggering broadcast after updating offline status.");
+                            if trigger_for_check.send(()).await.is_err() {
+                                error!("Failed to send update trigger from liveness check task.");
+                            }
+                        }
                     }
+                },
+                _ = liveness_shutdown_rx.changed() => {
+                    info!("Agent liveness check task shutting down.");
+                    break;
                 }
             }
         }
@@ -287,7 +301,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         live_server_data_cache.clone(),
         duckdb_pool.clone(),
         ws_data_broadcaster_tx.clone(),
-        public_ws_data_broadcaster_tx.clone(), // Pass public broadcaster
+        public_ws_data_broadcaster_tx.clone(),
         connected_agents.clone(),
         update_trigger_tx.clone(),
         notification_service.clone(),
@@ -296,6 +310,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         server_config.clone(),
         metric_sender.clone(),
         duckdb_metric_sender.clone(),
+        shutdown_rx.clone(),
     );
 
     // --- Debounced Broadcast Task ---
@@ -303,35 +318,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let cache_for_debounce = live_server_data_cache.clone();
     let private_broadcaster_for_debounce = ws_data_broadcaster_tx.clone();
     let public_broadcaster_for_debounce = public_ws_data_broadcaster_tx.clone();
+    let mut debouncer_shutdown_rx = shutdown_rx.clone();
     let debouncer_task = tokio::spawn(async move {
         use tokio::time::{Duration, sleep};
         const DEBOUNCE_DURATION: Duration = Duration::from_millis(2000);
 
         loop {
-            // Wait for the first trigger to start a debounce window.
-            if update_trigger_rx.recv().await.is_none() {
-                // Channel has been closed, the task can exit.
-                break;
+            tokio::select! {
+                Some(_) = update_trigger_rx.recv() => {
+                    sleep(DEBOUNCE_DURATION).await;
+                    while update_trigger_rx.try_recv().is_ok() {}
+                    debug!("Debounce window finished. Triggering broadcast to both channels.");
+                    update_service::broadcast_full_state_update_to_all(
+                        pool_for_debounce.clone(),
+                        &cache_for_debounce,
+                        &private_broadcaster_for_debounce,
+                        &public_broadcaster_for_debounce,
+                    ).await;
+                },
+                _ = debouncer_shutdown_rx.changed() => {
+                    info!("Debouncer task shutting down.");
+                    break;
+                }
             }
-
-            // After receiving the first signal, sleep for the debounce duration.
-            // This creates a "quiet window" where subsequent signals are ignored.
-            sleep(DEBOUNCE_DURATION).await;
-
-            // After the quiet window, drain all other signals that have queued up.
-            while update_trigger_rx.try_recv().is_ok() {
-                // Discard additional signals.
-            }
-
-            // Now that the stream of updates has settled, perform the actual broadcast.
-            debug!("Debounce window finished. Triggering broadcast to both channels.");
-            update_service::broadcast_full_state_update_to_all(
-                pool_for_debounce.clone(),
-                &cache_for_debounce,
-                &private_broadcaster_for_debounce,
-                &public_broadcaster_for_debounce,
-            )
-            .await;
         }
     });
 
@@ -340,51 +349,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         duckdb_pool.clone(),
         notification_service.clone(),
     ));
+    let mut evaluation_shutdown_rx = shutdown_rx.clone();
     let evaluation_task = tokio::spawn(async move {
-        // Define the evaluation interval (e.g., 60 seconds)
-        alert_evaluation_service.start_periodic_evaluation(60).await;
+        tokio::select! {
+            _ = alert_evaluation_service.start_periodic_evaluation(60) => {},
+            _ = evaluation_shutdown_rx.changed() => {
+                info!("Alert evaluation service shutting down.");
+            }
+        }
     });
-
 
     // --- Renewal Reminder Check Task ---
     let pool_for_renewal_reminder = db_pool.clone();
     let trigger_for_renewal_reminder = update_trigger_tx.clone();
-    const REMINDER_THRESHOLD_DAYS: i64 = 7; // Remind 7 days in advance
-    const RENEWAL_REMINDER_CHECK_INTERVAL_SECONDS: u64 = 6 * 60 * 60; // Check every 6 hours
-
+    const REMINDER_THRESHOLD_DAYS: i64 = 7;
+    const RENEWAL_REMINDER_CHECK_INTERVAL_SECONDS: u64 = 6 * 60 * 60;
     let duckdb_pool1 = duckdb_pool.clone();
+    let mut renewal_shutdown_rx = shutdown_rx.clone();
     tokio::spawn(async move {
         let mut interval = interval(Duration::from_secs(RENEWAL_REMINDER_CHECK_INTERVAL_SECONDS));
-        info!(
-            interval_seconds = RENEWAL_REMINDER_CHECK_INTERVAL_SECONDS,
-            threshold_days = REMINDER_THRESHOLD_DAYS,
-            "Renewal reminder check task started."
-        );
-
+        info!(interval_seconds = RENEWAL_REMINDER_CHECK_INTERVAL_SECONDS, threshold_days = REMINDER_THRESHOLD_DAYS, "Renewal reminder check task started.");
         loop {
-            interval.tick().await;
-            info!("Performing scheduled renewal reminder check...");
-            match duckdb_service::vps_renewal_service::check_and_generate_reminders(
-                duckdb_pool1.clone(),
-                REMINDER_THRESHOLD_DAYS,
-            )
-            .await
-            {
-                Ok(reminders_generated) => {
-                    if reminders_generated > 0 {
-                        info!(
-                            count = reminders_generated,
-                            "Renewal reminders were generated/updated. Triggering state update."
-                        );
-                        if trigger_for_renewal_reminder.send(()).await.is_err() {
-                            error!("Failed to send update trigger from renewal reminder task.");
-                        }
-                    } else {
-                        debug!("No new renewal reminders generated at this time.");
+            tokio::select! {
+                _ = interval.tick() => {
+                    info!("Performing scheduled renewal reminder check...");
+                    match duckdb_service::vps_renewal_service::check_and_generate_reminders(duckdb_pool1.clone(), REMINDER_THRESHOLD_DAYS).await {
+                        Ok(reminders_generated) if reminders_generated > 0 => {
+                            info!(count = reminders_generated, "Renewal reminders were generated/updated. Triggering state update.");
+                            if trigger_for_renewal_reminder.send(()).await.is_err() {
+                                error!("Failed to send update trigger from renewal reminder task.");
+                            }
+                        },
+                        Ok(_) => debug!("No new renewal reminders generated at this time."),
+                        Err(e) => error!(error = %e, "Error checking/generating renewal reminders."),
                     }
-                }
-                Err(e) => {
-                    error!(error = %e, "Error checking/generating renewal reminders.");
+                },
+                _ = renewal_shutdown_rx.changed() => {
+                    info!("Renewal reminder check task shutting down.");
+                    break;
                 }
             }
         }
@@ -393,34 +395,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // --- Automatic Renewal Processing Task ---
     let pool_for_auto_renewal = db_pool.clone();
     let trigger_for_auto_renewal = update_trigger_tx.clone();
-    const AUTO_RENEWAL_CHECK_INTERVAL_SECONDS: u64 = 6 * 60 * 60; // Check every 6 hours
-
+    const AUTO_RENEWAL_CHECK_INTERVAL_SECONDS: u64 = 6 * 60 * 60;
+    let mut auto_renewal_shutdown_rx = shutdown_rx.clone();
     tokio::spawn(async move {
         let mut interval = interval(Duration::from_secs(AUTO_RENEWAL_CHECK_INTERVAL_SECONDS));
-        info!(
-            interval_seconds = AUTO_RENEWAL_CHECK_INTERVAL_SECONDS,
-            "Automatic renewal processing task started."
-        );
-
+        info!(interval_seconds = AUTO_RENEWAL_CHECK_INTERVAL_SECONDS, "Automatic renewal processing task started.");
         loop {
-            interval.tick().await;
-            info!("Performing scheduled automatic renewal processing...");
-            match duckdb_service::vps_renewal_service::process_all_automatic_renewals(duckdb_pool.clone()).await {
-                Ok(renewed_count) => {
-                    if renewed_count > 0 {
-                        info!(
-                            count = renewed_count,
-                            "VPS were automatically renewed. Triggering state update."
-                        );
-                        if trigger_for_auto_renewal.send(()).await.is_err() {
-                            error!("Failed to send update trigger from automatic renewal task.");
-                        }
-                    } else {
-                        debug!("No VPS were automatically renewed at this time.");
+            tokio::select! {
+                _ = interval.tick() => {
+                    info!("Performing scheduled automatic renewal processing...");
+                    match duckdb_service::vps_renewal_service::process_all_automatic_renewals(duckdb_pool.clone()).await {
+                        Ok(renewed_count) if renewed_count > 0 => {
+                            info!(count = renewed_count, "VPS were automatically renewed. Triggering state update.");
+                            if trigger_for_auto_renewal.send(()).await.is_err() {
+                                error!("Failed to send update trigger from automatic renewal task.");
+                            }
+                        },
+                        Ok(_) => debug!("No VPS were automatically renewed at this time."),
+                        Err(e) => error!(error = %e, "Error processing automatic renewals."),
                     }
-                }
-                Err(e) => {
-                    error!(error = %e, "Error processing automatic renewals.");
+                },
+                _ = auto_renewal_shutdown_rx.changed() => {
+                    info!("Automatic renewal processing task shutting down.");
+                    break;
                 }
             }
         }
@@ -444,42 +441,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         move |req: axum::http::Request<axum::body::Body>| {
             let mut grpc_service = grpc_service.clone();
             let mut static_file_service = static_file_service.clone();
-
-            info!("Received request: {} {}", req.method(), req.uri());
-
             async move {
-                if req
-                    .headers()
-                    .get("content-type")
-                    .map(|v| v.as_bytes().starts_with(b"application/grpc"))
-                    .unwrap_or(false)
-                {
-                    grpc_service
-                        .call(req)
-                        .await
-                        .map(|res| res.map(axum::body::Body::new))
-                        .map_err(|err| match err {})
+                if req.headers().get("content-type").map(|v| v.as_bytes().starts_with(b"application/grpc")).unwrap_or(false) {
+                    grpc_service.call(req).await.map(|res| res.map(axum::body::Body::new)).map_err(|err| match err {})
                 } else {
-                    static_file_service
-                        .call(req)
-                        .await
-                        .map(|res| res.map(axum::body::Body::new))
-                        .map_err(|err| match err {})
+                    static_file_service.call(req).await.map(|res| res.map(axum::body::Body::new)).map_err(|err| match err {})
                 }
             }
         },
     ));
 
     axum::serve(listener, app.into_make_service())
+        .with_graceful_shutdown(async move {
+            shutdown_rx.changed().await.ok();
+            info!("Graceful shutdown signal received. Axum server is shutting down.");
+        })
         .await
         .map_err(Box::new)?;
 
-    // The debouncer_task will be aborted when main exits. For a graceful shutdown,
-    // a cancellation token would be needed, but this is sufficient for now.
-    let _ = debouncer_task;
-    let _ = evaluation_task;
-    let _ = duckdb_task_handle; // Keep the DuckDB task handle
-    // The renewal reminder task also runs in the background and will be aborted when main exits.
+    // Wait for tasks to complete
+    let _ = tokio::try_join!(debouncer_task, evaluation_task, duckdb_task_handle);
  
     Ok(())
 }
