@@ -1,14 +1,10 @@
 use chrono::TimeZone;
-use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 use nodenexus_common::agent_service::PerformanceSnapshot;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "performance_metrics")]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub time: ChronoDateTimeUtc,
-    #[sea_orm(primary_key, auto_increment = false)]
+    pub time: chrono::DateTime<chrono::Utc>,
     pub vps_id: i32,
     pub cpu_usage_percent: f64,
     pub memory_usage_bytes: i64,
@@ -28,25 +24,6 @@ pub struct Model {
     pub running_processes_count: i32,
     pub tcp_established_connection_count: i32,
 }
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::vps::Entity",
-        from = "Column::VpsId",
-        to = "super::vps::Column::Id"
-    )]
-    Vps,
-    // PerformanceMetric might have_many PerformanceDiskUsage and PerformanceNetworkInterfaceStat
-}
-
-impl Related<super::vps::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Vps.def()
-    }
-}
-
-impl ActiveModelBehavior for ActiveModel {}
 
 impl Model {
     pub fn from_snapshot(vps_id: i32, snapshot: &PerformanceSnapshot) -> Self {

@@ -17,10 +17,10 @@ i18n!("locales", fallback = "en");
 
 use nodenexus_common::agent_service::agent_communication_service_server::AgentCommunicationServiceServer;
 use crate::alerting::evaluation_service::EvaluationService; // Added EvaluationService
-use crate::db::{duckdb_service, services as db_services};
+use crate::db::{duckdb_service};
 use crate::db::duckdb_service::{tasks::DuckDBTaskManager, DuckDBService};
 // use crate::db::services::{AlertService, BatchCommandManager}; // Added BatchCommandManager
-use crate::notifications::{encryption::EncryptionService, service::NotificationService};
+use crate::notifications::encryption::EncryptionService;
 use crate::server::agent_state::{ConnectedAgents, LiveServerDataCache}; // Added LiveServerDataCache
 use crate::server::config::ServerConfig;
 use crate::server::metric_broadcaster::MetricBroadcaster;
@@ -34,7 +34,6 @@ use chrono::Utc;
 use clap::Parser;
 use dotenv::dotenv;
 use futures_util::SinkExt;
-use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use std::collections::HashMap;
 use std::env;
 use std::net::SocketAddr;
@@ -68,9 +67,9 @@ fn init_logging() {
     let stdout_layer = fmt::layer().with_writer(std::io::stdout);
 
     // Combine layers and filter based on RUST_LOG
-    // Default to `info,sea_orm=warn` level if RUST_LOG is not set.
+    // Default to `info` level if RUST_LOG is not set.
     let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,sea_orm=warn,sqlx::query=warn"));
+        .unwrap_or_else(|_| EnvFilter::new("info"));
 
     tracing_subscriber::registry()
         .with(env_filter)
@@ -133,15 +132,6 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
             return Err(e.into());
         }
     };
-
-    // --- Database Pool Setup ---
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set in .env file");
-    let mut opt = ConnectOptions::new(database_url.to_owned());
-    opt.max_connections(10);
-
-    let db_pool: DatabaseConnection = Database::connect(opt)
-        .await
-        .expect("Failed to create database connection.");
 
    // --- DuckDB Setup ---
    let duckdb_path = "nodenexus.duckdb";
@@ -210,16 +200,11 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
     let key_bytes = hex::decode(encryption_key).expect("Failed to decode encryption key.");
     let encryption_service =
         Arc::new(EncryptionService::new(&key_bytes).expect("Failed to create encryption service."));
-    let notification_service = Arc::new(NotificationService::new(
-        db_pool.clone(),
-        encryption_service.clone(),
-    ));
     let result_broadcaster = Arc::new(ResultBroadcaster::new(batch_command_updates_tx.clone()));
 
     // --- gRPC Server Setup (continued) ---
     let agent_comm_service = MyAgentCommService::new(
         connected_agents.clone(),
-        Arc::from(db_pool.clone()),
         duckdb_pool.clone(),
         live_server_data_cache.clone(),
         ws_data_broadcaster_tx.clone(),
@@ -233,7 +218,6 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
 
     // --- Agent Liveness Check Task ---
     let connected_agents_for_check = connected_agents.clone();
-    let pool_for_check = Arc::new(db_pool.clone());
     let trigger_for_check = update_trigger_tx.clone();
     let duckdb_pool1 = duckdb_pool.clone();
     let mut liveness_shutdown_rx = shutdown_rx.clone();
@@ -297,14 +281,13 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
 
     // --- Axum HTTP Server Setup ---
     let http_router = crate::web::create_axum_router(
-        db_pool.clone(),
         live_server_data_cache.clone(),
         duckdb_pool.clone(),
         ws_data_broadcaster_tx.clone(),
         public_ws_data_broadcaster_tx.clone(),
         connected_agents.clone(),
         update_trigger_tx.clone(),
-        notification_service.clone(),
+        encryption_service.clone(),
         batch_command_updates_tx.clone(),
         result_broadcaster.clone(),
         server_config.clone(),
@@ -347,7 +330,7 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
     // --- Alert Evaluation Service Task ---
     let alert_evaluation_service = Arc::new(EvaluationService::new(
         duckdb_pool.clone(),
-        notification_service.clone(),
+        encryption_service.clone(),
     ));
     let mut evaluation_shutdown_rx = shutdown_rx.clone();
     let evaluation_task = tokio::spawn(async move {
@@ -360,7 +343,6 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
     });
 
     // --- Renewal Reminder Check Task ---
-    let pool_for_renewal_reminder = db_pool.clone();
     let trigger_for_renewal_reminder = update_trigger_tx.clone();
     const REMINDER_THRESHOLD_DAYS: i64 = 7;
     const RENEWAL_REMINDER_CHECK_INTERVAL_SECONDS: u64 = 6 * 60 * 60;
@@ -393,7 +375,6 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
     });
 
     // --- Automatic Renewal Processing Task ---
-    let pool_for_auto_renewal = db_pool.clone();
     let trigger_for_auto_renewal = update_trigger_tx.clone();
     const AUTO_RENEWAL_CHECK_INTERVAL_SECONDS: u64 = 6 * 60 * 60;
     let mut auto_renewal_shutdown_rx = shutdown_rx.clone();

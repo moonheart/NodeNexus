@@ -1,31 +1,36 @@
-use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 // Import ActiveEnum to use as_str()
-use std::fmt;
+use std::{fmt, str::FromStr};
 
-#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
-#[sea_orm(
-    rs_type = "String",
-    db_type = "Text",
-    enum_name = "batch_command_status_enum"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BatchCommandStatus {
-    #[sea_orm(string_value = "PENDING")]
     Pending,
-    #[sea_orm(string_value = "DISPATCHING")]
     Dispatching,
-    #[sea_orm(string_value = "EXECUTING")]
     Executing,
-    #[sea_orm(string_value = "COMPLETED_SUCCESSFULLY")]
     CompletedSuccessfully,
-    #[sea_orm(string_value = "COMPLETED_WITH_ERRORS")]
     CompletedWithErrors,
-    #[sea_orm(string_value = "TERMINATING")]
     Terminating,
-    #[sea_orm(string_value = "TERMINATED")]
     Terminated,
-    #[sea_orm(string_value = "FAILED_TO_DISPATCH")]
     FailedToDispatch,
+}
+
+
+impl FromStr for BatchCommandStatus {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "PENDING" => Ok(BatchCommandStatus::Pending),
+            "DISPATCHING" => Ok(BatchCommandStatus::Dispatching),
+            "EXECUTING" => Ok(BatchCommandStatus::Executing),
+            "COMPLETED_SUCCESSFULLY" => Ok(BatchCommandStatus::CompletedSuccessfully),
+            "COMPLETED_WITH_ERRORS" => Ok(BatchCommandStatus::CompletedWithErrors),
+            "TERMINATING" => Ok(BatchCommandStatus::Terminating),
+            "TERMINATED" => Ok(BatchCommandStatus::Terminated),
+            "FAILED_TO_DISPATCH" => Ok(BatchCommandStatus::FailedToDispatch),
+            _ => Err(()),
+        }
+    }
 }
 
 impl fmt::Display for BatchCommandStatus {
@@ -34,35 +39,41 @@ impl fmt::Display for BatchCommandStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
-#[sea_orm(
-    rs_type = "String",
-    db_type = "Text",
-    enum_name = "child_command_status_enum"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChildCommandStatus {
-    #[sea_orm(string_value = "PENDING")]
     Pending,
-    #[sea_orm(string_value = "SENT_TO_AGENT")]
     SentToAgent,
-    #[sea_orm(string_value = "AGENT_ACCEPTED")]
     AgentAccepted,
-    #[sea_orm(string_value = "EXECUTING")]
     Executing,
-    #[sea_orm(string_value = "COMPLETED_SUCCESSFULLY")]
     CompletedSuccessfully,
-    #[sea_orm(string_value = "COMPLETED_WITH_FAILURE")]
     CompletedWithFailure,
-    #[sea_orm(string_value = "TERMINATING")]
     Terminating,
-    #[sea_orm(string_value = "TERMINATED")]
     Terminated,
-    #[sea_orm(string_value = "AGENT_UNREACHABLE")]
     AgentUnreachable,
-    #[sea_orm(string_value = "TIMED_OUT")]
     TimedOut,
-    #[sea_orm(string_value = "AGENT_ERROR")]
     AgentError,
+}
+
+
+impl FromStr for ChildCommandStatus {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "PENDING" => Ok(ChildCommandStatus::Pending),
+            "SENT_TO_AGENT" => Ok(ChildCommandStatus::SentToAgent),
+            "AGENT_ACCEPTED" => Ok(ChildCommandStatus::AgentAccepted),
+            "EXECUTING" => Ok(ChildCommandStatus::Executing),
+            "COMPLETED_SUCCESSFULLY" => Ok(ChildCommandStatus::CompletedSuccessfully),
+            "COMPLETED_WITH_FAILURE" => Ok(ChildCommandStatus::CompletedWithFailure),
+            "TERMINATING" => Ok(ChildCommandStatus::Terminating),
+            "TERMINATED" => Ok(ChildCommandStatus::Terminated),
+            "AGENT_UNREACHABLE" => Ok(ChildCommandStatus::AgentUnreachable),
+            "TIMED_OUT" => Ok(ChildCommandStatus::TimedOut),
+            "AGENT_ERROR" => Ok(ChildCommandStatus::AgentError),
+            _ => Err(()),
+        }
+    }
 }
 
 impl fmt::Display for ChildCommandStatus {

@@ -1,11 +1,10 @@
 use axum::{
     body::Body as AxumBody, extract::{Extension, State}, http::{header, Request}, middleware::Next, response::Response
 };
-use sea_orm::EntityTrait;
 use std::sync::Arc;
 
 use crate::{
-    db::entities::user,
+    db::duckdb_service::user_service,
     web::{models::AuthenticatedUser, AppState},
 };
 
@@ -18,9 +17,8 @@ pub async fn i18n_middleware(
     let mut locale = "auto".to_string();
 
     if let Some(user) = auth_user {
-        if let Ok(Some(user_model)) = user::Entity::find_by_id(user.id)
-            .one(&app_state.db_pool)
-            .await
+        if let Ok(Some(user_model)) =
+            user_service::get_user_by_id(app_state.duckdb_pool.clone(), user.id).await
         {
             locale = user_model.language;
         }

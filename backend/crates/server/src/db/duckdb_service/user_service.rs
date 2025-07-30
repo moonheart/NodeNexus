@@ -1,34 +1,45 @@
 use super::Error;
 use crate::db::{self, entities::user};
+use crate::web::error::AppError;
 use db::duckdb_service::DuckDbPool;
 use chrono::Utc;
-use duckdb::params;
+use duckdb::{params, Result as DuckDbResult};
+use tokio::task;
+
+// Helper function to map a DuckDB row to our user model
+fn row_to_user_model(row: &duckdb::Row<'_>) -> DuckDbResult<user::Model> {
+    Ok(user::Model {
+        id: row.get("id")?,
+        username: row.get("username")?,
+        password_hash: row.get("password_hash")?,
+        role: row.get("role")?,
+        password_login_disabled: row.get("password_login_disabled")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+        theme_mode: row.get("theme_mode")?,
+        active_theme_id: row.get("active_theme_id")?,
+        language: row.get("language")?,
+    })
+}
 
 pub async fn get_user_by_username(
     pool: DuckDbPool,
-    username: &str,
-) -> Result<Option<user::Model>, Error> {
-    let conn = pool.get()?;
-    let mut stmt = conn.prepare("SELECT * FROM users WHERE username = ?")?;
-    let mut rows = stmt.query(params![username])?;
+    username: String,
+) -> Result<Option<user::Model>, AppError> {
+    task::spawn_blocking(move || {
+        let conn = pool.get()?;
+        let mut stmt = conn.prepare("SELECT * FROM users WHERE username = ?")?;
+        
+        let mut user_iter = stmt.query_map(params![username], row_to_user_model)?;
 
-    if let Some(row) = rows.next()? {
-        let user_model = user::Model {
-            id: row.get("id")?,
-            username: row.get("username")?,
-            password_hash: row.get("password_hash")?,
-            role: row.get("role")?,
-            password_login_disabled: row.get("password_login_disabled")?,
-            created_at: row.get("created_at")?,
-            updated_at: row.get("updated_at")?,
-            theme_mode: row.get("theme_mode")?,
-            active_theme_id: row.get("active_theme_id")?,
-            language: row.get("language")?,
-        };
-        Ok(Some(user_model))
-    } else {
-        Ok(None)
-    }
+        match user_iter.next() {
+            Some(Ok(user)) => Ok(Some(user)),
+            Some(Err(e)) => Err(e.into()),
+            None => Ok(None),
+        }
+    })
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?
 }
 
 pub async fn get_user_by_id(
@@ -40,19 +51,7 @@ pub async fn get_user_by_id(
     let mut rows = stmt.query(params![user_id])?;
 
     if let Some(row) = rows.next()? {
-        let user_model = user::Model {
-            id: row.get("id")?,
-            username: row.get("username")?,
-            password_hash: row.get("password_hash")?,
-            role: row.get("role")?,
-            password_login_disabled: row.get("password_login_disabled")?,
-            created_at: row.get("created_at")?,
-            updated_at: row.get("updated_at")?,
-            theme_mode: row.get("theme_mode")?,
-            active_theme_id: row.get("active_theme_id")?,
-            language: row.get("language")?,
-        };
-        Ok(Some(user_model))
+        Ok(Some(row_to_user_model(row)?))
     } else {
         Ok(None)
     }
@@ -60,43 +59,37 @@ pub async fn get_user_by_id(
 
 pub async fn create_user(
     pool: DuckDbPool,
-    username: &str,
-    password_hash: &str,
-) -> Result<user::Model, Error> {
-    let conn = pool.get()?;
-    let now = Utc::now();
-    let role = "user";
-    let password_login_disabled = false;
-    let theme_mode = "system";
-    let language = "auto";
+    username: String,
+    password_hash: String,
+) -> Result<user::Model, AppError> {
+    task::spawn_blocking(move || {
+        let conn = pool.get()?;
+        let now = Utc::now();
+        let role = "user";
+        let password_login_disabled = false;
+        let theme_mode = "system";
+        let language = "auto";
 
-    let id: i32 = conn.query_row(
-        "INSERT INTO users (username, password_hash, role, password_login_disabled, created_at, updated_at, theme_mode, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
-        params![
-            username,
-            password_hash,
-            role,
-            password_login_disabled,
-            now,
-            now,
-            theme_mode,
-            language,
-        ],
-        |row| row.get(0),
-    )?;
-
-    Ok(user::Model {
-        id,
-        username: username.to_string(),
-        password_hash: Some(password_hash.to_string()),
-        role: role.to_string(),
-        password_login_disabled,
-        created_at: now,
-        updated_at: now,
-        theme_mode: theme_mode.to_string(),
-        active_theme_id: None,
-        language: language.to_string(),
+        let user_model = conn.query_row(
+            "INSERT INTO users (username, password_hash, role, password_login_disabled, created_at, updated_at, theme_mode, language) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?) 
+             RETURNING *",
+            params![
+                username,
+                password_hash,
+                role,
+                password_login_disabled,
+                now,
+                now,
+                theme_mode,
+                language,
+            ],
+            row_to_user_model,
+        )?;
+        Ok(user_model)
     })
+    .await
+    .map_err(|e| AppError::InternalServerError(e.to_string()))?
 }
 
 pub async fn update_preference(
@@ -123,11 +116,6 @@ pub async fn update_username(
         "UPDATE users SET username = ?, updated_at = ? WHERE id = ?",
         params![username, now, user_id],
     )?;
-    // After updating, we need to return the updated user model.
-    // We could query it again, or we can assume the update was successful
-    // and construct the model from the input, but that's not ideal
-    // if other fields could have been updated by triggers, etc.
-    // For now, let's re-fetch.
     get_user_by_id(pool, user_id)
         .await?
         .ok_or_else(|| Error::DuckDB(duckdb::Error::QueryReturnedNoRows))

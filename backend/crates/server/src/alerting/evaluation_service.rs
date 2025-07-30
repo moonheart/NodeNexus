@@ -1,9 +1,9 @@
 use crate::{
     db::{
-        duckdb_service::{alert_evaluation_service, alert_service, vps_service, DuckDbPool},
+        duckdb_service::{self, alert_evaluation_service, alert_service, vps_service, DuckDbPool},
         entities::{alert_rule, performance_metric},
     },
-    notifications::service::NotificationService,
+    notifications::encryption::EncryptionService,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use std::sync::Arc;
@@ -14,8 +14,6 @@ use tracing::{debug, error, info, warn};
 pub enum EvaluationError {
     #[error("Database query error: {0}")]
     DatabaseError(#[from] alert_evaluation_service::AlertEvaluationDbError),
-    #[error("Notification error: {0}")]
-    NotificationError(#[from] crate::notifications::service::NotificationError),
     #[error("Failed to get VPS name for ID {0}")]
     VpsNameNotFound(i32),
     #[error("Application error: {0}")]
@@ -24,14 +22,14 @@ pub enum EvaluationError {
 
 pub struct EvaluationService {
     pool: DuckDbPool,
-    notification_service: Arc<NotificationService>,
+    encryption_service: Arc<EncryptionService>,
 }
 
 impl EvaluationService {
-    pub fn new(pool: DuckDbPool, notification_service: Arc<NotificationService>) -> Self {
+    pub fn new(pool: DuckDbPool, encryption_service: Arc<EncryptionService>) -> Self {
         Self {
             pool,
-            notification_service,
+            encryption_service,
         }
     }
 
@@ -61,14 +59,13 @@ impl EvaluationService {
             match self.evaluate_rule(&rule).await {
                 Ok(Some(notification_message)) => {
                     info!(rule_name = %rule.name, rule_id = rule.id, "Alert rule triggered. Sending notifications.");
-                    match self
-                        .notification_service
-                        .send_notifications_for_alert_rule(
-                            rule.id,
-                            rule.user_id,
-                            &notification_message,
-                        )
-                        .await
+                    match duckdb_service::notification_service::send_notifications_for_alert_rule(
+                        self.pool.clone(),
+                        self.encryption_service.clone(),
+                        rule.id,
+                        notification_message,
+                    )
+                    .await
                     {
                         Ok(_) => {
                             info!(

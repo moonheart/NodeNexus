@@ -61,7 +61,6 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>) {
     // We will adjust this call after updating process_agent_stream's signature.
     let context = Arc::new(core_services::AgentStreamContext {
         connected_agents: app_state.connected_agents.clone(),
-        db_pool: Arc::from(app_state.db_pool.clone()),
         duckdb_pool: app_state.duckdb_pool.clone(),
         ws_data_broadcaster_tx: app_state.ws_data_broadcaster_tx.clone(),
         update_trigger_tx: app_state.update_trigger_tx.clone(),

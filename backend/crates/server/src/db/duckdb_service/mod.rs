@@ -13,9 +13,11 @@ pub mod service_monitor_service;
 pub mod batch_command_service;
 pub mod command_script_service;
 pub mod oauth_service;
+pub mod theme_service;
 
+pub mod notification_service;
 use self::writer::metrics_writer_task;
-use crate::db::entities::performance_metric; // Use the existing SeaORM entity
+use crate::db::entities::performance_metric;
 pub mod tag_service;
 use duckdb::{ffi, types::ValueRef, Connection, Result, Row};
 use serde_json;

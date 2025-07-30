@@ -89,7 +89,7 @@ impl ResultBroadcaster {
         &self,
         batch_command_id: Uuid,
         overall_status: String,
-        completed_at: Option<String>, // Assuming DateTimeUtc to string
+        completed_at: Option<String>, // Assuming chrono::DateTime<chrono::Utc> to string
     ) {
         info!(
             batch_command_id = %batch_command_id,
@@ -112,7 +112,7 @@ impl ResultBroadcaster {
         vps_id: i32,
         log_line: String,
         stream_type: String, // "stdout" or "stderr"
-        timestamp: String,   // Assuming DateTimeUtc to string
+        timestamp: String,   // Assuming chrono::DateTime<chrono::Utc> to string
     ) {
         debug!(
             child_task_id = %child_task_id,

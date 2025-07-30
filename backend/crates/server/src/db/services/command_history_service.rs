@@ -1,1 +1,0 @@
-// This file is intentionally left blank as the command_history feature was replaced by command_scripts.

@@ -7,14 +7,13 @@ use axum::{
     routing::{get, post},
 };
 use rust_embed::RustEmbed;
-use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast, mpsc};
 
 use crate::axum_embed::{FallbackBehavior, ServeEmbed};
 use crate::db::entities::performance_metric;
+use crate::notifications::encryption::EncryptionService;
 // use crate::db::duckdb_service::alert_service::AlertService;
-use crate::notifications::service::NotificationService;
 use crate::server::agent_state::{ConnectedAgents, LiveServerDataCache};
 use crate::server::command_dispatcher::CommandDispatcher;
 use crate::server::config::ServerConfig;
@@ -53,14 +52,13 @@ pub fn create_static_file_service() -> ServeEmbed<Assets> {
 
 #[derive(Clone)]
 pub struct AppState {
-    pub db_pool: DatabaseConnection,
     pub duckdb_pool: DuckDbPool,
     pub live_server_data_cache: LiveServerDataCache,
     pub ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     pub public_ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     pub connected_agents: Arc<Mutex<ConnectedAgents>>,
     pub update_trigger_tx: mpsc::Sender<()>,
-    pub notification_service: Arc<NotificationService>,
+    pub encryption_service: Arc<EncryptionService>,
     // pub alert_service: Arc<AlertService>,
     pub command_dispatcher: Arc<CommandDispatcher>,
     pub batch_command_updates_tx: broadcast::Sender<BatchCommandUpdateMsg>,
@@ -75,7 +73,7 @@ async fn register_handler(
     State(app_state): State<Arc<AppState>>,
     Json(payload): Json<RegisterRequest>,
 ) -> Result<Json<models::UserResponse>, AppError> {
-    match auth_service::register_user(&app_state.db_pool, payload).await {
+    match auth_service::register_user(app_state.duckdb_pool.clone(), payload).await {
         Ok(user_response) => Ok(Json(user_response)),
         Err(e) => Err(e),
     }
@@ -86,7 +84,7 @@ async fn login_handler(
     Json(payload): Json<LoginRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let login_response =
-        auth_service::login_user(&app_state.db_pool, payload, &app_state.config.jwt_secret).await?;
+        auth_service::login_user(app_state.duckdb_pool.clone(), payload, &app_state.config.jwt_secret).await?;
 
     let auth_cookie = Cookie::build(("token", login_response.token.clone()))
         .path("/")
@@ -116,14 +114,13 @@ async fn login_test_handler() -> (axum::http::StatusCode, Json<serde_json::Value
 }
 
 pub fn create_axum_router(
-    db_pool: DatabaseConnection,
     live_server_data_cache: LiveServerDataCache,
     duckdb_pool: DuckDbPool,
     ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     public_ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     connected_agents: Arc<Mutex<ConnectedAgents>>,
     update_trigger_tx: mpsc::Sender<()>,
-    notification_service: Arc<NotificationService>,
+    encryption_service: Arc<EncryptionService>,
     // alert_service: Arc<AlertService>,
     batch_command_updates_tx: broadcast::Sender<BatchCommandUpdateMsg>,
     result_broadcaster: Arc<ResultBroadcaster>,
@@ -138,14 +135,13 @@ pub fn create_axum_router(
     ));
 
     let app_state = Arc::new(AppState {
-        db_pool,
         duckdb_pool,
         live_server_data_cache,
         ws_data_broadcaster_tx: ws_data_broadcaster_tx.clone(),
         public_ws_data_broadcaster_tx,
         connected_agents,
         update_trigger_tx,
-        notification_service,
+        encryption_service,
         // alert_service,
         command_dispatcher,
         batch_command_updates_tx,
@@ -268,7 +264,7 @@ pub fn create_axum_router(
         )
         .nest(
             "/api", // A common prefix for theme routes
-            theme_routes::create_router(&app_state.db_pool).route_layer(
+            theme_routes::create_router().route_layer(
                 axum_middleware::from_fn_with_state(app_state.clone(), auth::auth),
             ),
         )

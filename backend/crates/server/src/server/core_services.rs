@@ -1,6 +1,5 @@
 use chrono::{TimeZone, Utc};
 use futures_util::{Sink, SinkExt, Stream};
-use sea_orm::{DatabaseConnection, EntityTrait};
 use std::sync::{mpsc as std_mpsc, Arc};
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio_stream::StreamExt;
@@ -13,7 +12,7 @@ use nodenexus_common::agent_service::{
 };
 use crate::db::entities::performance_metric;
 use crate::db::enums::ChildCommandStatus;
-use crate::db::{self, services};
+use crate::db::{self};
 use crate::server::agent_state::{AgentSender, AgentState, ConnectedAgents};
 use crate::web::models::websocket_models::WsMessage;
 
@@ -30,7 +29,6 @@ pub trait AgentStream:
 #[derive(Clone)]
 pub struct AgentStreamContext {
     pub connected_agents: Arc<Mutex<ConnectedAgents>>,
-    pub db_pool: Arc<DatabaseConnection>,
     pub duckdb_pool: crate::db::duckdb_service::DuckDbPool,
     pub ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     pub update_trigger_tx: mpsc::Sender<()>,
@@ -229,7 +227,6 @@ pub async fn process_agent_stream<S>(
                                     ServerPayload::PerformanceBatch(batch) => {
                                         debug!(vps_id = vps_db_id_from_msg, "Received performance batch with {} records.", batch.snapshots.len());
 
-                                        // Convert to the SeaORM entity model and send to the DuckDB writer service
                                         for snapshot in &batch.snapshots {
                                             let metric_model = performance_metric::Model::from_snapshot(vps_db_id_from_msg, snapshot);
                                             // Send to DuckDB for persistence

@@ -6,7 +6,6 @@ use axum::{
     response::IntoResponse,
     routing::{delete, get, put},
 };
-use sea_orm::EntityTrait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 

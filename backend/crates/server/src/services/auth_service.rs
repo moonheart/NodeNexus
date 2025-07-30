@@ -1,19 +1,17 @@
-use crate::db::entities::user;
+use crate::db::duckdb_service::{user_service, DuckDbPool};
 use axum::Extension;
 use bcrypt::{DEFAULT_COST, hash, verify};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{EncodingKey, Header, encode};
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set,
-};
 
+use crate::db::entities::user;
 use crate::web::error::AppError;
 use crate::web::models::{
     AuthenticatedUser, Claims, LoginRequest, LoginResponse, RegisterRequest, UserResponse,
 };
 
 pub async fn register_user(
-    pool: &DatabaseConnection,
+    pool: DuckDbPool,
     req: RegisterRequest,
 ) -> Result<UserResponse, AppError> {
     if req.username.is_empty() || req.password.len() < 8 {
@@ -22,36 +20,24 @@ pub async fn register_user(
         ));
     }
 
-    let existing_user_by_username: Option<user::Model> = user::Entity::find()
-        .filter(user::Column::Username.eq(&req.username))
-        .one(pool)
-        .await
-        .map_err(|e: DbErr| AppError::DatabaseError(format!("检查用户名是否存在时出错: {e}")))?;
-
-    if existing_user_by_username.is_some() {
+    let existing_user = user_service::get_user_by_username(pool.clone(), req.username.clone()).await?;
+    if existing_user.is_some() {
         return Err(AppError::UserAlreadyExists("用户名已被使用。".to_string()));
     }
 
     let password_hash = hash(&req.password, DEFAULT_COST)
         .map_err(|e| AppError::PasswordHashingError(format!("密码哈希失败: {e}")))?;
 
-    let new_user = user::ActiveModel {
-        username: Set(req.username.clone()),
-        password_hash: Set(Some(password_hash)),
-        ..Default::default() // Handles id, created_at, updated_at
-    };
-
-    match new_user.insert(pool).await {
-        Ok(user_model) => Ok(UserResponse {
-            id: user_model.id,
-            username: user_model.username,
-        }),
-        Err(e) => Err(AppError::DatabaseError(format!("创建用户失败: {e}"))),
-    }
+    let user_model = user_service::create_user(pool, req.username, password_hash).await?;
+    
+    Ok(UserResponse {
+        id: user_model.id,
+        username: user_model.username,
+    })
 }
 
 pub async fn login_user(
-    pool: &DatabaseConnection,
+    pool: DuckDbPool,
     req: LoginRequest,
     jwt_secret: &str,
 ) -> Result<LoginResponse, AppError> {
@@ -59,12 +45,7 @@ pub async fn login_user(
         return Err(AppError::InvalidInput("用户名和密码不能为空。".to_string()));
     }
 
-    // Allow login with username
-    let user_model_option = user::Entity::find()
-        .filter(user::Column::Username.eq(&req.username))
-        .one(pool)
-        .await
-        .map_err(|e: DbErr| AppError::DatabaseError(format!("通过用户名查询用户失败: {e}")))?;
+    let user_model_option = user_service::get_user_by_username(pool, req.username).await?;
 
     let user = match user_model_option {
         Some(u) => u,
@@ -72,7 +53,7 @@ pub async fn login_user(
     };
 
     if user.password_login_disabled {
-        return Err(AppError::InvalidCredentials); // Or a more specific error
+        return Err(AppError::InvalidCredentials);
     }
 
     let password_hash = match user.password_hash.as_ref() {

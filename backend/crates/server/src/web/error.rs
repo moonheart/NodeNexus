@@ -65,12 +65,6 @@ impl IntoResponse for AppError {
     }
 }
 
-impl From<sea_orm::DbErr> for AppError {
-    fn from(err: sea_orm::DbErr) -> Self {
-        AppError::DatabaseError(err.to_string())
-    }
-}
-
 impl From<duckdb::Error> for AppError {
     fn from(err: duckdb::Error) -> Self {
         AppError::DatabaseError(err.to_string())

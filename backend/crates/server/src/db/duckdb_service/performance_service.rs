@@ -1,9 +1,9 @@
 use chrono::{DateTime, Duration, Utc};
 use duckdb::params;
-use sea_orm::DbErr;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
+use super::Error;
 use db::duckdb_service::DuckDbPool;
 use nodenexus_common::agent_service::PerformanceSnapshotBatch;
 use crate::db::{self, entities::performance_metric};
@@ -36,15 +36,15 @@ pub async fn get_performance_metrics_for_vps(
     start_time: DateTime<Utc>,
     end_time: DateTime<Utc>,
     interval_seconds: Option<u32>,
-) -> Result<Vec<PerformanceMetricPoint>, DbErr> {
-    let conn = pool.get().map_err(|e| DbErr::Custom(e.to_string()))?;
+) -> Result<Vec<PerformanceMetricPoint>, Error> {
+    let conn = pool.get()?;
 
     // If no interval is specified, return raw data points.
     if interval_seconds.is_none() {
         debug!("No interval specified, fetching raw performance_metrics from DuckDB.");
         let mut stmt = conn.prepare(
             "SELECT * FROM performance_metrics WHERE vps_id = ? AND time >= ? AND time <= ? ORDER BY time ASC"
-        ).map_err(|e| DbErr::Custom(e.to_string()))?;
+        )?;
 
         let results = stmt.query_map(params![vps_id, start_time, end_time], |row| {
             let m: performance_metric::Model = performance_metric::Model {
@@ -82,10 +82,8 @@ pub async fn get_performance_metrics_for_vps(
                 used_disk_space_bytes: Some(m.used_disk_space_bytes as f64),
                 total_disk_space_bytes: Some(m.total_disk_space_bytes as f64),
             })
-        })
-        .map_err(|e| DbErr::Custom(e.to_string()))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| DbErr::Custom(e.to_string()))?;
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
 
         return Ok(results);
     }
@@ -153,7 +151,7 @@ pub async fn get_performance_metrics_for_vps(
         )
     };
 
-    let mut stmt = conn.prepare(&sql).map_err(|e| DbErr::Custom(e.to_string()))?;
+    let mut stmt = conn.prepare(&sql)?;
     let results = stmt.query_map(params![vps_id, start_time, end_time], |row| {
         Ok(PerformanceMetricPoint {
             time: row.get(0)?,
@@ -169,10 +167,8 @@ pub async fn get_performance_metrics_for_vps(
             used_disk_space_bytes: row.get(10)?,
             total_disk_space_bytes: row.get(11)?,
         })
-    })
-    .map_err(|e| DbErr::Custom(e.to_string()))?
-    .collect::<Result<Vec<_>, _>>()
-    .map_err(|e| DbErr::Custom(e.to_string()))?;
+    })?
+    .collect::<Result<Vec<_>, _>>()?;
 
     Ok(results)
 }
@@ -182,8 +178,8 @@ pub async fn get_performance_metrics_for_vps(
 pub async fn get_latest_performance_metric_for_vps(
     pool: &DuckDbPool,
     vps_id: i32,
-) -> Result<Option<performance_metric::Model>, DbErr> {
-    let conn = pool.get().map_err(|e| DbErr::Custom(e.to_string()))?;
+) -> Result<Option<performance_metric::Model>, Error> {
+    let conn = pool.get()?;
     let sql = "
         SELECT 
             time, vps_id, cpu_usage_percent, memory_usage_bytes, memory_total_bytes, 
@@ -195,7 +191,7 @@ pub async fn get_latest_performance_metric_for_vps(
         FROM performance_metrics 
         WHERE vps_id = ? ORDER BY time DESC LIMIT 1";
 
-    let mut stmt = conn.prepare(sql).map_err(|e| DbErr::Custom(e.to_string()))?;
+    let mut stmt = conn.prepare(sql)?;
     
     let result = stmt.query_row(params![vps_id], |row| {
         Ok(performance_metric::Model {
@@ -224,7 +220,7 @@ pub async fn get_latest_performance_metric_for_vps(
     match result {
         Ok(model) => Ok(Some(model)),
         Err(duckdb::Error::QueryReturnedNoRows) => Ok(None),
-        Err(e) => Err(DbErr::Custom(e.to_string())),
+        Err(e) => Err(e.into()),
     }
 }
 
@@ -235,7 +231,7 @@ pub async fn save_performance_snapshot_batch(
     _pool: &DuckDbPool,
     _vps_id: i32,
     batch: &PerformanceSnapshotBatch,
-) -> Result<Vec<performance_metric::Model>, DbErr> {
+) -> Result<Vec<performance_metric::Model>, Error> {
     if !batch.snapshots.is_empty() {
         debug!("`save_performance_snapshot_batch` called in DuckDB service. This is a stub. Data should be sent via the writer channel.");
     }
@@ -246,11 +242,11 @@ pub async fn save_performance_snapshot_batch(
 pub async fn get_latest_disk_usage_summary(
     pool: &DuckDbPool,
     vps_id: i32,
-) -> Result<Option<(i64, i64)>, DbErr> {
-    let conn = pool.get().map_err(|e| DbErr::Custom(e.to_string()))?;
+) -> Result<Option<(i64, i64)>, Error> {
+    let conn = pool.get()?;
     let mut stmt = conn.prepare(
         "SELECT total_disk_space_bytes, used_disk_space_bytes FROM performance_metrics WHERE vps_id = ? ORDER BY time DESC LIMIT 1",
-    ).map_err(|e| DbErr::Custom(e.to_string()))?;
+    )?;
 
     let result = stmt.query_row(params![vps_id], |row| {
         Ok((row.get(0)?, row.get(1)?))
@@ -259,6 +255,6 @@ pub async fn get_latest_disk_usage_summary(
     match result {
         Ok(summary) => Ok(Some(summary)),
         Err(duckdb::Error::QueryReturnedNoRows) => Ok(None),
-        Err(e) => Err(DbErr::Custom(e.to_string())),
+        Err(e) => Err(e.into()),
     }
 }

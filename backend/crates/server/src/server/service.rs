@@ -1,4 +1,3 @@
-use sea_orm::DatabaseConnection;
 use std::sync::{mpsc as std_mpsc, Arc}; // Use std::sync::mpsc
 use tokio::sync::{broadcast, mpsc, Mutex, watch};
 use tokio_stream::wrappers::ReceiverStream;
@@ -14,7 +13,6 @@ use crate::web::models::websocket_models::WsMessage;
 #[derive(Clone)]
 pub struct MyAgentCommService {
     pub connected_agents: Arc<Mutex<ConnectedAgents>>,
-    pub db_pool: Arc<DatabaseConnection>,
     pub duckdb_pool: DuckDbPool,
     pub live_server_data_cache: LiveServerDataCache,
     pub ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
@@ -28,7 +26,6 @@ impl MyAgentCommService {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         connected_agents: Arc<Mutex<ConnectedAgents>>,
-        db_pool: Arc<DatabaseConnection>,
         duckdb_pool: DuckDbPool,
         live_server_data_cache: LiveServerDataCache,
         ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
@@ -39,7 +36,6 @@ impl MyAgentCommService {
     ) -> Self {
         Self {
             connected_agents,
-            db_pool,
             duckdb_pool,
             live_server_data_cache,
             ws_data_broadcaster_tx,
@@ -64,7 +60,6 @@ impl nodenexus_common::agent_service::agent_communication_service_server::AgentC
     ) -> Result<Response<Self::EstablishCommunicationStreamStream>, Status> {
         let context = Arc::new(AgentStreamContext {
             connected_agents: self.connected_agents.clone(),
-            db_pool: self.db_pool.clone(),
             duckdb_pool: self.duckdb_pool.clone(),
             ws_data_broadcaster_tx: self.ws_data_broadcaster_tx.clone(),
             update_trigger_tx: self.update_trigger_tx.clone(),
