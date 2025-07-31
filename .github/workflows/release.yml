@@ -57,6 +57,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
+      - name: Get version
+        id: get_version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
       - name: Download frontend artifact
         uses: actions/download-artifact@v4
         with:
@@ -88,7 +91,7 @@ jobs:
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}-${{ matrix.target }}
       - name: Build backend
         env:
-          APP_VERSION: ${{ github.ref_name }}
+          APP_VERSION: ${{ steps.get_version.outputs.version }}
         run: cargo build --release -p ${{ matrix.package }} --target ${{ matrix.target }}
         working-directory: ./backend
       - name: Upload backend artifact

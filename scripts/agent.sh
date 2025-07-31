@@ -63,16 +63,16 @@ detect_arch() {
     arch=$(uname -m)
     case $arch in
         x86_64)
-            AGENT_BINARY_NAME="agent-linux-amd64"
+            AGENT_TARGET_ARCH="x86_64-unknown-linux-gnu"
             ;;
         aarch64)
-            AGENT_BINARY_NAME="agent-linux-arm64"
+            AGENT_TARGET_ARCH="aarch64-unknown-linux-gnu"
             ;;
         *)
             print_error "Unsupported architecture: $arch. Only x86_64 and aarch64 are supported."
             ;;
     esac
-    print_info "Detected architecture: $arch. Using binary: $AGENT_BINARY_NAME"
+    print_info "Detected architecture: $arch. Using target: $AGENT_TARGET_ARCH"
 }
 
 get_latest_release_url() {
@@ -84,6 +84,9 @@ get_latest_release_url() {
     
     if echo "$response" | jq -e '.assets' &> /dev/null; then
         local download_url
+        local version
+        version=$(echo "$response" | jq -r '.tag_name')
+        AGENT_BINARY_NAME="nodenexus-agent-$version-$AGENT_TARGET_ARCH"
         download_url=$(echo "$response" | jq -r ".assets[] | select(.name == \"$AGENT_BINARY_NAME\") | .browser_download_url")
         
         if [ -z "$download_url" ]; then

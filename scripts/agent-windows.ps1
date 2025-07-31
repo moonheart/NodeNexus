@@ -82,10 +82,11 @@ function Get-LatestReleaseInfo {
 function Get-Architecture {
     $arch = $env:PROCESSOR_ARCHITECTURE
     switch ($arch) {
-        "AMD64" { return "amd64" }
-        "ARM64" { return "arm64" }
+        "AMD64" { return "x86_64-pc-windows-msvc" }
+        # ARM64 is not currently built for Windows in the CI
+        # "ARM64" { return "aarch64-pc-windows-msvc" }
         default {
-            Write-Log "ERROR" "Unsupported architecture: $arch"
+            Write-Log "ERROR" "Unsupported architecture: $arch. Only AMD64 is currently supported for Windows."
             exit 1
         }
     }
@@ -161,8 +162,9 @@ function Install-Agent {
     $actualDownloadUrl = $DownloadUrl
     if (-not $actualDownloadUrl) {
         $releaseInfo = Get-LatestReleaseInfo -repo $githubRepo
-        $arch = Get-Architecture
-        $assetName = "agent-windows-$arch.exe"
+        $target = Get-Architecture
+        $version = $releaseInfo.tag_name
+        $assetName = "nodenexus-agent-$version-$target.exe"
         $asset = $releaseInfo.assets | Where-Object { $_.name -eq $assetName }
 
         if (-not $asset) {
