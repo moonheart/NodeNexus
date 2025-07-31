@@ -36,31 +36,24 @@ jobs:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             package: nodenexus-server
-            name: server-linux-amd64
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
             package: nodenexus-server
-            name: server-linux-arm64
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             package: nodenexus-agent
-            name: agent-linux-amd64
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
             package: nodenexus-agent
-            name: agent-linux-arm64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             package: nodenexus-agent
-            name: agent-windows-amd64.exe
           - os: macos-13
             target: x86_64-apple-darwin
             package: nodenexus-agent
-            name: agent-macos-amd64
           - os: macos-14
             target: aarch64-apple-darwin
             package: nodenexus-agent
-            name: agent-macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
@@ -101,7 +94,7 @@ jobs:
       - name: Upload backend artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}
+          name: ${{ matrix.package }}-${{ github.ref_name }}-${{ matrix.target }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
           path: backend/target/${{ matrix.target }}/release/${{ matrix.package }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
 
   release:
@@ -119,13 +112,13 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir release_assets
-          mv artifacts/server-linux-amd64/nodenexus-server release_assets/server-linux-amd64
-          mv artifacts/server-linux-arm64/nodenexus-server release_assets/server-linux-arm64
-          mv artifacts/agent-linux-amd64/nodenexus-agent release_assets/agent-linux-amd64
-          mv artifacts/agent-linux-arm64/nodenexus-agent release_assets/agent-linux-arm64
-          mv artifacts/agent-windows-amd64.exe/nodenexus-agent.exe release_assets/agent-windows-amd64.exe
-          mv artifacts/agent-macos-amd64/nodenexus-agent release_assets/agent-macos-amd64
-          mv artifacts/agent-macos-arm64/nodenexus-agent release_assets/agent-macos-arm64
+          for dir in artifacts/*; do
+            if [ -d "$dir" ]; then
+              asset_name=$(basename "$dir")
+              file_in_dir=$(ls "$dir" | head -n 1)
+              mv "$dir/$file_in_dir" "release_assets/$asset_name"
+            fi
+          done
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
