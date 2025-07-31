@@ -109,3 +109,4 @@ agent_config.toml
 logs/
 *.duckdb
 *.wal
+data/

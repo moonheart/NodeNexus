@@ -6,5 +6,6 @@ pub mod handlers;
 pub mod metric_broadcaster;
 pub mod result_broadcaster; // Added this line
 pub mod service;
+pub mod self_update_service;
 pub mod update_service;
 pub mod ws_agent_handler;

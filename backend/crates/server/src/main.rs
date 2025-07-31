@@ -26,16 +26,15 @@ use crate::server::config::ServerConfig;
 use crate::server::metric_broadcaster::MetricBroadcaster;
 use crate::server::result_broadcaster::{BatchCommandUpdateMsg, ResultBroadcaster}; // Added ResultBroadcaster
 use crate::server::service::MyAgentCommService;
+use crate::server::self_update_service::SelfUpdateService;
 use crate::server::update_service; // Added for cache population
 use crate::version::VERSION;
 use crate::web::models::websocket_models::{ServerWithDetails, WsMessage};
  
 use chrono::Utc;
 use clap::Parser;
-use dotenv::dotenv;
 use futures_util::SinkExt;
 use std::collections::HashMap;
-use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -55,9 +54,9 @@ struct Args {
     config: Option<String>,
 }
 
-fn init_logging() {
+fn init_logging(log_dir: &str) {
     // Log to a file: JSON format, daily rotation
-    let file_appender = rolling::daily("logs", "server.log");
+    let file_appender = rolling::daily(log_dir, "server.log");
     let file_layer = fmt::layer()
         .with_writer(file_appender)
         .with_ansi(false) // No ANSI colors in file
@@ -83,14 +82,13 @@ fn init_logging() {
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Manually check for --version before full parsing to keep the original simple output.
-    if std::env::args().any(|arg| arg == "--version") {
+    let args: Vec<String> = std::env::args().collect();
+    if args.contains(&"--version".to_string()) {
         println!("Server version: {VERSION}");
         return Ok(());
     }
 
-    init_logging(); // Initialize logging first
-    info!("Starting server, version: {}", VERSION);
-    dotenv().ok(); // Load .env file
+    // Config loading will be done inside run_server
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -120,22 +118,29 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args = Args::parse();
 
-    // --- Debounce Update Trigger Channel ---
-    let (update_trigger_tx, mut update_trigger_rx) = mpsc::channel::<()>(100);
-
     // --- Server Config Setup ---
     let server_config = match ServerConfig::load(args.config.as_deref()) {
         Ok(config) => Arc::new(config),
         Err(e) => {
-            error!("Failed to load server configuration: {}", e);
-            // Exit if critical configuration is missing
+            // Early logging before full logger is initialized
+            eprintln!("Failed to load server configuration: {}", e);
             return Err(e.into());
         }
     };
 
+    // --- Logging Setup ---
+    init_logging(&server_config.log_dir);
+    info!("Starting server, version: {}", VERSION);
+    info!("Configuration loaded: {:?}", server_config);
+
+
+    // --- Debounce Update Trigger Channel ---
+    let (update_trigger_tx, mut update_trigger_rx) = mpsc::channel::<()>(100);
+
    // --- DuckDB Setup ---
-   let duckdb_path = "nodenexus.duckdb";
-   let duckdb_manager = duckdb::DuckdbConnectionManager::file(duckdb_path).unwrap();
+   let db_path = std::path::Path::new(&server_config.data_dir).join("nodenexus.db");
+   let duckdb_path = db_path.to_str().ok_or("Invalid DB path")?;
+   let duckdb_manager = duckdb::DuckdbConnectionManager::file(duckdb_path).map_err(|e| e.to_string())?;
    let duckdb_pool = r2d2::Pool::new(duckdb_manager).expect("Failed to create DuckDB connection pool.");
    let duckdb_service = match DuckDBService::new(duckdb_pool.clone()) {
        Ok(service) => {
@@ -195,9 +200,7 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
     let live_server_data_cache: LiveServerDataCache = Arc::new(Mutex::new(initial_cache_map));
 
     // --- Notification Service Setup ---
-    let encryption_key = env::var("NOTIFICATION_ENCRYPTION_KEY")
-        .expect("NOTIFICATION_ENCRYPTION_KEY must be set as a 32-byte hex-encoded string.");
-    let key_bytes = hex::decode(encryption_key).expect("Failed to decode encryption key.");
+    let key_bytes = hex::decode(&server_config.notification_encryption_key).expect("Failed to decode encryption key.");
     let encryption_service =
         Arc::new(EncryptionService::new(&key_bytes).expect("Failed to create encryption service."));
     let result_broadcaster = Arc::new(ResultBroadcaster::new(batch_command_updates_tx.clone()));
@@ -405,6 +408,12 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
         }
     });
 
+    // --- Self Update Service Task ---
+    let self_update_service = SelfUpdateService::new(server_config.clone(), shutdown_rx.clone());
+    let self_update_task = tokio::spawn(async move {
+        self_update_service.start_periodic_check().await;
+    });
+
     // --- Run all servers and tasks concurrently ---
     let socket = if addr.is_ipv4() {
         tokio::net::TcpSocket::new_v4()?
@@ -442,7 +451,7 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
         .map_err(Box::new)?;
 
     // Wait for tasks to complete
-    let _ = tokio::try_join!(debouncer_task, evaluation_task, duckdb_task_handle);
+    let _ = tokio::try_join!(debouncer_task, evaluation_task, duckdb_task_handle, self_update_task);
  
     Ok(())
 }

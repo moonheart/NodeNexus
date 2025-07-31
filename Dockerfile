@@ -61,12 +61,28 @@ RUN apt-get update && apt-get install -y libssl3 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# Create a non-root user
+RUN useradd --system --create-home appuser
+
 # Copy the compiled binary from the backend-builder stage
 COPY --from=backend-builder /app/backend/target/release/nodenexus-server .
 
-# Copy the .env file, assuming it's in the backend directory
-# You should create a .env file in your backend directory with necessary environment variables
-COPY backend/.env.example ./.env
+# Set ownership to the new user
+RUN chown appuser:appuser nodenexus-server
+
+# Create and set ownership for data and log directories
+RUN mkdir -p /app/data /app/logs && chown -R appuser:appuser /app/data /app/logs
+
+# Switch to the non-root user
+USER appuser
+
+# Expose volumes for data and logs
+VOLUME ["/app/data", "/app/logs"]
+
+# Set environment variables
+ENV RUNNING_IN_CONTAINER=true
+ENV DATA_DIR=/app/data
+ENV LOG_DIR=/app/logs
 
 # Expose the port the server will run on
 EXPOSE 8080
