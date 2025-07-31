@@ -11,7 +11,7 @@ use crate::web::error::AppError;
 use crate::web::models::service_monitor_models::{
     CreateMonitor, ServiceMonitorDetails, UpdateMonitor,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use nodenexus_common::agent_service::{ServiceMonitorResult, ServiceMonitorTask};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -625,11 +625,12 @@ pub async fn record_monitor_result(
 ) -> Result<(), AppError> {
     let conn = pool.get()?;
     let details_str = serde_json::to_string(&serde_json::json!({ "message": &result.details }))?;
+    let time = chrono::Utc.timestamp_millis_opt(result.timestamp_unix_ms).unwrap();
     conn.execute(
         "INSERT INTO service_monitor_results (time, monitor_id, agent_id, is_up, latency_ms, details)
          VALUES (?, ?, ?, ?, ?, ?)",
         params![
-            result.timestamp_unix_ms,
+            time,
             result.monitor_id,
             agent_id,
             result.successful,
@@ -667,7 +668,7 @@ pub async fn get_monitor_results_by_id(
                 monitor_id,
                 agent_id,
                 AVG(latency_ms)::DOUBLE as latency_ms,
-                CAST(SUM(CASE WHEN is_up THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as is_up,
+                CAST(SUM(CASE WHEN is_up = true THEN 1.0 ELSE 0.0 END) AS REAL) / COUNT(*) as is_up,
                 NULL as details
              FROM service_monitor_results
              WHERE monitor_id = ? AND time >= ? AND time <= ?
@@ -682,7 +683,7 @@ pub async fn get_monitor_results_by_id(
     } else {
         let points = conn
             .prepare(
-                "SELECT time, monitor_id, agent_id, latency_ms, is_up, details
+                "SELECT time, monitor_id, agent_id, latency_ms, CAST(CASE WHEN is_up THEN 1.0 ELSE 0.0 END AS DOUBLE) as is_up, details
                  FROM service_monitor_results
                  WHERE monitor_id = ? AND time >= ? AND time <= ?
                  ORDER BY time DESC",
@@ -715,7 +716,7 @@ pub async fn get_monitor_results_by_vps_id(
                 monitor_id,
                 agent_id,
                 AVG(latency_ms)::DOUBLE as latency_ms,
-                CAST(SUM(CASE WHEN is_up THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as is_up,
+                CAST(SUM(CASE WHEN is_up = true THEN 1.0 ELSE 0.0 END) AS REAL) / COUNT(*) as is_up,
                 NULL as details
              FROM service_monitor_results
              WHERE monitor_id IN {placeholders} AND agent_id = ? AND time >= ? AND time <= ?
@@ -734,7 +735,7 @@ pub async fn get_monitor_results_by_vps_id(
         Ok(points)
     } else {
         let sql = format!(
-            "SELECT time, monitor_id, agent_id, latency_ms, is_up, details
+            "SELECT time, monitor_id, agent_id, latency_ms, CAST(CASE WHEN is_up THEN 1.0 ELSE 0.0 END AS DOUBLE) as is_up, details
              FROM service_monitor_results
              WHERE monitor_id IN {placeholders} AND agent_id = ? AND time >= ? AND time <= ?
              ORDER BY time DESC"
@@ -750,4 +751,24 @@ pub async fn get_monitor_results_by_vps_id(
             .collect::<Result<Vec<_>, _>>()?;
         Ok(points)
     }
+}
+
+pub async fn get_monitor_names_by_ids(
+    pool: DuckDbPool,
+    monitor_ids: &[i32],
+) -> Result<std::collections::HashMap<i32, String>, AppError> {
+    if monitor_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    
+    let conn = pool.get()?;
+    let placeholders = repeat_vars(monitor_ids.len());
+    let sql = format!("SELECT id, name FROM service_monitors WHERE id IN {}", placeholders);
+    
+    let monitors: Vec<(i32, String)> = conn
+        .prepare(&sql)?
+        .query_map(params_from_iter(monitor_ids.iter()), |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    
+    Ok(monitors.into_iter().collect())
 }

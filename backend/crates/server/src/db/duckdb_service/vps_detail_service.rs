@@ -158,13 +158,15 @@ fn process_query_results(
         }
     }
 
-    let servers_with_details = vps_map
+    let mut servers_with_details = vps_map
         .into_values()
         .map(|(vps_model, renewal_info, tags)| {
             let tags_opt = if tags.is_empty() { None } else { Some(tags) };
             build_server_with_details(vps_model, renewal_info, tags_opt)
         })
-        .collect();
+        .collect::<Vec<_>>();
+    
+    servers_with_details.sort_by(|a, b| a.basic_info.id.cmp(&b.basic_info.id));
 
     Ok(servers_with_details)
 }

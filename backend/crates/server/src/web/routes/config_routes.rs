@@ -211,8 +211,8 @@ pub async fn get_effective_vps_config(
     }
 
     // TODO: Migrate service_monitor_service to get tasks
-    // let tasks = duckdb_service::service_monitor_service::get_tasks_for_agent(db_pool, vps_id).await?;
-    // effective_config.service_monitor_tasks = tasks;
+    let tasks = duckdb_service::service_monitor_service::get_tasks_for_agent(db_pool, vps_id).await?;
+    effective_config.service_monitor_tasks = tasks;
 
     Ok(effective_config)
 }

@@ -132,6 +132,7 @@ pub fn create_axum_router(
     let command_dispatcher = Arc::new(CommandDispatcher::new(
         connected_agents.clone(),
         duckdb_pool.clone(),
+        result_broadcaster.clone(),
     ));
 
     let app_state = Arc::new(AppState {

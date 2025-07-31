@@ -2285,6 +2285,8 @@ dependencies = [
  "rustls-native-certs",
  "serde",
  "serde_json",
+ "strum",
+ "strum_macros",
  "tera",
  "thiserror 2.0.12",
  "time",

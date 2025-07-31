@@ -14,6 +14,7 @@ use crate::db::entities::performance_metric;
 use crate::db::enums::ChildCommandStatus;
 use crate::db::{self};
 use crate::server::agent_state::{AgentSender, AgentState, ConnectedAgents};
+use crate::server::result_broadcaster::ResultBroadcaster;
 use crate::web::models::websocket_models::WsMessage;
 
 // 1. Define the generic AgentStream trait
@@ -35,6 +36,7 @@ pub struct AgentStreamContext {
     pub metric_sender: mpsc::Sender<performance_metric::Model>,
     pub duckdb_metric_sender: std_mpsc::Sender<performance_metric::Model>,
     pub shutdown_rx: tokio::sync::watch::Receiver<()>,
+    pub result_broadcaster: Arc<ResultBroadcaster>,
 }
 
 
@@ -255,6 +257,7 @@ pub async fn process_agent_stream<S>(
                                             // In a future step, we might want to send the raw snapshot data to the broadcaster.
                                     }
                                     ServerPayload::UpdateConfigResponse(response) => {
+                                        debug!(vps_id = vps_db_id_from_msg, "Received config update response: success={}", response.success);
                                         let status = if response.success { "synced" } else { "failed" };
                                         let error_msg = if response.success { None } else { Some(response.error_message.as_str()) };
                                         if let Err(e) = db::duckdb_service::settings_service::update_vps_config_status(
@@ -271,11 +274,13 @@ pub async fn process_agent_stream<S>(
                                         }
                                     }
                                     ServerPayload::BatchCommandOutputStream(output_stream) => {
+                                        debug!(vps_id = vps_db_id_from_msg, "Received batch command output stream for command ID: {}", output_stream.command_id);
                                         if let Ok(child_task_id) = Uuid::parse_str(&output_stream.command_id) {
                                             let stream_type = GrpcOutputType::try_from(output_stream.stream_type).unwrap_or(GrpcOutputType::Unspecified);
-                                            let output_chunk = output_stream.chunk.as_str();
+                                            let output_chunk = output_stream.chunk.into_bytes();
                                             if let Err(e) = db::duckdb_service::batch_command_service::record_child_task_output(
                                                 context.duckdb_pool.clone(),
+                                                context.result_broadcaster.clone(),
                                                 child_task_id,
                                                 output_chunk,
                                                 stream_type,
@@ -285,6 +290,7 @@ pub async fn process_agent_stream<S>(
                                         }
                                     }
                                     ServerPayload::BatchCommandResult(command_result) => {
+                                        debug!(vps_id = vps_db_id_from_msg, "Received batch command result for command ID: {}", command_result.command_id);
                                         if let Ok(child_task_id) = Uuid::parse_str(&command_result.command_id) {
                                             let new_status = match GrpcCommandStatus::try_from(command_result.status) {
                                                 Ok(GrpcCommandStatus::Success) => ChildCommandStatus::CompletedSuccessfully,
@@ -293,17 +299,21 @@ pub async fn process_agent_stream<S>(
                                                 _ => ChildCommandStatus::AgentError,
                                             };
                                             let error_message = if command_result.error_message.is_empty() { None } else { Some(command_result.error_message) };
+                                            let exit_code = Some(command_result.exit_code);
                                             if let Err(e) = db::duckdb_service::batch_command_service::update_child_task_status(
                                                 context.duckdb_pool.clone(),
+                                                context.result_broadcaster.clone(),
                                                 child_task_id,
                                                 new_status,
                                                 error_message,
+                                                exit_code,
                                             ).await {
                                                 error!(child_task_id = %child_task_id, error = ?e, "Error updating child task status.");
                                             }
                                         }
                                     }
                                     ServerPayload::ServiceMonitorResult(result) => {
+                                        debug!(vps_id = vps_db_id_from_msg, "Received service monitor result for monitor ID: {}", result.monitor_id);
                                         if let Err(e) = crate::db::duckdb_service::service_monitor_service::record_monitor_result(
                                             context.duckdb_pool.clone(),
                                             vps_db_id_from_msg,

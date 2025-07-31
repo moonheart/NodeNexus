@@ -19,9 +19,10 @@ use nodenexus_common::agent_service::{
     message_to_agent,
 };
 use crate::db::enums::ChildCommandStatus; // For updating task status
-// Streaming and AgentToServerMessage are not directly used in dispatch_command_to_agent for sending
-
-// Static atomic counter for generating unique server_message_ids for messages sent via CommandDispatcher
+use crate::server::result_broadcaster::ResultBroadcaster;
+ // Streaming and AgentToServerMessage are not directly used in dispatch_command_to_agent for sending
+ 
+ // Static atomic counter for generating unique server_message_ids for messages sent via CommandDispatcher
 static NEXT_SERVER_MESSAGE_ID: AtomicU64 = AtomicU64::new(1);
 
 // Placeholder for a more comprehensive error type for this service
@@ -47,16 +48,19 @@ pub enum DispatcherError {
 pub struct CommandDispatcher {
     connected_agents: Arc<Mutex<ConnectedAgents>>,
     duckdb_pool: DuckDbPool,
+    result_broadcaster: Arc<ResultBroadcaster>,
 }
 
 impl CommandDispatcher {
     pub fn new(
         connected_agents: Arc<Mutex<ConnectedAgents>>,
         duckdb_pool: DuckDbPool,
+        result_broadcaster: Arc<ResultBroadcaster>,
     ) -> Self {
         Self {
             connected_agents,
             duckdb_pool,
+            result_broadcaster,
         }
     }
 
@@ -82,8 +86,10 @@ impl CommandDispatcher {
                 // Update status to SentToAgent before actually sending
                 db::duckdb_service::batch_command_service::update_child_task_status(
                     self.duckdb_pool.clone(),
+                    self.result_broadcaster.clone(),
                     child_task_id,
                     ChildCommandStatus::SentToAgent,
+                    None,
                     None,
                 )
                 .await
@@ -106,9 +112,11 @@ impl CommandDispatcher {
                     // If sending fails, update status to AgentUnreachable
                     db::duckdb_service::batch_command_service::update_child_task_status(
                         self.duckdb_pool.clone(),
+                        self.result_broadcaster.clone(),
                         child_task_id,
                         ChildCommandStatus::AgentUnreachable,
                         Some(format!("Failed to send command to agent via mpsc: {e}")),
+                        None,
                     )
                     .await
                     .map_err(|db_err| DispatcherError::DbUpdateError(db_err.to_string()))?;
@@ -124,9 +132,11 @@ impl CommandDispatcher {
             None => {
                 db::duckdb_service::batch_command_service::update_child_task_status(
                     self.duckdb_pool.clone(),
+                    self.result_broadcaster.clone(),
                     child_task_id,
                     ChildCommandStatus::AgentUnreachable,
                     Some("Agent not connected or found.".to_string()),
+                    None,
                 )
                 .await
                 .map_err(|e| DispatcherError::DbUpdateError(e.to_string()))?;
@@ -167,9 +177,11 @@ impl CommandDispatcher {
                     // If sending fails, the agent is unreachable. We should finalize the termination.
                     db::duckdb_service::batch_command_service::update_child_task_status(
                         self.duckdb_pool.clone(),
+                        self.result_broadcaster.clone(),
                         child_task_id,
                         ChildCommandStatus::Terminated,
                         Some(format!("Agent unreachable during termination: {e}")),
+                        None,
                     )
                     .await
                     .map_err(|db_err| DispatcherError::DbUpdateError(db_err.to_string()))?;
@@ -184,9 +196,11 @@ impl CommandDispatcher {
                 // Agent not found, so we can consider the termination complete for this task.
                 db::duckdb_service::batch_command_service::update_child_task_status(
                     self.duckdb_pool.clone(),
+                    self.result_broadcaster.clone(),
                     child_task_id,
                     ChildCommandStatus::Terminated,
                     Some("Agent not connected, task terminated.".to_string()),
+                    None,
                 )
                 .await
                 .map_err(|e| DispatcherError::DbUpdateError(e.to_string()))?;

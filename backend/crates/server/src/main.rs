@@ -212,6 +212,7 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
         metric_sender.clone(),
         duckdb_metric_sender.clone(),
         shutdown_rx.clone(),
+        result_broadcaster.clone(),
     );
 
     let grpc_service = AgentCommunicationServiceServer::new(agent_comm_service);

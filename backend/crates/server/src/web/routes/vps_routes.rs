@@ -683,7 +683,6 @@ pub fn parse_interval_to_seconds(interval: Option<String>) -> Option<i64> {
     })
 }
 
-// TODO: Migrate this handler to DuckDB
 async fn get_vps_monitor_results_handler(
     Extension(authenticated_user): Extension<AuthenticatedUser>,
     State(app_state): State<Arc<AppState>>,
@@ -699,67 +698,66 @@ async fn get_vps_monitor_results_handler(
         return Err(AppError::Unauthorized("Access denied".to_string()));
     }
 
-    // let interval_seconds = parse_interval_to_seconds(query.interval);
+    let interval_seconds = parse_interval_to_seconds(query.interval);
 
-    // let points_result = services::get_monitor_results_by_vps_id(
-    //     &app_state.db_pool,
-    //     vps_id,
-    //     query.start_time,
-    //     query.end_time,
-    //     interval_seconds,
-    // )
-    // .await;
+    let points_result = crate::db::duckdb_service::service_monitor_service::get_monitor_results_by_vps_id(
+        app_state.duckdb_pool.clone(),
+        vps_id,
+        query.start_time,
+        query.end_time,
+        interval_seconds,
+    )
+    .await;
 
-    // let points = match points_result {
-    //     Ok(points) => points,
-    //     Err(e) => {
-    //         error!("Error fetching monitor results for VPS {}: {:?}", vps_id, e);
-    //         return Err(e.into());
-    //     }
-    // };
+    let points = match points_result {
+        Ok(points) => points,
+        Err(e) => {
+            error!("Error fetching monitor results for VPS {}: {:?}", vps_id, e);
+            return Err(e.into());
+        }
+    };
 
-    // if points.is_empty() {
-    //     return Ok(Json(Vec::new()));
-    // }
+    if points.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
 
-    // let monitor_ids: Vec<i32> = points
-    //     .iter()
-    //     .map(|p| p.monitor_id)
-    //     .collect::<HashSet<_>>()
-    //     .into_iter()
-    //     .collect();
+    let monitor_ids: Vec<i32> = points
+        .iter()
+        .map(|p| p.monitor_id)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
 
-    // let monitors = service_monitor::Entity::find()
-    //     .filter(service_monitor::Column::Id.is_in(monitor_ids))
-    //     .all(&app_state.db_pool)
-    //     .await?;
-    // let monitor_name_map: HashMap<i32, String> =
-    //     monitors.into_iter().map(|m| (m.id, m.name)).collect();
+    let monitor_name_map = crate::db::duckdb_service::service_monitor_service::get_monitor_names_by_ids(
+        app_state.duckdb_pool.clone(),
+        &monitor_ids,
+    )
+    .await?;
 
-    // let agent_name = vps.name;
+    let agent_name = vps.name;
 
-    // let results = points
-    //     .into_iter()
-    //     .map(|point| {
-    //         let monitor_name = monitor_name_map
-    //             .get(&point.monitor_id)
-    //             .cloned()
-    //             .unwrap_or_else(|| "Unknown Monitor".to_string());
+    let results = points
+        .into_iter()
+        .map(|point| {
+            let monitor_name = monitor_name_map
+                .get(&point.monitor_id)
+                .cloned()
+                .unwrap_or_else(|| "Unknown Monitor".to_string());
 
-    //         ServiceMonitorResultDetails {
-    //             time: point.time.to_rfc3339(),
-    //             monitor_id: point.monitor_id,
-    //             agent_id: point.agent_id,
-    //             agent_name: agent_name.clone(),
-    //             monitor_name,
-    //             is_up: point.is_up.is_some_and(|v| v > 0.5),
-    //             latency_ms: point.latency_ms.map(|f| f as i32),
-    //             details: point.details,
-    //         }
-    //     })
-    //     .collect();
+            ServiceMonitorResultDetails {
+                time: point.time.to_rfc3339(),
+                monitor_id: point.monitor_id,
+                agent_id: point.agent_id,
+                agent_name: agent_name.clone(),
+                monitor_name,
+                is_up: point.is_up.is_some_and(|v| v > 0.5),
+                latency_ms: point.latency_ms.map(|f| f as i32),
+                details: point.details,
+            }
+        })
+        .collect();
 
-    Ok(Json(Vec::new()))
+    Ok(Json(results))
 }
 
 // TODO: Migrate this handler to DuckDB

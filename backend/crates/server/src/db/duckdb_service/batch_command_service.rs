@@ -1,7 +1,9 @@
+use crate::server::result_broadcaster::ResultBroadcaster;
 use crate::db::duckdb_service::DuckDbPool;
 use chrono::Utc;
 use duckdb::{params, types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef}, Result as DuckDbResult, Row};
 use std::fmt;
+use std::sync::Arc;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
@@ -352,121 +354,218 @@ pub async fn terminate_single_child_task(db_pool: DuckDbPool, child_command_id: 
     }).await?
 }
 
-pub async fn update_child_task_status(db_pool: DuckDbPool, child_command_id: Uuid, status: ChildCommandStatus, error_message: Option<String>) -> Result<(), BatchCommandServiceError> {
-    tokio::task::spawn_blocking(move || -> Result<_, BatchCommandServiceError> {
-        let mut conn = db_pool.get()?;
+pub async fn update_child_task_status(
+    db_pool: DuckDbPool,
+    result_broadcaster: Arc<ResultBroadcaster>,
+    child_task_id: Uuid,
+    new_status: ChildCommandStatus,
+    error_message: Option<String>,
+    exit_code: Option<i32>,
+) -> Result<child_command_task::Model, BatchCommandServiceError> {
+    let db_pool1 = db_pool.clone();
+    let updated_task = tokio::task::spawn_blocking(move || -> Result<_, BatchCommandServiceError> {
+        let mut conn = db_pool1.get()?;
         let tx = conn.transaction()?;
 
-        let now = Utc::now();
-        let mut params: Vec<&dyn ToSql> = vec![&status, &now];
-        let mut set_clauses = vec!["status = ?", "updated_at = ?"];
-
-        if let Some(ref msg) = error_message {
-            set_clauses.push("error_message = ?");
-            params.push(msg);
-        }
-
-        let sql = format!("UPDATE child_command_tasks SET {} WHERE child_command_id = ?", set_clauses.join(", "));
-        params.push(&child_command_id);
-
-        tx.execute(&sql, &params[..])?;
-        tx.commit()?;
-        Ok(())
-    }).await?
-}
-
-pub async fn record_child_task_output(db_pool: DuckDbPool, child_command_id: Uuid, output: &str, output_type: GrpcOutputType) -> Result<(), BatchCommandServiceError> {
-    let output = output.to_string();
-    tokio::task::spawn_blocking(move || -> Result<_, BatchCommandServiceError> {
-        let mut conn = db_pool.get()?;
-        let tx = conn.transaction()?;
-
-        let log_path_col = match output_type {
-            GrpcOutputType::Stdout => "stdout_log_path",
-            GrpcOutputType::Stderr => "stderr_log_path",
-            _ => return Ok(()),
-        };
-
-        let log_path: Option<String> = tx.query_row(
-            &format!("SELECT {log_path_col} FROM child_command_tasks WHERE child_command_id = ?"),
-            params![child_command_id],
-            |row| row.get(0),
+        let mut task: child_command_task::Model = tx.query_row(
+            "SELECT * FROM child_command_tasks WHERE child_command_id = ?",
+            params![child_task_id],
+            row_to_child_command_task,
         )?;
 
-        let log_path = match log_path {
-            Some(p) => PathBuf::from(p),
-            None => {
-                let new_path = PathBuf::from("logs").join(format!("{}_{}.log", child_command_id, DisplayableGrpcOutputType(output_type)));
-                if let Some(parent) = new_path.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
-                tx.execute(
-                    &format!("UPDATE child_command_tasks SET {log_path_col} = ? WHERE child_command_id = ?"),
-                    params![new_path.to_str(), child_command_id],
-                )?;
-                new_path
-            }
-        };
+        task.status = new_status;
+        task.updated_at = Utc::now();
+        if let Some(code) = exit_code {
+            task.exit_code = Some(code);
+        }
+        if let Some(msg) = error_message {
+            task.error_message = Some(msg);
+        }
 
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_path)?;
-        file.write_all(output.as_bytes())?;
+        match task.status {
+            ChildCommandStatus::CompletedSuccessfully
+            | ChildCommandStatus::CompletedWithFailure
+            | ChildCommandStatus::Terminated
+            | ChildCommandStatus::AgentUnreachable
+            | ChildCommandStatus::TimedOut
+            | ChildCommandStatus::AgentError => {
+                if task.agent_completed_at.is_none() {
+                    task.agent_completed_at = Some(Utc::now());
+                }
+            }
+            _ => {}
+        }
 
         tx.execute(
-            "UPDATE child_command_tasks SET last_output_at = ? WHERE child_command_id = ?",
-            params![Utc::now(), child_command_id],
+            "UPDATE child_command_tasks SET status = ?, updated_at = ?, exit_code = ?, error_message = ?, agent_completed_at = ? WHERE child_command_id = ?",
+            params![
+                task.status,
+                task.updated_at,
+                task.exit_code,
+                task.error_message,
+                task.agent_completed_at,
+                child_task_id
+            ],
         )?;
 
         tx.commit()?;
-        Ok(())
-    }).await?
+        Ok(task)
+    }).await??;
+
+    result_broadcaster
+        .broadcast_child_task_update(
+            updated_task.batch_command_id,
+            updated_task.child_command_id,
+            updated_task.vps_id,
+            updated_task.status.to_string(),
+            updated_task.exit_code,
+        )
+        .await;
+
+    check_and_update_batch_task_status(db_pool, result_broadcaster, updated_task.batch_command_id).await?;
+
+    Ok(updated_task)
 }
 
-pub async fn check_and_update_batch_task_status(db_pool: DuckDbPool, batch_command_id: Uuid) -> Result<(), BatchCommandServiceError> {
-    tokio::task::spawn_blocking(move || -> Result<_, BatchCommandServiceError> {
+pub async fn record_child_task_output(
+    db_pool: DuckDbPool,
+    result_broadcaster: Arc<ResultBroadcaster>,
+    child_task_id: Uuid,
+    chunk: Vec<u8>,
+    stream_type: GrpcOutputType,
+) -> Result<(), BatchCommandServiceError> {
+    let log_line = String::from_utf8_lossy(&chunk).to_string();
+
+    let (batch_id, vps_id) = tokio::task::spawn_blocking(move || -> Result<_, BatchCommandServiceError> {
         let mut conn = db_pool.get()?;
         let tx = conn.transaction()?;
 
-        let mut stmt = tx.prepare("SELECT status FROM child_command_tasks WHERE batch_command_id = ?")?;
-        let child_statuses = stmt.query_map(params![batch_command_id], |row| row.get(0))?
-            .collect::<Result<Vec<ChildCommandStatus>, _>>()?;
+        let task: child_command_task::Model = tx.query_row(
+            "SELECT * FROM child_command_tasks WHERE child_command_id = ?",
+            params![child_task_id],
+            row_to_child_command_task,
+        )?;
 
-        let total_tasks = child_statuses.len();
-        let mut completed_successfully = 0;
-        let mut completed_with_failure = 0;
-        let mut terminated = 0;
+        let base_log_dir = PathBuf::from("logs")
+            .join("batch_commands")
+            .join(task.batch_command_id.to_string())
+            .join(task.child_command_id.to_string());
+        
+        std::fs::create_dir_all(&base_log_dir)?;
 
-        for status in child_statuses {
-            match status {
-                ChildCommandStatus::CompletedSuccessfully => completed_successfully += 1,
-                ChildCommandStatus::CompletedWithFailure | ChildCommandStatus::AgentUnreachable | ChildCommandStatus::TimedOut | ChildCommandStatus::AgentError => completed_with_failure += 1,
-                ChildCommandStatus::Terminated => terminated += 1,
-                _ => (),
+        let log_file_name = match stream_type {
+            GrpcOutputType::Stdout => "stdout.log",
+            GrpcOutputType::Stderr => "stderr.log",
+            _ => "output.log",
+        };
+        let log_file_path = base_log_dir.join(log_file_name);
+        let log_file_path_str = log_file_path.to_string_lossy().into_owned();
+
+        let mut needs_db_update = false;
+        match stream_type {
+            GrpcOutputType::Stdout => {
+                if task.stdout_log_path.is_none() {
+                    tx.execute("UPDATE child_command_tasks SET stdout_log_path = ? WHERE child_command_id = ?", params![&log_file_path_str, child_task_id])?;
+                    needs_db_update = true;
+                }
             }
+            GrpcOutputType::Stderr => {
+                if task.stderr_log_path.is_none() {
+                    tx.execute("UPDATE child_command_tasks SET stderr_log_path = ? WHERE child_command_id = ?", params![&log_file_path_str, child_task_id])?;
+                    needs_db_update = true;
+                }
+            }
+            _ => {}
         }
 
-        let new_status = if completed_successfully + completed_with_failure + terminated == total_tasks {
-            if completed_with_failure > 0 {
-                Some(BatchCommandStatus::CompletedWithErrors)
-            } else if terminated > 0 && completed_successfully + terminated == total_tasks {
-                Some(BatchCommandStatus::Terminated)
-            } else {
-                Some(BatchCommandStatus::CompletedSuccessfully)
-            }
-        } else {
-            None
-        };
+        if !chunk.is_empty() {
+            let mut file = OpenOptions::new().create(true).append(true).open(&log_file_path)?;
+            file.write_all(&chunk)?;
+        }
 
-        if let Some(status) = new_status {
-            tx.execute(
-                "UPDATE batch_command_tasks SET status = ?, completed_at = ?, updated_at = ? WHERE batch_command_id = ?",
-                params![status, Utc::now(), Utc::now(), batch_command_id],
+        if needs_db_update || !chunk.is_empty() {
+             tx.execute(
+                "UPDATE child_command_tasks SET last_output_at = ?, updated_at = ? WHERE child_command_id = ?",
+                params![Utc::now(), Utc::now(), child_task_id],
             )?;
         }
 
         tx.commit()?;
-        Ok(())
-    }).await?
+        Ok((task.batch_command_id, task.vps_id))
+    }).await??;
+
+    result_broadcaster
+        .broadcast_new_log_output(
+            batch_id,
+            child_task_id,
+            vps_id,
+            log_line,
+            DisplayableGrpcOutputType(stream_type).to_string(),
+            Utc::now().to_rfc3339(),
+        )
+        .await;
+
+    Ok(())
+}
+
+pub async fn check_and_update_batch_task_status(
+    db_pool: DuckDbPool,
+    result_broadcaster: Arc<ResultBroadcaster>,
+    batch_command_id: Uuid,
+) -> Result<(), BatchCommandServiceError> {
+    let maybe_updated_parent = tokio::task::spawn_blocking(move || -> Result<_, BatchCommandServiceError> {
+        let mut conn = db_pool.get()?;
+        let tx = conn.transaction()?;
+
+        let child_statuses: Vec<ChildCommandStatus> = tx.prepare("SELECT status FROM child_command_tasks WHERE batch_command_id = ?")?
+            .query_map(params![batch_command_id], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        if child_statuses.is_empty() {
+            return Ok(None);
+        }
+
+        let all_completed = child_statuses.iter().all(|s| s.is_final());
+        if !all_completed {
+            return Ok(None);
+        }
+
+        let any_failed = child_statuses.iter().any(|s| matches!(s, ChildCommandStatus::CompletedWithFailure | ChildCommandStatus::AgentError | ChildCommandStatus::AgentUnreachable | ChildCommandStatus::TimedOut));
+        let any_terminated = child_statuses.iter().any(|s| *s == ChildCommandStatus::Terminated);
+
+        let parent_task = tx.query_row("SELECT * FROM batch_command_tasks WHERE batch_command_id = ?", params![batch_command_id], row_to_batch_command_task)?;
+
+        if parent_task.status.is_final() {
+            return Ok(None);
+        }
+
+        let new_status = if any_terminated && !any_failed {
+            BatchCommandStatus::Terminated
+        } else if any_failed {
+            BatchCommandStatus::CompletedWithErrors
+        } else {
+            BatchCommandStatus::CompletedSuccessfully
+        };
+
+        let completed_at = Utc::now();
+        tx.execute(
+            "UPDATE batch_command_tasks SET status = ?, completed_at = ?, updated_at = ? WHERE batch_command_id = ?",
+            params![new_status, completed_at, completed_at, batch_command_id],
+        )?;
+
+        tx.commit()?;
+        Ok(Some((new_status, completed_at)))
+    }).await??;
+
+    if let Some((status, completed_at)) = maybe_updated_parent {
+        result_broadcaster
+            .broadcast_batch_task_update(
+                batch_command_id,
+                status.to_string(),
+                Some(completed_at.to_rfc3339()),
+            )
+            .await;
+    }
+
+    Ok(())
 }

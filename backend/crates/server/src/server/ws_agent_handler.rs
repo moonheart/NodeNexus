@@ -67,6 +67,7 @@ async fn handle_socket(socket: WebSocket, app_state: Arc<AppState>) {
         metric_sender: app_state.metric_sender.clone(),
         duckdb_metric_sender: app_state.duckdb_metric_sender.clone(),
         shutdown_rx: app_state.shutdown_rx.clone(),
+        result_broadcaster: app_state.result_broadcaster.clone(),
     });
 
     tokio::spawn(async move {

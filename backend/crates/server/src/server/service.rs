@@ -6,6 +6,7 @@ use tonic::{Request, Response, Status, Streaming};
 use super::agent_state::{ConnectedAgents, LiveServerDataCache};
 use super::core_services::AgentStreamContext;
 use super::handlers::handle_connection;
+use super::result_broadcaster::ResultBroadcaster;
 use crate::db::duckdb_service::DuckDbPool;
 use crate::db::entities::performance_metric;
 use crate::web::models::websocket_models::WsMessage;
@@ -20,6 +21,7 @@ pub struct MyAgentCommService {
     pub metric_sender: mpsc::Sender<performance_metric::Model>,
     pub duckdb_metric_sender: std_mpsc::Sender<performance_metric::Model>,
     pub shutdown_rx: watch::Receiver<()>,
+    pub result_broadcaster: Arc<ResultBroadcaster>,
 }
 
 impl MyAgentCommService {
@@ -33,6 +35,7 @@ impl MyAgentCommService {
         metric_sender: mpsc::Sender<performance_metric::Model>,
         duckdb_metric_sender: std_mpsc::Sender<performance_metric::Model>,
         shutdown_rx: watch::Receiver<()>,
+        result_broadcaster: Arc<ResultBroadcaster>,
     ) -> Self {
         Self {
             connected_agents,
@@ -43,6 +46,7 @@ impl MyAgentCommService {
             metric_sender,
             duckdb_metric_sender,
             shutdown_rx,
+            result_broadcaster,
         }
     }
 }
@@ -66,6 +70,7 @@ impl nodenexus_common::agent_service::agent_communication_service_server::AgentC
             metric_sender: self.metric_sender.clone(),
             duckdb_metric_sender: self.duckdb_metric_sender.clone(),
             shutdown_rx: self.shutdown_rx.clone(),
+            result_broadcaster: self.result_broadcaster.clone(),
         });
 
         handle_connection(
