@@ -34,7 +34,6 @@ WORKDIR /app
 # Copy backend workspace files and prepare recipe
 COPY backend/Cargo.toml backend/Cargo.lock ./backend/
 COPY backend/crates ./backend/crates
-COPY backend/migrations ./backend/migrations
 COPY locales ./locales
 
 # Generate the chef recipe
@@ -61,26 +60,17 @@ RUN apt-get update && apt-get install -y libssl3 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Create a non-root user
-RUN useradd --system --create-home appuser
-
 # Copy the compiled binary from the backend-builder stage
 COPY --from=backend-builder /app/backend/target/release/nodenexus-server .
 
-# Set ownership to the new user
-RUN chown appuser:appuser nodenexus-server
-
 # Create and set ownership for data and log directories
-RUN mkdir -p /app/data /app/logs && chown -R appuser:appuser /app/data /app/logs
-
-# Switch to the non-root user
-USER appuser
+RUN mkdir -p /app/data /app/logs
 
 # Expose volumes for data and logs
 VOLUME ["/app/data", "/app/logs"]
 
 # Set environment variables
-ENV RUNNING_IN_CONTAINER=true
+ENV IS_IN_CONTAINER=true
 ENV DATA_DIR=/app/data
 ENV LOG_DIR=/app/logs
 

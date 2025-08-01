@@ -89,7 +89,7 @@ impl DuckDBService {
     fn initialize_db(conn: &Connection) -> Result<()> {
         info!("Running DuckDB migrations...");
         let migrations = include_str!(
-            "../../../../../duckdb_migrations/20250726000000_create_initial_tables.sql"
+            "../../../duckdb_migrations/20250726000000_create_initial_tables.sql"
         );
         conn.execute_batch(migrations).map_err(|e| {
             error!("Failed to execute DuckDB migrations: {}", e);
