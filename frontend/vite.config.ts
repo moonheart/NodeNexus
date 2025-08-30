@@ -15,13 +15,15 @@ export default defineConfig({
     proxy: {
       // Proxy all WebSocket requests under /ws
       '/ws': {
-        target: 'ws://192.168.50.108:8080',
+        target: 'wss://mjjer.moonheart.dev',
+        // target: 'ws://127.0.0.1:8080',
         ws: true,
         changeOrigin: true,
       },
       // Proxy all API requests under /api
       '/api': {
-        target: 'http://192.168.50.108:8080',
+        target: 'https://mjjer.moonheart.dev',
+        // target: 'http://127.0.0.1:8080',
         changeOrigin: true
       }
     }

@@ -21,6 +21,9 @@ pub struct ServerConfig {
 
     #[serde(default)]
     pub is_in_container: bool,
+
+    #[serde(default = "default_slow_query_threshold_ms")]
+    pub slow_query_threshold_ms: u64,
 }
 
 // Partial config for layering
@@ -33,6 +36,7 @@ struct PartialServerConfig {
     log_dir: Option<String>,
     update_url: Option<String>,
     is_in_container: Option<bool>,
+    slow_query_threshold_ms: Option<u64>,
 }
 
 fn default_data_dir() -> String {
@@ -51,6 +55,10 @@ fn default_notification_key() -> String {
     // This key is for development convenience.
     // It's crucial to override this in production via environment variables.
     "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f".to_string()
+}
+
+fn default_slow_query_threshold_ms() -> u64 {
+    1000
 }
 
 impl ServerConfig {
@@ -92,6 +100,8 @@ impl ServerConfig {
                 .unwrap_or_else(default_update_url),
             is_in_container: env_config.is_in_container.or(file_config.is_in_container)
                 .unwrap_or(false),
+            slow_query_threshold_ms: env_config.slow_query_threshold_ms.or(file_config.slow_query_threshold_ms)
+                .unwrap_or_else(default_slow_query_threshold_ms),
         };
 
         Ok(final_config)

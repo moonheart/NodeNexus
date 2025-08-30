@@ -51,6 +51,7 @@ impl IntoResponse for Error {
 }
 
 pub type DuckDbPool = r2d2::Pool<duckdb::DuckdbConnectionManager>;
+pub type AsyncDuckDbPool = async_duckdb::Pool;
 
 // The service now only holds the sender part of the channel.
 // The connection is created and managed exclusively in the writer thread.

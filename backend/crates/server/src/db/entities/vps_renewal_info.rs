@@ -1,7 +1,11 @@
+use crate::db::orm::entity::Entity;
+use orm_macros::Entity;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Entity)]
+#[entity(table_name = "vps_renewal_info")]
 pub struct Model {
+    #[entity(primary_key)]
     pub vps_id: i32,
     pub renewal_cycle: Option<String>,
     pub renewal_cycle_custom_days: Option<i32>,

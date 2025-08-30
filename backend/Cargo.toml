@@ -2,7 +2,9 @@
 members = [
     "crates/agent",
     "crates/server",
-    "crates/common",
+    "crates/common", 
+    "crates/orm_macros",
+     "crates/async-duckdb",
 ]
 resolver = "2"
 

@@ -91,3 +91,15 @@ impl From<duckdb_service::Error> for AppError {
         AppError::DatabaseError(err.to_string())
     }
 }
+
+impl From<async_duckdb::Error> for AppError {
+    fn from(err: async_duckdb::Error) -> Self {
+        AppError::DatabaseError(err.to_string())
+    }
+}
+
+impl From<deadpool::managed::PoolError<async_duckdb::Error>> for AppError {
+    fn from(err: deadpool::managed::PoolError<async_duckdb::Error>) -> Self {
+        AppError::DatabaseError(err.to_string())
+    }
+}

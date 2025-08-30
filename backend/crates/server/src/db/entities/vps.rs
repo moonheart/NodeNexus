@@ -1,7 +1,10 @@
+use orm_macros::Entity;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Entity)]
+#[entity(table_name = "vps")]
 pub struct Model {
+    #[entity(primary_key(auto_increment = true))]
     pub id: i32,
     pub user_id: i32, // Foreign key to User
     pub name: String,
@@ -10,11 +13,15 @@ pub struct Model {
     pub agent_secret: String,
     pub agent_version: Option<String>,
     pub status: String,
-    pub metadata: Option<serde_json::Value>,
+    #[entity(json)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub group: Option<String>,
-    pub agent_config_override: Option<serde_json::Value>,
+    #[entity(json)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_config_override: Option<String>,
     pub config_status: String,
     pub last_config_update_at: Option<chrono::DateTime<chrono::Utc>>,
     pub last_config_error: Option<String>,

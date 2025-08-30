@@ -171,7 +171,7 @@ pub async fn get_effective_vps_config(
         .ok_or_else(|| AppError::NotFound("VPS not found".to_string()))?;
 
     if let Some(override_json) = vps_model.agent_config_override {
-        let override_config: AgentConfig = serde_json::from_value(override_json)?;
+        let override_config: AgentConfig = serde_json::from_str(&override_json)?;
         
         // Simple merge logic
         if override_config.metrics_collect_interval_seconds > 0 {

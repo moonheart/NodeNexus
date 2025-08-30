@@ -21,7 +21,7 @@ use crate::server::result_broadcaster::{BatchCommandUpdateMsg, ResultBroadcaster
 use crate::web::models::websocket_models::WsMessage;
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use tower_http::cors::{Any, CorsLayer};
-use crate::db::duckdb_service::DuckDbPool;
+use crate::db::duckdb_service::{AsyncDuckDbPool, DuckDbPool};
 
 use crate::services::auth_service;
 use crate::web::{
@@ -53,6 +53,7 @@ pub fn create_static_file_service() -> ServeEmbed<Assets> {
 #[derive(Clone)]
 pub struct AppState {
     pub duckdb_pool: DuckDbPool,
+    pub async_duckdb_pool: AsyncDuckDbPool,
     pub live_server_data_cache: LiveServerDataCache,
     pub ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     pub public_ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
@@ -116,6 +117,7 @@ async fn login_test_handler() -> (axum::http::StatusCode, Json<serde_json::Value
 pub fn create_axum_router(
     live_server_data_cache: LiveServerDataCache,
     duckdb_pool: DuckDbPool,
+    async_duckdb_pool: AsyncDuckDbPool,
     ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     public_ws_data_broadcaster_tx: broadcast::Sender<WsMessage>,
     connected_agents: Arc<Mutex<ConnectedAgents>>,
@@ -137,6 +139,7 @@ pub fn create_axum_router(
 
     let app_state = Arc::new(AppState {
         duckdb_pool,
+        async_duckdb_pool,
         live_server_data_cache,
         ws_data_broadcaster_tx: ws_data_broadcaster_tx.clone(),
         public_ws_data_broadcaster_tx,

@@ -1,0 +1,18 @@
+
+services:
+  server:
+    image: moonheartmoon/node-nexus-server:latest
+    container_name: node-nexus-server
+    restart: unless-stopped
+    ports:
+      # 将主机的 8080 端口映射到容器的 8080 端口
+      # 如果您的服务在不同端口上运行，请修改此处的端口
+      - "8080:8080"
+    environment:
+      - NOTIFICATION_ENCRYPTION_KEY=bc5dfce497c7e13e9f52e4e86ea2ed04228b64f0e928786f138c82646e74a723
+      - JWT_SECRET=your-super-secret-and-long-jwt-secret
+      - FRONTEND_URL=https://mjjer.moonheart.dev
+#      - RUST_LOG=info,sea_orm=warn,sqlx::query=warn,h2=trace,hyper=trace,tonic=trace
+    volumes:
+      - ./data:/data
+      - ./logs:/logs

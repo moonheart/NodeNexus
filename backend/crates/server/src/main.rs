@@ -18,7 +18,7 @@ i18n!("locales", fallback = "en");
 use nodenexus_common::agent_service::agent_communication_service_server::AgentCommunicationServiceServer;
 use crate::alerting::evaluation_service::EvaluationService; // Added EvaluationService
 use crate::db::{duckdb_service};
-use crate::db::duckdb_service::{tasks::DuckDBTaskManager, DuckDBService};
+use crate::db::duckdb_service::{tasks::DuckDBTaskManager, DuckDBService, AsyncDuckDbPool};
 // use crate::db::services::{AlertService, BatchCommandManager}; // Added BatchCommandManager
 use crate::notifications::encryption::EncryptionService;
 use crate::server::agent_state::{ConnectedAgents, LiveServerDataCache}; // Added LiveServerDataCache
@@ -133,6 +133,9 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
     info!("Starting server, version: {}", VERSION);
     info!("Configuration loaded: {:?}", server_config);
 
+    // --- ORM Config Setup ---
+    db::orm::config::init_orm_config(1000);
+
 
     // --- Debounce Update Trigger Channel ---
     let (update_trigger_tx, mut update_trigger_rx) = mpsc::channel::<()>(100);
@@ -153,6 +156,12 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
        }
    };
    let duckdb_metric_sender = duckdb_service.get_sender();
+
+   let async_duckdb_manager = async_duckdb::pool::Manager::new(async_duckdb::DuckDBConfig::Path(duckdb_path.into()));
+   let async_duckdb_pool = deadpool::managed::Pool::builder(async_duckdb_manager)
+       .max_size(16)
+       .build()
+       .expect("Failed to create async DuckDB connection pool.");
 
    // --- DuckDB Background Tasks ---
    let duckdb_task_manager = Arc::new(DuckDBTaskManager::new(duckdb_path, duckdb_pool.clone()));
@@ -183,7 +192,7 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
     metric_broadcaster.run();
 
     // Initialize the live server data cache
-    let initial_cache_data_result = db::duckdb_service::vps_detail_service::get_all_vps_with_details_for_cache(duckdb_pool.clone()).await;
+    let initial_cache_data_result = db::duckdb_service::vps_detail_service::get_all_vps_with_details_for_cache(&async_duckdb_pool).await;
     let initial_cache_map: HashMap<i32, ServerWithDetails> = match initial_cache_data_result {
         Ok(servers) => {
             info!(
@@ -261,7 +270,7 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
                         warn!(count = disconnected_vps_ids.len(), "Found disconnected agents. Updating status to 'offline'.");
                         let mut needs_broadcast = false;
                         for vps_id in disconnected_vps_ids {
-                            match duckdb_service::vps_service::update_vps_status(duckdb_pool1.clone(), vps_id, "offline").await {
+                            match duckdb_service::vps_service::update_vps_status(&async_duckdb_pool, vps_id, "offline").await {
                                 Ok(rows_affected) if rows_affected > 0 => needs_broadcast = true,
                                 Ok(_) => {}
                                 Err(e) => error!(vps_id = vps_id, error = %e, "Failed to update status to 'offline'."),
@@ -287,6 +296,7 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
     let http_router = crate::web::create_axum_router(
         live_server_data_cache.clone(),
         duckdb_pool.clone(),
+        async_duckdb_pool.clone(),
         ws_data_broadcaster_tx.clone(),
         public_ws_data_broadcaster_tx.clone(),
         connected_agents.clone(),
@@ -317,7 +327,7 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
                     while update_trigger_rx.try_recv().is_ok() {}
                     debug!("Debounce window finished. Triggering broadcast to both channels.");
                     update_service::broadcast_full_state_update_to_all(
-                        pool_for_debounce.clone(),
+                        &async_duckdb_pool,
                         &cache_for_debounce,
                         &private_broadcaster_for_debounce,
                         &public_broadcaster_for_debounce,
@@ -359,7 +369,7 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
             tokio::select! {
                 _ = interval.tick() => {
                     info!("Performing scheduled renewal reminder check...");
-                    match duckdb_service::vps_renewal_service::check_and_generate_reminders(duckdb_pool1.clone(), REMINDER_THRESHOLD_DAYS).await {
+                    match duckdb_service::vps_renewal_service::check_and_generate_reminders(&async_duckdb_pool, REMINDER_THRESHOLD_DAYS).await {
                         Ok(reminders_generated) if reminders_generated > 0 => {
                             info!(count = reminders_generated, "Renewal reminders were generated/updated. Triggering state update.");
                             if trigger_for_renewal_reminder.send(()).await.is_err() {
@@ -389,7 +399,7 @@ async fn run_server(mut shutdown_rx: watch::Receiver<()>) -> Result<(), Box<dyn 
             tokio::select! {
                 _ = interval.tick() => {
                     info!("Performing scheduled automatic renewal processing...");
-                    match duckdb_service::vps_renewal_service::process_all_automatic_renewals(duckdb_pool.clone()).await {
+                    match duckdb_service::vps_renewal_service::process_all_automatic_renewals(&async_duckdb_pool).await {
                         Ok(renewed_count) if renewed_count > 0 => {
                             info!(count = renewed_count, "VPS were automatically renewed. Triggering state update.");
                             if trigger_for_auto_renewal.send(()).await.is_err() {
